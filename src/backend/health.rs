@@ -44,12 +44,11 @@ impl BackendHealth {
         self.consecutive_failures += 1;
     }
 
-    /// Exponential backoff for restarts: 1s, 2s, 4s, 8s, ..., max 30s.
-    fn restart_backoff(&self) -> Duration {
-        let base = Duration::from_secs(1);
+    /// Exponential backoff for restarts using configurable initial/max values.
+    fn restart_backoff(&self, config: &HealthConfig) -> Duration {
         let multiplier = 2u64.saturating_pow(self.restart_count.min(5));
-        let backoff = base * multiplier as u32;
-        backoff.min(Duration::from_secs(30))
+        let backoff = config.restart_initial_backoff * multiplier as u32;
+        backoff.min(config.restart_max_backoff)
     }
 
     fn should_restart(&self, config: &HealthConfig) -> bool {
@@ -201,7 +200,7 @@ pub async fn run_health_checker(
 
                     // If circuit is open, try half-open probe before restarting
                     if let Some(opened) = health.circuit_open_since {
-                        let recovery_window = config.interval * 3; // 3x check interval
+                        let recovery_window = config.interval * config.recovery_multiplier;
                         if opened.elapsed() >= recovery_window {
                             debug!(backend = %status.name, "circuit half-open, probing");
                             match timeout(config.timeout, manager.ping_backend(&status.name)).await
@@ -238,7 +237,7 @@ pub async fn run_health_checker(
 
                     // No circuit open — try auto-restart with backoff
                     if health.should_restart(&config) {
-                        let backoff = health.restart_backoff();
+                        let backoff = health.restart_backoff(&config);
 
                         // Check if enough time has passed since last restart
                         let can_restart = health
@@ -281,7 +280,7 @@ pub async fn run_health_checker(
                             }
 
                             match timeout(
-                                Duration::from_secs(30),
+                                config.restart_timeout,
                                 manager.restart_backend(&status.name, &registry),
                             )
                             .await
@@ -315,7 +314,8 @@ pub async fn run_health_checker(
                                 Err(_) => {
                                     error!(
                                         backend = %status.name,
-                                        "auto-restart timed out after 30s"
+                                        timeout_secs = config.restart_timeout.as_secs(),
+                                        "auto-restart timed out"
                                     );
                                     health.restart_count += 1;
                                     health.last_restart = Some(Instant::now());
@@ -366,7 +366,7 @@ pub async fn run_health_checker(
                 continue;
             }
 
-            let backoff = health.restart_backoff();
+            let backoff = health.restart_backoff(&config);
             let can_retry = health
                 .last_restart
                 .map(|t| t.elapsed() >= backoff)
@@ -411,7 +411,7 @@ pub async fn run_health_checker(
             }
 
             match timeout(
-                Duration::from_secs(30),
+                config.restart_timeout,
                 manager.try_start_from_config(name, &registry),
             )
             .await
@@ -445,7 +445,8 @@ pub async fn run_health_checker(
                 Err(_) => {
                     error!(
                         backend = %name,
-                        "pending backend start timed out after 30s"
+                        timeout_secs = config.restart_timeout.as_secs(),
+                        "pending backend start timed out"
                     );
                     health.restart_count += 1;
                     health.last_restart = Some(Instant::now());
@@ -469,27 +470,48 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_restart_backoff() {
+    fn test_restart_backoff_default() {
+        let config = HealthConfig::default();
         let mut h = BackendHealth::new("test".to_string());
-        assert_eq!(h.restart_backoff(), Duration::from_secs(1));
+        assert_eq!(h.restart_backoff(&config), Duration::from_secs(1));
 
         h.restart_count = 1;
-        assert_eq!(h.restart_backoff(), Duration::from_secs(2));
+        assert_eq!(h.restart_backoff(&config), Duration::from_secs(2));
 
         h.restart_count = 2;
-        assert_eq!(h.restart_backoff(), Duration::from_secs(4));
+        assert_eq!(h.restart_backoff(&config), Duration::from_secs(4));
 
         h.restart_count = 3;
-        assert_eq!(h.restart_backoff(), Duration::from_secs(8));
+        assert_eq!(h.restart_backoff(&config), Duration::from_secs(8));
 
         h.restart_count = 4;
-        assert_eq!(h.restart_backoff(), Duration::from_secs(16));
+        assert_eq!(h.restart_backoff(&config), Duration::from_secs(16));
 
         h.restart_count = 5;
-        assert_eq!(h.restart_backoff(), Duration::from_secs(30)); // capped
+        assert_eq!(h.restart_backoff(&config), Duration::from_secs(30)); // capped
 
         h.restart_count = 10;
-        assert_eq!(h.restart_backoff(), Duration::from_secs(30)); // still capped
+        assert_eq!(h.restart_backoff(&config), Duration::from_secs(30)); // still capped
+    }
+
+    #[test]
+    fn test_restart_backoff_custom() {
+        let config = HealthConfig {
+            restart_initial_backoff: Duration::from_secs(2),
+            restart_max_backoff: Duration::from_secs(60),
+            ..Default::default()
+        };
+        let mut h = BackendHealth::new("test".to_string());
+        assert_eq!(h.restart_backoff(&config), Duration::from_secs(2));
+
+        h.restart_count = 1;
+        assert_eq!(h.restart_backoff(&config), Duration::from_secs(4));
+
+        h.restart_count = 2;
+        assert_eq!(h.restart_backoff(&config), Duration::from_secs(8));
+
+        h.restart_count = 5;
+        assert_eq!(h.restart_backoff(&config), Duration::from_secs(60)); // capped at custom max
     }
 
     #[test]
@@ -535,12 +557,12 @@ mod tests {
         h.last_restart = Some(Instant::now());
 
         // Backoff should be 2s after first failure
-        assert_eq!(h.restart_backoff(), Duration::from_secs(2));
+        assert_eq!(h.restart_backoff(&config), Duration::from_secs(2));
 
         // Can't restart immediately (backoff not elapsed)
         let can_retry = h
             .last_restart
-            .map(|t| t.elapsed() >= h.restart_backoff())
+            .map(|t| t.elapsed() >= h.restart_backoff(&config))
             .unwrap_or(true);
         assert!(!can_retry);
 

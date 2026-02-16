@@ -111,6 +111,11 @@ pub struct BackendConfig {
     #[serde(default = "default_transport")]
     pub transport: Transport,
 
+    /// Custom namespace prefix for tools from this backend.
+    /// Default: the backend's YAML key name. Tools are registered as `namespace.tool_name`.
+    #[serde(default)]
+    pub namespace: Option<String>,
+
     /// Command to spawn (stdio backends).
     pub command: Option<String>,
 
@@ -150,9 +155,55 @@ pub struct BackendConfig {
     #[serde(default = "default_semaphore_timeout", with = "humantime_duration")]
     pub semaphore_timeout: Duration,
 
+    /// Per-backend retry configuration for transient failures.
+    #[serde(default)]
+    pub retry: RetryConfig,
+
     /// Optional prerequisite process that must be running before this backend starts.
     #[serde(default)]
     pub prerequisite: Option<PrerequisiteConfig>,
+
+    /// Rate limit: max calls per time window. None = no rate limit.
+    #[serde(default)]
+    pub rate_limit: Option<RateLimitConfig>,
+}
+
+/// Per-backend retry configuration for transient failures (Starting state).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct RetryConfig {
+    /// Maximum number of retries before giving up. Default: 3.
+    #[serde(default = "default_max_retries")]
+    pub max_retries: u32,
+    /// Initial delay before first retry. Default: 500ms.
+    #[serde(default = "default_retry_initial_delay", with = "humantime_duration")]
+    pub initial_delay: Duration,
+    /// Maximum delay between retries. Default: 2s.
+    #[serde(default = "default_retry_max_delay", with = "humantime_duration")]
+    pub max_delay: Duration,
+    /// Multiplier applied to delay after each retry. Default: 2.0.
+    #[serde(default = "default_backoff_multiplier")]
+    pub backoff_multiplier: f64,
+}
+
+impl Default for RetryConfig {
+    fn default() -> Self {
+        Self {
+            max_retries: default_max_retries(),
+            initial_delay: default_retry_initial_delay(),
+            max_delay: default_retry_max_delay(),
+            backoff_multiplier: default_backoff_multiplier(),
+        }
+    }
+}
+
+/// Rate limiting configuration: max calls per time window.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct RateLimitConfig {
+    /// Maximum calls allowed per window.
+    pub max_calls: u32,
+    /// Time window for rate limiting. Default: 60s.
+    #[serde(default = "default_rate_window", with = "humantime_duration")]
+    pub window: Duration,
 }
 
 /// Configuration for a prerequisite process that must be running before a backend starts.
@@ -210,6 +261,26 @@ pub struct HealthConfig {
 
     #[serde(default = "default_restart_window", with = "humantime_duration")]
     pub restart_window: Duration,
+
+    /// Initial backoff duration for restart attempts. Default: 1s.
+    #[serde(default = "default_restart_initial_backoff", with = "humantime_duration")]
+    pub restart_initial_backoff: Duration,
+
+    /// Maximum backoff duration for restart attempts. Default: 30s.
+    #[serde(default = "default_restart_max_backoff", with = "humantime_duration")]
+    pub restart_max_backoff: Duration,
+
+    /// Timeout for a single restart operation. Default: 30s.
+    #[serde(default = "default_restart_timeout", with = "humantime_duration")]
+    pub restart_timeout: Duration,
+
+    /// Circuit breaker recovery multiplier (recovery_window = interval * recovery_multiplier). Default: 3.
+    #[serde(default = "default_recovery_multiplier")]
+    pub recovery_multiplier: u32,
+
+    /// Maximum time to wait for in-flight calls to drain during shutdown. Default: 10s.
+    #[serde(default = "default_drain_timeout", with = "humantime_duration")]
+    pub drain_timeout: Duration,
 }
 
 /// Admin API configuration.
@@ -325,6 +396,36 @@ fn default_semaphore_timeout() -> Duration {
 fn default_max_concurrent_sandboxes() -> u32 {
     8
 }
+fn default_max_retries() -> u32 {
+    3
+}
+fn default_retry_initial_delay() -> Duration {
+    Duration::from_millis(500)
+}
+fn default_retry_max_delay() -> Duration {
+    Duration::from_secs(2)
+}
+fn default_backoff_multiplier() -> f64 {
+    2.0
+}
+fn default_rate_window() -> Duration {
+    Duration::from_secs(60)
+}
+fn default_restart_initial_backoff() -> Duration {
+    Duration::from_secs(1)
+}
+fn default_restart_max_backoff() -> Duration {
+    Duration::from_secs(30)
+}
+fn default_restart_timeout() -> Duration {
+    Duration::from_secs(30)
+}
+fn default_recovery_multiplier() -> u32 {
+    3
+}
+fn default_drain_timeout() -> Duration {
+    Duration::from_secs(10)
+}
 
 // --- Default impls ---
 
@@ -336,6 +437,11 @@ impl Default for HealthConfig {
             failure_threshold: default_failure_threshold(),
             max_restarts: default_max_restarts(),
             restart_window: default_restart_window(),
+            restart_initial_backoff: default_restart_initial_backoff(),
+            restart_max_backoff: default_restart_max_backoff(),
+            restart_timeout: default_restart_timeout(),
+            recovery_multiplier: default_recovery_multiplier(),
+            drain_timeout: default_drain_timeout(),
         }
     }
 }
@@ -1037,5 +1143,105 @@ backends:
         let config: Config = serde_yaml_ng::from_str(yaml).unwrap();
         assert_eq!(config.sandbox.max_concurrent_sandboxes, 8);
         assert_eq!(config.sandbox.timeout, Duration::from_secs(30));
+    }
+
+    #[test]
+    fn test_retry_config_defaults() {
+        let retry = RetryConfig::default();
+        // Defaults must match the old hardcoded RETRY_DELAYS = [500ms, 1s, 2s]
+        assert_eq!(retry.max_retries, 3);
+        assert_eq!(retry.initial_delay, Duration::from_millis(500));
+        assert_eq!(retry.max_delay, Duration::from_secs(2));
+        assert_eq!(retry.backoff_multiplier, 2.0);
+
+        // Verify the sequence: 500ms, 1s, 2s (matches old constants)
+        let mut delay = retry.initial_delay;
+        assert_eq!(delay, Duration::from_millis(500));
+        delay = delay.mul_f64(retry.backoff_multiplier).min(retry.max_delay);
+        assert_eq!(delay, Duration::from_secs(1));
+        delay = delay.mul_f64(retry.backoff_multiplier).min(retry.max_delay);
+        assert_eq!(delay, Duration::from_secs(2));
+    }
+
+    #[test]
+    fn test_custom_retry_parsing() {
+        let yaml = r#"
+backends:
+  github:
+    transport: stdio
+    command: echo
+    retry:
+      max_retries: 5
+      initial_delay: 1s
+      max_delay: 10s
+      backoff_multiplier: 3.0
+"#;
+        let config: Config = serde_yaml_ng::from_str(yaml).unwrap();
+        let backend = config.backends.get("github").unwrap();
+        assert_eq!(backend.retry.max_retries, 5);
+        assert_eq!(backend.retry.initial_delay, Duration::from_secs(1));
+        assert_eq!(backend.retry.max_delay, Duration::from_secs(10));
+        assert_eq!(backend.retry.backoff_multiplier, 3.0);
+    }
+
+    #[test]
+    fn test_rate_limit_config_parsing() {
+        let yaml = r#"
+backends:
+  github:
+    transport: stdio
+    command: echo
+    rate_limit:
+      max_calls: 100
+      window: 60s
+"#;
+        let config: Config = serde_yaml_ng::from_str(yaml).unwrap();
+        let backend = config.backends.get("github").unwrap();
+        let rate_limit = backend.rate_limit.as_ref().unwrap();
+        assert_eq!(rate_limit.max_calls, 100);
+        assert_eq!(rate_limit.window, Duration::from_secs(60));
+    }
+
+    #[test]
+    fn test_no_rate_limit_default() {
+        let yaml = r#"
+backends:
+  test:
+    transport: stdio
+    command: echo
+"#;
+        let config: Config = serde_yaml_ng::from_str(yaml).unwrap();
+        let backend = config.backends.get("test").unwrap();
+        assert!(backend.rate_limit.is_none());
+    }
+
+    #[test]
+    fn test_health_config_extensions_defaults() {
+        let config = HealthConfig::default();
+        assert_eq!(config.restart_initial_backoff, Duration::from_secs(1));
+        assert_eq!(config.restart_max_backoff, Duration::from_secs(30));
+        assert_eq!(config.restart_timeout, Duration::from_secs(30));
+        assert_eq!(config.recovery_multiplier, 3);
+        assert_eq!(config.drain_timeout, Duration::from_secs(10));
+    }
+
+    #[test]
+    fn test_health_config_custom_parsing() {
+        let yaml = r#"
+health:
+  interval: 30s
+  restart_initial_backoff: 2s
+  restart_max_backoff: 60s
+  restart_timeout: 45s
+  recovery_multiplier: 5
+  drain_timeout: 15s
+backends: {}
+"#;
+        let config: Config = serde_yaml_ng::from_str(yaml).unwrap();
+        assert_eq!(config.health.restart_initial_backoff, Duration::from_secs(2));
+        assert_eq!(config.health.restart_max_backoff, Duration::from_secs(60));
+        assert_eq!(config.health.restart_timeout, Duration::from_secs(45));
+        assert_eq!(config.health.recovery_multiplier, 5);
+        assert_eq!(config.health.drain_timeout, Duration::from_secs(15));
     }
 }

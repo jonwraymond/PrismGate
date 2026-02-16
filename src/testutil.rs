@@ -61,24 +61,28 @@ impl MockBackend {
             tools: vec![
                 ToolEntry {
                     name: "echo_tool".to_string(),
+                    original_name: "echo_tool".to_string(),
                     description: "Returns args as JSON".to_string(),
                     backend_name: name.to_string(),
                     input_schema: serde_json::json!({"type": "object", "properties": {}}),
                 },
                 ToolEntry {
                     name: "slow_tool".to_string(),
+                    original_name: "slow_tool".to_string(),
                     description: "Sleeps call_delay then returns".to_string(),
                     backend_name: name.to_string(),
                     input_schema: serde_json::json!({"type": "object", "properties": {}}),
                 },
                 ToolEntry {
                     name: "error_tool".to_string(),
+                    original_name: "error_tool".to_string(),
                     description: "Always returns an error".to_string(),
                     backend_name: name.to_string(),
                     input_schema: serde_json::json!({"type": "object", "properties": {}}),
                 },
                 ToolEntry {
                     name: "counter_tool".to_string(),
+                    original_name: "counter_tool".to_string(),
                     description: "Returns current concurrent call count".to_string(),
                     backend_name: name.to_string(),
                     input_schema: serde_json::json!({"type": "object", "properties": {}}),
@@ -213,7 +217,7 @@ pub async fn insert_mock_with_config(
     semaphore_timeout: Duration,
 ) {
     let tools = mock.discover_tools().await.unwrap();
-    registry.register_backend_tools(mock.name(), tools);
+    registry.register_backend_tools_namespaced(mock.name(), mock.name(), tools);
     manager.backends.insert(
         mock.name().to_string(),
         Arc::clone(mock) as Arc<dyn Backend>,
@@ -543,11 +547,12 @@ mod tests {
         let mock = MockBackend::new("test-backend", Duration::ZERO);
         insert_mock(&manager, &registry, &mock).await;
 
-        // This is a simple direct tool call pattern — should bypass sandbox
+        // This is a simple direct tool call pattern — should bypass sandbox.
+        // Use the actual backend name (with hyphen) since namespaced keys are "test-backend.echo_tool"
         let result = crate::tools::sandbox::handle_call_tool_chain(
             &registry,
             &manager,
-            r#"test_backend.echo_tool({"hello": "world"})"#,
+            r#"test-backend.echo_tool({"hello": "world"})"#,
             None,
             None,
             &semaphore,

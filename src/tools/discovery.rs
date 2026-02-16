@@ -107,10 +107,15 @@ pub fn handle_search_brief(
     search_tools(registry, query, limit)
         .into_iter()
         .map(|e| {
+            let orig = if e.original_name.is_empty() {
+                &e.name
+            } else {
+                &e.original_name
+            };
             let call = format!(
                 "call_tool_chain: await {}.{}({{...}})",
                 sanitize_js_name(&e.backend_name),
-                sanitize_js_name(&e.name)
+                sanitize_js_name(orig)
             );
             BriefSearchResult {
                 name: e.name,
@@ -164,11 +169,16 @@ pub fn handle_tool_info_brief(
     tool_name: &str,
 ) -> Option<BriefToolInfoResult> {
     registry.get_by_name(tool_name).map(|e| {
+        let orig = if e.original_name.is_empty() {
+            &e.name
+        } else {
+            &e.original_name
+        };
         let parameters = extract_param_names(&e.input_schema);
         let call = format!(
             "call_tool_chain: await {}.{}({{...}})",
             sanitize_js_name(&e.backend_name),
-            sanitize_js_name(&e.name)
+            sanitize_js_name(orig)
         );
         BriefToolInfoResult {
             name: e.name,

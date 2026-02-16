@@ -61,12 +61,16 @@ pub(crate) fn map_tools_to_entries(
 ) -> Vec<ToolEntry> {
     tools
         .into_iter()
-        .map(|t| ToolEntry {
-            name: t.name.to_string(),
-            description: t.description.unwrap_or_default().to_string(),
-            backend_name: backend_name.to_string(),
-            input_schema: serde_json::to_value(&t.input_schema)
-                .unwrap_or(Value::Object(Default::default())),
+        .map(|t| {
+            let name = t.name.to_string();
+            ToolEntry {
+                original_name: name.clone(),
+                name,
+                description: t.description.unwrap_or_default().to_string(),
+                backend_name: backend_name.to_string(),
+                input_schema: serde_json::to_value(&t.input_schema)
+                    .unwrap_or(Value::Object(Default::default())),
+            }
         })
         .collect()
 }
@@ -144,13 +148,6 @@ impl Drop for CallGuard {
     }
 }
 
-/// Retry delays for transient backend unavailability (Starting state).
-const RETRY_DELAYS: [Duration; 3] = [
-    Duration::from_millis(500),
-    Duration::from_secs(1),
-    Duration::from_secs(2),
-];
-
 /// Manages all backends: startup, shutdown, tool forwarding.
 pub struct BackendManager {
     #[cfg(not(test))]
@@ -172,10 +169,27 @@ pub struct BackendManager {
     semaphore_timeouts: DashMap<String, Duration>,
     #[cfg(test)]
     pub semaphore_timeouts: DashMap<String, Duration>,
+    /// Per-backend retry configurations.
+    retry_configs: DashMap<String, crate::config::RetryConfig>,
+    /// Per-backend rate limiter semaphores (token bucket pattern).
+    #[cfg(not(test))]
+    rate_limiters: DashMap<String, Arc<Semaphore>>,
+    #[cfg(test)]
+    pub rate_limiters: DashMap<String, Arc<Semaphore>>,
+    /// Handles for rate limiter replenishment tasks (so we can cancel them).
+    #[cfg(not(test))]
+    rate_limiter_handles: DashMap<String, tokio::task::JoinHandle<()>>,
+    #[cfg(test)]
+    pub rate_limiter_handles: DashMap<String, tokio::task::JoinHandle<()>>,
     /// Backends registered at runtime via register_manual (not from config file).
     dynamic_backends: RwLock<HashSet<String>>,
     /// PIDs of managed prerequisite processes (stopped on daemon shutdown).
     prerequisite_pids: DashMap<String, u32>,
+    /// Health config reference for drain timeout.
+    #[cfg(not(test))]
+    drain_timeout: Duration,
+    #[cfg(test)]
+    pub drain_timeout: Duration,
 }
 
 impl BackendManager {
@@ -186,8 +200,29 @@ impl BackendManager {
             in_flight_calls: Arc::new(AtomicUsize::new(0)),
             call_semaphores: DashMap::new(),
             semaphore_timeouts: DashMap::new(),
+            retry_configs: DashMap::new(),
+            rate_limiters: DashMap::new(),
+            rate_limiter_handles: DashMap::new(),
             dynamic_backends: RwLock::new(HashSet::new()),
             prerequisite_pids: DashMap::new(),
+            drain_timeout: Duration::from_secs(10),
+        })
+    }
+
+    /// Create a BackendManager with a custom drain timeout from health config.
+    pub fn new_with_config(health_config: &crate::config::HealthConfig) -> Arc<Self> {
+        Arc::new(Self {
+            backends: DashMap::new(),
+            configs: RwLock::new(std::collections::HashMap::new()),
+            in_flight_calls: Arc::new(AtomicUsize::new(0)),
+            call_semaphores: DashMap::new(),
+            semaphore_timeouts: DashMap::new(),
+            retry_configs: DashMap::new(),
+            rate_limiters: DashMap::new(),
+            rate_limiter_handles: DashMap::new(),
+            dynamic_backends: RwLock::new(HashSet::new()),
+            prerequisite_pids: DashMap::new(),
+            drain_timeout: health_config.drain_timeout,
         })
     }
 
@@ -276,8 +311,12 @@ impl BackendManager {
         let tools = backend.discover_tools().await?;
         let tool_count = tools.len();
 
-        // Register in registry
-        registry.register_backend_tools(name, tools);
+        // Register in registry with namespace
+        let namespace = config
+            .namespace
+            .as_deref()
+            .unwrap_or(name);
+        registry.register_backend_tools_namespaced(name, namespace, tools);
 
         // Store backend
         self.backends.insert(name.to_string(), Arc::clone(&backend));
@@ -297,6 +336,33 @@ impl BackendManager {
         }
         self.semaphore_timeouts
             .insert(name.to_string(), config.semaphore_timeout);
+
+        // Store per-backend retry config
+        self.retry_configs
+            .insert(name.to_string(), config.retry.clone());
+
+        // Set up rate limiter if configured
+        if let Some(ref rate_limit) = config.rate_limit {
+            let sem = Arc::new(Semaphore::new(rate_limit.max_calls as usize));
+            self.rate_limiters
+                .insert(name.to_string(), Arc::clone(&sem));
+
+            let max = rate_limit.max_calls as usize;
+            let window = rate_limit.window;
+            let handle = tokio::spawn(async move {
+                let mut interval = tokio::time::interval(window);
+                interval.tick().await; // first tick is immediate
+                loop {
+                    interval.tick().await;
+                    let to_add = max.saturating_sub(sem.available_permits());
+                    if to_add > 0 {
+                        sem.add_permits(to_add);
+                    }
+                }
+            });
+            self.rate_limiter_handles
+                .insert(name.to_string(), handle);
+        }
 
         // Spawn reaper task for stdio backends — monitors child process and
         // marks backend as Stopped immediately on unexpected exit.
@@ -362,13 +428,18 @@ impl BackendManager {
         // Remove tools from registry
         registry.remove_backend_tools(name);
 
-        // Remove config, semaphore, and dynamic tracking
+        // Remove config, semaphore, rate limiter, retry config, and dynamic tracking
         let mut configs = self.configs.write().await;
         configs.remove(name);
         drop(configs);
 
         self.call_semaphores.remove(name);
         self.semaphore_timeouts.remove(name);
+        self.retry_configs.remove(name);
+        self.rate_limiters.remove(name);
+        if let Some((_, handle)) = self.rate_limiter_handles.remove(name) {
+            handle.abort();
+        }
         self.dynamic_backends.write().await.remove(name);
 
         // Stop managed prerequisite if tracked
@@ -382,9 +453,11 @@ impl BackendManager {
 
     /// Forward a tool call to the correct backend.
     ///
-    /// If the backend is in `Starting` state (not yet connected), retries up to 3 times
-    /// with exponential backoff (500ms, 1s, 2s). Fails immediately for `Unhealthy`/`Stopped`.
+    /// If the backend is in `Starting` state (not yet connected), retries with
+    /// configurable exponential backoff (default: 3 retries, 500ms/1s/2s).
+    /// Fails immediately for `Unhealthy`/`Stopped`.
     ///
+    /// Checks rate limiter before acquiring concurrency semaphore.
     /// Acquires a per-backend semaphore permit before dispatching. If the semaphore
     /// is full, the call queues with a configurable timeout (default 60s).
     pub async fn call_tool(
@@ -394,6 +467,21 @@ impl BackendManager {
         arguments: Option<Value>,
     ) -> Result<Value> {
         let _guard = CallGuard::new(&self.in_flight_calls);
+
+        // Check rate limiter (token bucket) before acquiring concurrency semaphore.
+        // `forget()` permanently consumes the permit (token), so the replenishment
+        // task must add it back. Dropping a permit would return it immediately.
+        if let Some(rate_sem) = self.rate_limiters.get(backend_name) {
+            match rate_sem.try_acquire() {
+                Ok(permit) => permit.forget(),
+                Err(_) => {
+                    anyhow::bail!(
+                        "backend '{}' rate limit exceeded. Try again later.",
+                        backend_name
+                    );
+                }
+            }
+        }
 
         // Acquire per-backend semaphore permit (if semaphore exists for this backend).
         let _permit = if let Some(sem) = self.call_semaphores.get(backend_name) {
@@ -425,7 +513,15 @@ impl BackendManager {
             None
         };
 
-        for (attempt, delay) in RETRY_DELAYS.iter().enumerate() {
+        // Get retry config (per-backend or default)
+        let retry = self
+            .retry_configs
+            .get(backend_name)
+            .map(|r| r.value().clone())
+            .unwrap_or_default();
+
+        let mut delay = retry.initial_delay;
+        for attempt in 0..retry.max_retries {
             // Check if backend exists in the DashMap
             let backend = self
                 .backends
@@ -447,7 +543,8 @@ impl BackendManager {
                                 delay_ms = delay.as_millis() as u64,
                                 "backend starting, retrying"
                             );
-                            tokio::time::sleep(*delay).await;
+                            tokio::time::sleep(delay).await;
+                            delay = delay.mul_f64(retry.backoff_multiplier).min(retry.max_delay);
                         }
                         // Unhealthy or Stopped — fail immediately, no point retrying
                         _ => {
@@ -470,7 +567,8 @@ impl BackendManager {
                         delay_ms = delay.as_millis() as u64,
                         "backend not found, retrying"
                     );
-                    tokio::time::sleep(*delay).await;
+                    tokio::time::sleep(delay).await;
+                    delay = delay.mul_f64(retry.backoff_multiplier).min(retry.max_delay);
                 }
             }
         }
@@ -479,11 +577,11 @@ impl BackendManager {
         match self.backends.get(backend_name).map(|r| r.value().state()) {
             Some(BackendState::Starting) => {
                 anyhow::bail!(
-                    "backend '{}' is still starting (retried {} times over ~3.5s). \
+                    "backend '{}' is still starting (retried {} times). \
                      Tool '{}' is cached but the backend hasn't connected yet. \
                      Check status: @gatemini://backend/{}",
                     backend_name,
-                    RETRY_DELAYS.len(),
+                    retry.max_retries,
                     tool_name,
                     backend_name
                 )
@@ -503,7 +601,7 @@ impl BackendManager {
                      It may not be configured or failed to start. \
                      See all backends: @gatemini://backends",
                     backend_name,
-                    RETRY_DELAYS.len()
+                    retry.max_retries
                 )
             }
         }
@@ -542,7 +640,15 @@ impl BackendManager {
         self.call_semaphores.clear();
         self.semaphore_timeouts.clear();
 
-        // Wait for in-flight calls to drain (max 10s)
+        // Cancel all rate limiter replenishment tasks
+        for entry in self.rate_limiter_handles.iter() {
+            entry.value().abort();
+        }
+        self.rate_limiter_handles.clear();
+        self.rate_limiters.clear();
+        self.retry_configs.clear();
+
+        // Wait for in-flight calls to drain
         let drain_start = std::time::Instant::now();
         let in_flight = self.in_flight_calls.load(Ordering::SeqCst);
         if in_flight > 0 {
@@ -556,10 +662,11 @@ impl BackendManager {
                     );
                     break;
                 }
-                if drain_start.elapsed() > Duration::from_secs(10) {
+                if drain_start.elapsed() > self.drain_timeout {
                     warn!(
                         in_flight = remaining,
-                        "drain timeout after 10s, forcing shutdown"
+                        drain_timeout_secs = self.drain_timeout.as_secs(),
+                        "drain timeout, forcing shutdown"
                     );
                     break;
                 }

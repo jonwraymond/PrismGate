@@ -49,12 +49,19 @@ pub fn generate_preamble(tools: &[ToolEntry]) -> String {
 
         preamble.push_str(&format!("const {} = {{\n", js_name));
         for tool in backend_tools {
-            let tool_js_name = sanitize_identifier(&tool.name);
+            // Use original_name for JS method names and __ct calls
+            // (backends don't know about namespacing)
+            let orig = if tool.original_name.is_empty() {
+                &tool.name
+            } else {
+                &tool.original_name
+            };
+            let tool_js_name = sanitize_identifier(orig);
             preamble.push_str(&format!(
                 "  {}: async (args) => await __ct({}, {}, args || {{}}),\n",
                 tool_js_name,
                 serde_json::to_string(backend_name).unwrap_or_default(),
-                serde_json::to_string(&tool.name).unwrap_or_default()
+                serde_json::to_string(orig).unwrap_or_default()
             ));
         }
         preamble.push_str("};\n\n");
@@ -66,11 +73,14 @@ pub fn generate_preamble(tools: &[ToolEntry]) -> String {
         let js_name = sanitize_identifier(backend_name);
         preamble.push_str(&format!("  \"{}\": {{\n", js_name));
         for tool in backend_tools {
+            let orig = if tool.original_name.is_empty() {
+                &tool.name
+            } else {
+                &tool.original_name
+            };
             let schema_json = serde_json::to_string(&tool.input_schema).unwrap_or_default();
-            // Use serde_json to produce a properly escaped JS string literal
-            // (handles newlines, quotes, backslashes, unicode, etc.)
             let desc_json = serde_json::to_string(&tool.description).unwrap_or_default();
-            let name_json = serde_json::to_string(&tool.name).unwrap_or_default();
+            let name_json = serde_json::to_string(orig).unwrap_or_default();
             preamble.push_str(&format!(
                 "    {}: {{ name: {}, description: {}, input_schema: {} }},\n",
                 name_json, name_json, desc_json, schema_json
@@ -127,6 +137,7 @@ mod tests {
     fn make_entry(name: &str, desc: &str, backend: &str) -> ToolEntry {
         ToolEntry {
             name: name.to_string(),
+            original_name: name.to_string(),
             description: desc.to_string(),
             backend_name: backend.to_string(),
             input_schema: json!({"type": "object", "properties": {"query": {"type": "string"}}}),

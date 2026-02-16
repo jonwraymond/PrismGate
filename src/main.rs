@@ -91,7 +91,7 @@ pub async fn initialize(config_path: &Path) -> Result<InitializedGateway> {
             registry::ToolRegistry::new()
         }
     };
-    let backend_manager = backend::BackendManager::new();
+    let backend_manager = backend::BackendManager::new_with_config(&config.health);
 
     // Load tool cache for instant availability before backends connect
     let cache_path = cache::cache_path_from_config(config_path);

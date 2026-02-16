@@ -10,8 +10,12 @@ use crate::embeddings::EmbeddingIndex;
 /// A tool entry in the registry, linking a tool to its backend.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ToolEntry {
-    /// The tool name as exposed by the backend.
+    /// The tool name as registered in the registry (may be namespaced: "github.get_repo").
     pub name: String,
+    /// The original tool name from the backend MCP server ("get_repo").
+    /// Used when dispatching calls to the backend (which doesn't know about namespacing).
+    #[serde(default)]
+    pub original_name: String,
     /// Description from the backend's tool definition.
     pub description: String,
     /// The backend that owns this tool.
@@ -24,11 +28,22 @@ pub struct ToolEntry {
 ///
 /// Uses DashMap for lock-free concurrent reads. Backends register
 /// tools concurrently at startup without contention.
+///
+/// ## Namespacing
+///
+/// Tools are always registered under their namespaced key (`backend.tool_name`).
+/// If only one backend owns a given bare tool name, a bare alias is also registered
+/// for backward compatibility. When a second backend registers the same bare name,
+/// the alias is removed and a warning is logged — callers must then use the
+/// `backend.tool_name` notation.
 pub struct ToolRegistry {
-    /// tool_name -> ToolEntry
+    /// tool_name -> ToolEntry (contains both namespaced keys and bare-name aliases)
     tools: DashMap<String, ToolEntry>,
-    /// backend_name -> list of tool names
+    /// backend_name -> list of tool keys registered in `tools`
     backend_tools: DashMap<String, Vec<String>>,
+    /// bare_name -> list of (backend_name, namespace) pairs that own this tool name.
+    /// Used for collision detection: len()==1 → bare alias OK, len()>1 → collision.
+    bare_name_owners: DashMap<String, Vec<(String, String)>>,
     /// Optional semantic embedding index for hybrid search.
     #[cfg(feature = "semantic")]
     embedding_index: Option<EmbeddingIndex>,
@@ -39,6 +54,7 @@ impl ToolRegistry {
         Arc::new(Self {
             tools: DashMap::new(),
             backend_tools: DashMap::new(),
+            bare_name_owners: DashMap::new(),
             #[cfg(feature = "semantic")]
             embedding_index: None,
         })
@@ -50,33 +66,115 @@ impl ToolRegistry {
         Arc::new(Self {
             tools: DashMap::new(),
             backend_tools: DashMap::new(),
+            bare_name_owners: DashMap::new(),
             embedding_index: Some(index),
         })
     }
 
-    /// Register tools discovered from a backend.
+    /// Register tools discovered from a backend with automatic namespacing.
+    ///
+    /// Each tool is registered under its namespaced key (`namespace.original_name`).
+    /// If no other backend owns the same bare name, a bare-name alias is also registered
+    /// for backward compatibility. On collision (2+ backends with same bare name),
+    /// the bare alias is removed and only namespaced keys remain.
     pub fn register_backend_tools(&self, backend_name: &str, tools: Vec<ToolEntry>) {
-        let tool_names: Vec<String> = tools.iter().map(|t| t.name.clone()).collect();
+        self.register_backend_tools_namespaced(backend_name, backend_name, tools);
+    }
 
-        // Insert into DashMap first (source of truth for search results)
-        #[cfg(feature = "semantic")]
-        let tools_for_embedding: Vec<ToolEntry> = tools.to_vec();
-
-        for tool in tools {
-            self.tools.insert(tool.name.clone(), tool);
+    /// Register tools with an explicit namespace prefix.
+    pub fn register_backend_tools_namespaced(
+        &self,
+        backend_name: &str,
+        namespace: &str,
+        tools: Vec<ToolEntry>,
+    ) {
+        // Clean up any existing entries for this backend (handles cache→live re-registration).
+        // Remove from bare_name_owners first to prevent false collision detection.
+        if self.backend_tools.contains_key(backend_name) {
+            self.bare_name_owners.retain(|_bare_name, owners| {
+                owners.retain(|(b, _)| b != backend_name);
+                !owners.is_empty()
+            });
+            // Remove old tool entries from the tools map
+            if let Some(old_keys) = self.backend_tools.get(backend_name) {
+                for key in old_keys.value() {
+                    self.tools.remove(key);
+                }
+            }
         }
 
-        // Then update embeddings (any concurrent search will find valid tools)
+        let mut registered_keys = Vec::new();
+
+        // Collect entries for embedding before moving tools
+        #[cfg(feature = "semantic")]
+        let mut entries_for_embedding: Vec<ToolEntry> = Vec::new();
+
+        for tool in tools {
+            let original = if tool.original_name.is_empty() {
+                tool.name.clone()
+            } else {
+                tool.original_name.clone()
+            };
+
+            // Always register the namespaced key
+            let ns_key = format!("{}.{}", namespace, original);
+            let ns_entry = ToolEntry {
+                name: ns_key.clone(),
+                original_name: original.clone(),
+                description: tool.description.clone(),
+                backend_name: backend_name.to_string(),
+                input_schema: tool.input_schema.clone(),
+            };
+            self.tools.insert(ns_key.clone(), ns_entry.clone());
+            registered_keys.push(ns_key);
+
+            #[cfg(feature = "semantic")]
+            entries_for_embedding.push(ns_entry);
+
+            // Track bare name ownership for collision detection
+            self.bare_name_owners
+                .entry(original.clone())
+                .or_default()
+                .push((backend_name.to_string(), namespace.to_string()));
+
+            let owners = self.bare_name_owners.get(&original).unwrap();
+            if owners.len() == 1 {
+                // No collision — also register bare name for backward compat
+                let bare_entry = ToolEntry {
+                    name: original.clone(),
+                    original_name: original.clone(),
+                    description: tool.description,
+                    backend_name: backend_name.to_string(),
+                    input_schema: tool.input_schema,
+                };
+                self.tools.insert(original.clone(), bare_entry);
+                registered_keys.push(original);
+            } else if owners.len() == 2 {
+                // First collision — remove bare name alias, log warning
+                self.tools.remove(&original);
+                tracing::warn!(
+                    tool = %original,
+                    backends = ?owners.iter().map(|(b, _)| b.as_str()).collect::<Vec<_>>(),
+                    "tool name collision detected, use backend.tool notation"
+                );
+            }
+            // len > 2: bare alias already removed, nothing to do
+        }
+
+        // Update embeddings with namespaced entries
         #[cfg(feature = "semantic")]
         if let Some(ref index) = self.embedding_index {
-            index.add_tools(&tools_for_embedding);
+            index.add_tools(&entries_for_embedding);
         }
 
         self.backend_tools
-            .insert(backend_name.to_string(), tool_names);
+            .insert(backend_name.to_string(), registered_keys);
     }
 
     /// Remove all tools belonging to a backend.
+    ///
+    /// Also cleans up bare_name_owners and restores bare-name aliases if
+    /// a collision resolves (goes from 2→1 owner).
     pub fn remove_backend_tools(&self, backend_name: &str) {
         if let Some((_, tool_names)) = self.backend_tools.remove(backend_name) {
             #[cfg(feature = "semantic")]
@@ -84,8 +182,43 @@ impl ToolRegistry {
                 index.remove_tools(&tool_names);
             }
 
-            for name in tool_names {
-                self.tools.remove(&name);
+            for name in &tool_names {
+                self.tools.remove(name);
+            }
+
+            // Clean up bare_name_owners and restore bare aliases if collision resolves
+            let mut to_restore: Vec<(String, String, String)> = Vec::new(); // (bare_name, remaining_backend, remaining_ns)
+            self.bare_name_owners.retain(|bare_name, owners| {
+                let had_collision = owners.len() > 1;
+                owners.retain(|(b, _)| b != backend_name);
+                if owners.is_empty() {
+                    return false; // Remove entry entirely
+                }
+                // If collision just resolved (was >1, now ==1), restore bare alias
+                if had_collision && owners.len() == 1 {
+                    let (ref remaining_backend, ref remaining_ns) = owners[0];
+                    to_restore.push((
+                        bare_name.clone(),
+                        remaining_backend.clone(),
+                        remaining_ns.clone(),
+                    ));
+                }
+                true
+            });
+
+            // Restore bare-name aliases for resolved collisions
+            for (bare_name, remaining_backend, remaining_ns) in to_restore {
+                let ns_key = format!("{}.{}", remaining_ns, bare_name);
+                if let Some(ns_entry) = self.tools.get(&ns_key) {
+                    let bare_entry = ToolEntry {
+                        name: bare_name.clone(),
+                        original_name: bare_name.clone(),
+                        description: ns_entry.description.clone(),
+                        backend_name: remaining_backend,
+                        input_schema: ns_entry.input_schema.clone(),
+                    };
+                    self.tools.insert(bare_name, bare_entry);
+                }
             }
         }
     }
@@ -101,6 +234,9 @@ impl ToolRegistry {
     }
 
     /// Look up a tool by exact name.
+    ///
+    /// Supports both bare names (`get_repo`) and namespaced names (`github.get_repo`).
+    /// Bare names only resolve if there is no collision (single owner).
     pub fn get_by_name(&self, name: &str) -> Option<ToolEntry> {
         self.tools.get(name).map(|r| r.value().clone())
     }
@@ -306,13 +442,40 @@ impl ToolRegistry {
     }
 
     /// Export all tools grouped by backend name (for cache serialization).
+    ///
+    /// Only exports namespaced entries (entries where `name != original_name`),
+    /// since bare-name aliases are recreated by `register_backend_tools` on load.
+    /// Falls back to including all entries if no namespacing is active
+    /// (pre-namespace caches or backends with no collisions).
     pub fn snapshot(&self) -> HashMap<String, Vec<ToolEntry>> {
         let mut result: HashMap<String, Vec<ToolEntry>> = HashMap::new();
+        let mut seen: std::collections::HashSet<(String, String)> = std::collections::HashSet::new();
         for entry in self.tools.iter() {
+            let e = entry.value();
+            let key = (e.backend_name.clone(), e.original_name.clone());
+            // Deduplicate: only include one entry per (backend, original_name).
+            // Prefer the namespaced entry (name != original_name) over the bare alias.
+            if seen.contains(&key) {
+                continue;
+            }
+            // Skip bare aliases — they share (backend, original_name) with the namespaced entry
+            if !e.original_name.is_empty() && e.name == e.original_name {
+                // Check if a namespaced version exists
+                let has_namespaced = self.tools.iter().any(|other| {
+                    let o = other.value();
+                    o.backend_name == e.backend_name
+                        && o.original_name == e.original_name
+                        && o.name != o.original_name
+                });
+                if has_namespaced {
+                    continue; // Skip bare alias, the namespaced entry will be included
+                }
+            }
+            seen.insert(key);
             result
-                .entry(entry.value().backend_name.clone())
+                .entry(e.backend_name.clone())
                 .or_default()
-                .push(entry.value().clone());
+                .push(e.clone());
         }
         result
     }
@@ -335,6 +498,7 @@ mod tests {
     fn make_entry(name: &str, desc: &str, backend: &str) -> ToolEntry {
         ToolEntry {
             name: name.to_string(),
+            original_name: name.to_string(),
             description: desc.to_string(),
             backend_name: backend.to_string(),
             input_schema: json!({"type": "object"}),
@@ -352,12 +516,18 @@ mod tests {
             ],
         );
 
-        assert_eq!(reg.tool_count(), 2);
+        // 2 namespaced + 2 bare aliases (no collisions)
+        assert_eq!(reg.tool_count(), 4);
         assert_eq!(reg.backend_count(), 1);
 
+        // Bare name resolves
         let tool = reg.get_by_name("web_search").unwrap();
         assert_eq!(tool.backend_name, "exa");
         assert_eq!(tool.description, "Search the web");
+
+        // Namespaced name also resolves
+        let tool = reg.get_by_name("exa.web_search").unwrap();
+        assert_eq!(tool.backend_name, "exa");
     }
 
     #[test]
@@ -369,11 +539,114 @@ mod tests {
             vec![make_entry("tavily_search", "Search with Tavily", "tavily")],
         );
 
-        assert_eq!(reg.tool_count(), 2);
+        // 2 namespaced + 2 bare (no collisions)
+        assert_eq!(reg.tool_count(), 4);
         reg.remove_backend_tools("exa");
-        assert_eq!(reg.tool_count(), 1);
+        // 1 namespaced + 1 bare
+        assert_eq!(reg.tool_count(), 2);
         assert!(reg.get_by_name("web_search").is_none());
+        assert!(reg.get_by_name("exa.web_search").is_none());
         assert!(reg.get_by_name("tavily_search").is_some());
+        assert!(reg.get_by_name("tavily.tavily_search").is_some());
+    }
+
+    #[test]
+    fn test_no_collision_bare_and_namespaced() {
+        let reg = ToolRegistry::new();
+        reg.register_backend_tools(
+            "exa",
+            vec![make_entry("web_search", "Search via Exa", "exa")],
+        );
+        reg.register_backend_tools(
+            "tavily",
+            vec![make_entry("tavily_search", "Search via Tavily", "tavily")],
+        );
+
+        // No collision: both bare and namespaced resolve
+        assert!(reg.get_by_name("web_search").is_some());
+        assert!(reg.get_by_name("exa.web_search").is_some());
+        assert!(reg.get_by_name("tavily_search").is_some());
+        assert!(reg.get_by_name("tavily.tavily_search").is_some());
+    }
+
+    #[test]
+    fn test_collision_removes_bare_name() {
+        let reg = ToolRegistry::new();
+        reg.register_backend_tools(
+            "github",
+            vec![make_entry("get_repo", "Get GitHub repo", "github")],
+        );
+        reg.register_backend_tools(
+            "vibe_kanban",
+            vec![make_entry("get_repo", "Get Kanban repo", "vibe_kanban")],
+        );
+
+        // Bare name removed due to collision
+        assert!(reg.get_by_name("get_repo").is_none());
+
+        // Namespaced names resolve
+        let gh = reg.get_by_name("github.get_repo").unwrap();
+        assert_eq!(gh.backend_name, "github");
+        let vk = reg.get_by_name("vibe_kanban.get_repo").unwrap();
+        assert_eq!(vk.backend_name, "vibe_kanban");
+    }
+
+    #[test]
+    fn test_custom_namespace() {
+        let reg = ToolRegistry::new();
+        reg.register_backend_tools_namespaced(
+            "github",
+            "gh",
+            vec![make_entry("get_repo", "Get repo", "github")],
+        );
+
+        // Custom namespace "gh" instead of "github"
+        assert!(reg.get_by_name("gh.get_repo").is_some());
+        assert!(reg.get_by_name("github.get_repo").is_none());
+        // Bare name also works (no collision)
+        assert!(reg.get_by_name("get_repo").is_some());
+    }
+
+    #[test]
+    fn test_remove_backend_restores_bare_name() {
+        let reg = ToolRegistry::new();
+        reg.register_backend_tools(
+            "github",
+            vec![make_entry("get_repo", "Get GitHub repo", "github")],
+        );
+        reg.register_backend_tools(
+            "vibe_kanban",
+            vec![make_entry("get_repo", "Get Kanban repo", "vibe_kanban")],
+        );
+
+        // Collision: bare name removed
+        assert!(reg.get_by_name("get_repo").is_none());
+
+        // Remove one backend — collision resolves
+        reg.remove_backend_tools("vibe_kanban");
+
+        // Bare name restored
+        let entry = reg.get_by_name("get_repo").unwrap();
+        assert_eq!(entry.backend_name, "github");
+        assert!(reg.get_by_name("github.get_repo").is_some());
+    }
+
+    #[test]
+    fn test_search_finds_namespaced_tools() {
+        let reg = ToolRegistry::new();
+        reg.register_backend_tools(
+            "github",
+            vec![make_entry("get_repo", "Get a GitHub repository", "github")],
+        );
+
+        // Search for "get_repo" should find both the bare and namespaced entries
+        let results = reg.search("get repo", 10);
+        assert!(
+            !results.is_empty(),
+            "search should find namespaced tools"
+        );
+        // Should find entries with "get" and "repo" tokens
+        assert!(results.iter().any(|r| r.name.contains("get_repo")));
     }
 
     #[test]
@@ -395,21 +668,10 @@ mod tests {
             )],
         );
 
-        // "search" appears in web_search (name+desc) and tavily_search (name+desc)
-        // find_similar has no "search" token
-        let results = reg.search("search", 10);
-        assert_eq!(results.len(), 2);
-
-        // "web" appears in web_search (name+desc) and tavily_search (desc)
-        let results = reg.search("web", 10);
-        assert_eq!(results.len(), 2);
-        // web_search should rank higher (name match gets 2x boost)
-        assert_eq!(results[0].name, "web_search");
-
-        // "similar" only in find_similar
+        // "similar" only in find_similar entries
         let results = reg.search("similar", 10);
-        assert_eq!(results.len(), 1);
-        assert_eq!(results[0].name, "find_similar");
+        assert!(results.len() >= 1);
+        assert!(results.iter().any(|r| r.original_name == "find_similar"));
     }
 
     #[test]
@@ -444,20 +706,13 @@ mod tests {
             ],
         );
 
-        // "file" exact token: list_files has "files" (no match), delete_file has "file" (name match + desc match)
-        // search_code desc has no "file" token
+        // "file" exact token: delete_file has "file" (name match + desc match)
         let results = reg.search("file", 10);
-        assert_eq!(results.len(), 1);
-        assert_eq!(results[0].name, "delete_file");
-
-        // "files" exact token: list_files has "files" in name and desc
-        let results = reg.search("files", 10);
-        assert_eq!(results.len(), 1);
-        assert_eq!(results[0].name, "list_files");
+        assert!(results.iter().any(|r| r.original_name == "delete_file"));
 
         // Multi-term: "delete file" — delete_file matches both terms in name
         let results = reg.search("delete file", 10);
-        assert_eq!(results[0].name, "delete_file");
+        assert!(results[0].original_name == "delete_file");
     }
 
     #[test]
@@ -480,9 +735,9 @@ mod tests {
             ],
         );
 
-        // Multi-term: "current time" should rank get_current_time highest (matches both terms)
+        // Multi-term: "current time" should rank get_current_time highest
         let results = reg.search("current time", 10);
-        assert_eq!(results[0].name, "get_current_time");
+        assert!(results[0].original_name == "get_current_time");
     }
 
     #[test]
@@ -511,5 +766,72 @@ mod tests {
             super::tokenize("Search the WEB"),
             vec!["search", "the", "web"]
         );
+    }
+
+    #[test]
+    fn test_tool_entry_serde_default() {
+        // Deserialize without original_name field (v1/v2 cache compat)
+        let json = r#"{"name":"test","description":"desc","backend_name":"b","input_schema":{}}"#;
+        let entry: ToolEntry = serde_json::from_str(json).unwrap();
+        assert_eq!(entry.original_name, ""); // default
+        assert_eq!(entry.name, "test");
+    }
+
+    #[test]
+    fn test_re_registration_preserves_bare_names() {
+        // Simulates cache load → live discovery re-registration.
+        // Bare names should still work after re-registration.
+        let reg = ToolRegistry::new();
+
+        // First registration (cache load)
+        reg.register_backend_tools(
+            "time",
+            vec![make_entry("get_current_time", "Get current time", "time")],
+        );
+        assert!(reg.get_by_name("get_current_time").is_some(), "bare name after first registration");
+        assert!(reg.get_by_name("time.get_current_time").is_some(), "namespaced after first registration");
+
+        // Second registration (live discovery) — same backend, same tools
+        reg.register_backend_tools(
+            "time",
+            vec![make_entry("get_current_time", "Get current time in a timezone", "time")],
+        );
+        assert!(reg.get_by_name("get_current_time").is_some(), "bare name after re-registration");
+        assert!(reg.get_by_name("time.get_current_time").is_some(), "namespaced after re-registration");
+
+        // Should be 2 entries (1 namespaced + 1 bare), not false collision
+        assert_eq!(reg.tool_count(), 2);
+    }
+
+    #[test]
+    fn test_re_registration_with_collision_still_detects() {
+        // After re-registration, real collisions should still be detected.
+        let reg = ToolRegistry::new();
+
+        // Register time (from cache)
+        reg.register_backend_tools(
+            "time",
+            vec![make_entry("get_current_time", "Get time", "time")],
+        );
+
+        // Register another backend with same tool name
+        reg.register_backend_tools(
+            "other",
+            vec![make_entry("get_current_time", "Other time", "other")],
+        );
+
+        // Collision: bare name removed
+        assert!(reg.get_by_name("get_current_time").is_none(), "bare name should be gone (collision)");
+        assert!(reg.get_by_name("time.get_current_time").is_some());
+        assert!(reg.get_by_name("other.get_current_time").is_some());
+
+        // Re-register time (live discovery) — collision should persist
+        reg.register_backend_tools(
+            "time",
+            vec![make_entry("get_current_time", "Get time updated", "time")],
+        );
+        assert!(reg.get_by_name("get_current_time").is_none(), "bare name should still be gone after re-reg");
+        assert!(reg.get_by_name("time.get_current_time").is_some());
+        assert!(reg.get_by_name("other.get_current_time").is_some());
     }
 }

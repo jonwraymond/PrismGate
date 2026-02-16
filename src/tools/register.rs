@@ -95,6 +95,7 @@ pub async fn handle_register(
 
     let config = BackendConfig {
         transport,
+        namespace: None,
         command,
         args,
         env: obj
@@ -121,7 +122,9 @@ pub async fn handle_register(
         max_concurrent_calls: None,
         semaphore_timeout: std::time::Duration::from_secs(60),
         required_keys: Vec::new(),
+        retry: Default::default(),
         prerequisite: None,
+        rate_limit: None,
     };
 
     let tool_count = manager.add_backend(&name, config, registry).await?;
