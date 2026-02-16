@@ -163,7 +163,7 @@ Curated external research on building effective MCP servers, organized by topic.
 ## Observability & Telemetry
 
 ### OpenTelemetry: AI Agent Observability
-- **URL**: https://opentelemetry.io/blog/2025/ai-agent-observability/
+- **URL**: https://opentelemetry.io/docs/specs/semconv/gen-ai/
 - **Key finding**: Standard schema for tracking prompts, model responses, token usage, tool calls.
 - **Relevance**: Target standard for PrismGate's telemetry.
 

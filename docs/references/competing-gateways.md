@@ -31,7 +31,7 @@ Comparison of PrismGate with other MCP and AI gateways, based on research via de
 - Single-machine scaling (no horizontal distribution)
 - Designed for developer workstation use with Claude Code
 
-**Source**: [GitHub](https://github.com/jraymond/gatemini)
+**Source**: [GitHub](https://github.com/jonwraymond/PrismGate)
 
 ---
 

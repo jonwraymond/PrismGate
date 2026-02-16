@@ -38,7 +38,7 @@ Add spans to every tool call and discovery operation:
        └── [backend.call_tool] backend="exa" tool="web_search_exa" duration_ms=450
 ```
 
-**Span attributes** following [OpenTelemetry GenAI semantic conventions](https://opentelemetry.io/blog/2025/ai-agent-observability/):
+**Span attributes** following [OpenTelemetry GenAI semantic conventions](https://opentelemetry.io/docs/specs/semconv/gen-ai/):
 
 | Attribute | Type | Example |
 |-----------|------|---------|
@@ -201,7 +201,7 @@ let otel_layer = tracing_opentelemetry::layer().with_tracer(tracer);
 
 ## Sources
 
-- [OpenTelemetry AI Agent Observability](https://opentelemetry.io/blog/2025/ai-agent-observability/) -- OTel conventions for AI
+- [OpenTelemetry AI Agent Observability](https://opentelemetry.io/docs/specs/semconv/gen-ai/) -- OTel conventions for AI
 - [OTel LLM Observability Introduction](https://opentelemetry.io/blog/2024/llm-observability/) -- Foundational reference
 - [Datadog MCP Monitoring](https://www.datadoghq.com/blog/mcp-client-monitoring/) -- End-to-end MCP tracing
 - [Datadog OTel GenAI Conventions](https://www.datadoghq.com/blog/llm-otel-semantic-convention/) -- Standard schema
