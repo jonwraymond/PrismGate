@@ -449,7 +449,8 @@ impl ToolRegistry {
     /// (pre-namespace caches or backends with no collisions).
     pub fn snapshot(&self) -> HashMap<String, Vec<ToolEntry>> {
         let mut result: HashMap<String, Vec<ToolEntry>> = HashMap::new();
-        let mut seen: std::collections::HashSet<(String, String)> = std::collections::HashSet::new();
+        let mut seen: std::collections::HashSet<(String, String)> =
+            std::collections::HashSet::new();
         for entry in self.tools.iter() {
             let e = entry.value();
             let key = (e.backend_name.clone(), e.original_name.clone());
@@ -641,10 +642,7 @@ mod tests {
 
         // Search for "get_repo" should find both the bare and namespaced entries
         let results = reg.search("get repo", 10);
-        assert!(
-            !results.is_empty(),
-            "search should find namespaced tools"
-        );
+        assert!(!results.is_empty(), "search should find namespaced tools");
         // Should find entries with "get" and "repo" tokens
         assert!(results.iter().any(|r| r.name.contains("get_repo")));
     }
@@ -670,7 +668,7 @@ mod tests {
 
         // "similar" only in find_similar entries
         let results = reg.search("similar", 10);
-        assert!(results.len() >= 1);
+        assert!(!results.is_empty());
         assert!(results.iter().any(|r| r.original_name == "find_similar"));
     }
 
@@ -788,16 +786,32 @@ mod tests {
             "time",
             vec![make_entry("get_current_time", "Get current time", "time")],
         );
-        assert!(reg.get_by_name("get_current_time").is_some(), "bare name after first registration");
-        assert!(reg.get_by_name("time.get_current_time").is_some(), "namespaced after first registration");
+        assert!(
+            reg.get_by_name("get_current_time").is_some(),
+            "bare name after first registration"
+        );
+        assert!(
+            reg.get_by_name("time.get_current_time").is_some(),
+            "namespaced after first registration"
+        );
 
         // Second registration (live discovery) — same backend, same tools
         reg.register_backend_tools(
             "time",
-            vec![make_entry("get_current_time", "Get current time in a timezone", "time")],
+            vec![make_entry(
+                "get_current_time",
+                "Get current time in a timezone",
+                "time",
+            )],
         );
-        assert!(reg.get_by_name("get_current_time").is_some(), "bare name after re-registration");
-        assert!(reg.get_by_name("time.get_current_time").is_some(), "namespaced after re-registration");
+        assert!(
+            reg.get_by_name("get_current_time").is_some(),
+            "bare name after re-registration"
+        );
+        assert!(
+            reg.get_by_name("time.get_current_time").is_some(),
+            "namespaced after re-registration"
+        );
 
         // Should be 2 entries (1 namespaced + 1 bare), not false collision
         assert_eq!(reg.tool_count(), 2);
@@ -821,7 +835,10 @@ mod tests {
         );
 
         // Collision: bare name removed
-        assert!(reg.get_by_name("get_current_time").is_none(), "bare name should be gone (collision)");
+        assert!(
+            reg.get_by_name("get_current_time").is_none(),
+            "bare name should be gone (collision)"
+        );
         assert!(reg.get_by_name("time.get_current_time").is_some());
         assert!(reg.get_by_name("other.get_current_time").is_some());
 
@@ -830,7 +847,10 @@ mod tests {
             "time",
             vec![make_entry("get_current_time", "Get time updated", "time")],
         );
-        assert!(reg.get_by_name("get_current_time").is_none(), "bare name should still be gone after re-reg");
+        assert!(
+            reg.get_by_name("get_current_time").is_none(),
+            "bare name should still be gone after re-reg"
+        );
         assert!(reg.get_by_name("time.get_current_time").is_some());
         assert!(reg.get_by_name("other.get_current_time").is_some());
     }

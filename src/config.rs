@@ -267,7 +267,10 @@ pub struct HealthConfig {
     pub restart_window: Duration,
 
     /// Initial backoff duration for restart attempts. Default: 1s.
-    #[serde(default = "default_restart_initial_backoff", with = "humantime_duration")]
+    #[serde(
+        default = "default_restart_initial_backoff",
+        with = "humantime_duration"
+    )]
     pub restart_initial_backoff: Duration,
 
     /// Maximum backoff duration for restart attempts. Default: 30s.
@@ -1246,7 +1249,10 @@ health:
 backends: {}
 "#;
         let config: Config = serde_yaml_ng::from_str(yaml).unwrap();
-        assert_eq!(config.health.restart_initial_backoff, Duration::from_secs(2));
+        assert_eq!(
+            config.health.restart_initial_backoff,
+            Duration::from_secs(2)
+        );
         assert_eq!(config.health.restart_max_backoff, Duration::from_secs(60));
         assert_eq!(config.health.restart_timeout, Duration::from_secs(45));
         assert_eq!(config.health.recovery_multiplier, 5);

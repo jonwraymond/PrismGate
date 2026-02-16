@@ -312,10 +312,7 @@ impl BackendManager {
         let tool_count = tools.len();
 
         // Register in registry with namespace
-        let namespace = config
-            .namespace
-            .as_deref()
-            .unwrap_or(name);
+        let namespace = config.namespace.as_deref().unwrap_or(name);
         registry.register_backend_tools_namespaced(name, namespace, tools);
 
         // Store backend
@@ -360,8 +357,7 @@ impl BackendManager {
                     }
                 }
             });
-            self.rate_limiter_handles
-                .insert(name.to_string(), handle);
+            self.rate_limiter_handles.insert(name.to_string(), handle);
         }
 
         // Spawn reaper task for stdio backends — monitors child process and

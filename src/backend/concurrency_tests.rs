@@ -385,14 +385,7 @@ mod tests {
         let registry = ToolRegistry::new();
         let mock = MockBackend::new("replenish-test", Duration::ZERO);
 
-        insert_mock_with_config(
-            &manager,
-            &registry,
-            &mock,
-            Some(0),
-            Duration::from_secs(60),
-        )
-        .await;
+        insert_mock_with_config(&manager, &registry, &mock, Some(0), Duration::from_secs(60)).await;
 
         // Set up rate limiter: 2 calls per 200ms window
         let sem = Arc::new(tokio::sync::Semaphore::new(2));
@@ -419,15 +412,27 @@ mod tests {
 
         // Exhaust all permits
         let _ = manager
-            .call_tool("replenish-test", "echo_tool", Some(serde_json::json!({"n": 1})))
+            .call_tool(
+                "replenish-test",
+                "echo_tool",
+                Some(serde_json::json!({"n": 1})),
+            )
             .await;
         let _ = manager
-            .call_tool("replenish-test", "echo_tool", Some(serde_json::json!({"n": 2})))
+            .call_tool(
+                "replenish-test",
+                "echo_tool",
+                Some(serde_json::json!({"n": 2})),
+            )
             .await;
 
         // Should be rate limited now
         let r = manager
-            .call_tool("replenish-test", "echo_tool", Some(serde_json::json!({"n": 3})))
+            .call_tool(
+                "replenish-test",
+                "echo_tool",
+                Some(serde_json::json!({"n": 3})),
+            )
             .await;
         assert!(r.is_err(), "should be rate limited before replenishment");
 
@@ -436,7 +441,11 @@ mod tests {
 
         // Should succeed now
         let r = manager
-            .call_tool("replenish-test", "echo_tool", Some(serde_json::json!({"n": 4})))
+            .call_tool(
+                "replenish-test",
+                "echo_tool",
+                Some(serde_json::json!({"n": 4})),
+            )
             .await;
         assert!(r.is_ok(), "should succeed after replenishment");
     }
