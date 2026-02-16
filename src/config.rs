@@ -145,7 +145,8 @@ pub struct BackendConfig {
     #[serde(default)]
     pub max_concurrent_calls: Option<u32>,
 
-    /// Timeout for acquiring a call semaphore permit (seconds). Default: 60s.
+    /// Timeout for acquiring a call semaphore permit. Accepts humantime durations
+    /// (e.g., "60s", "5m"). Default: 60s.
     #[serde(default = "default_semaphore_timeout", with = "humantime_duration")]
     pub semaphore_timeout: Duration,
 
@@ -508,6 +509,12 @@ impl Config {
 
     /// Validate the configuration.
     fn validate(&self) -> Result<()> {
+        if self.sandbox.max_concurrent_sandboxes == 0 {
+            anyhow::bail!(
+                "sandbox.max_concurrent_sandboxes must be >= 1 (got 0, which would deadlock)"
+            );
+        }
+
         for (name, backend) in &self.backends {
             match backend.transport {
                 Transport::Stdio => {

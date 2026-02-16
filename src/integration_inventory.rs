@@ -23,8 +23,7 @@ mod tests {
     ) {
         crate::config::load_dotenv();
 
-        let config_path =
-            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("config/gatemini.yaml");
+        let config_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("config/gatemini.yaml");
         assert!(
             config_path.exists(),
             "config file not found: {}",
@@ -108,10 +107,7 @@ mod tests {
         let tool_count = registry.tool_count();
         eprintln!("Total tools discovered: {tool_count}");
 
-        assert!(
-            tool_count >= 300,
-            "expected >= 300 tools, got {tool_count}"
-        );
+        assert!(tool_count >= 300, "expected >= 300 tools, got {tool_count}");
 
         eprintln!(
             "Tool inventory: {tool_count} tools across {} backends",
@@ -179,10 +175,7 @@ mod tests {
             }
         }
 
-        assert!(
-            successes > 0,
-            "no backends were reachable: {failures:?}"
-        );
+        assert!(successes > 0, "no backends were reachable: {failures:?}");
 
         manager.stop_all().await;
     }

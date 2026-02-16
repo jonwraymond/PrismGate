@@ -20,8 +20,7 @@ mod tests {
         let mock = MockBackend::new("crosstalk-test", Duration::from_millis(50));
 
         // No semaphore limit — let all 20 run concurrently
-        insert_mock_with_config(&manager, &registry, &mock, Some(0), Duration::from_secs(60))
-            .await;
+        insert_mock_with_config(&manager, &registry, &mock, Some(0), Duration::from_secs(60)).await;
 
         let mut handles = Vec::new();
         for i in 0..20u32 {
@@ -110,8 +109,7 @@ mod tests {
         let registry = ToolRegistry::new();
         let mock = MockBackend::new("state-test", Duration::from_millis(300));
 
-        insert_mock_with_config(&manager, &registry, &mock, Some(0), Duration::from_secs(60))
-            .await;
+        insert_mock_with_config(&manager, &registry, &mock, Some(0), Duration::from_secs(60)).await;
 
         // Fire 10 slow calls
         let mut handles = Vec::new();
@@ -129,9 +127,8 @@ mod tests {
         // In-flight calls should still complete (they already have the Arc<dyn Backend>)
         let mut successes = 0;
         for h in handles {
-            match h.await.unwrap() {
-                Ok(_) => successes += 1,
-                Err(_) => {}
+            if h.await.unwrap().is_ok() {
+                successes += 1;
             }
         }
 
@@ -143,9 +140,7 @@ mod tests {
         );
 
         // New calls should fail immediately (Unhealthy state)
-        let result = manager
-            .call_tool("state-test", "echo_tool", None)
-            .await;
+        let result = manager.call_tool("state-test", "echo_tool", None).await;
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("not available"));
     }
@@ -158,8 +153,7 @@ mod tests {
         let registry = ToolRegistry::new();
         let mock = MockBackend::new("restart-test", Duration::from_millis(200));
 
-        insert_mock_with_config(&manager, &registry, &mock, Some(0), Duration::from_secs(60))
-            .await;
+        insert_mock_with_config(&manager, &registry, &mock, Some(0), Duration::from_secs(60)).await;
 
         // Also store the config so restart_backend can find it
         {
@@ -214,14 +208,7 @@ mod tests {
         let registry = ToolRegistry::new();
         let mock = MockBackend::new("backpressure-test", Duration::from_millis(200));
 
-        insert_mock_with_config(
-            &manager,
-            &registry,
-            &mock,
-            Some(3),
-            Duration::from_secs(60),
-        )
-        .await;
+        insert_mock_with_config(&manager, &registry, &mock, Some(3), Duration::from_secs(60)).await;
 
         let start = std::time::Instant::now();
         let mut handles = Vec::new();
@@ -265,8 +252,7 @@ mod tests {
         let registry = ToolRegistry::new();
         let mock = MockBackend::new("drain-test", Duration::from_millis(200));
 
-        insert_mock_with_config(&manager, &registry, &mock, Some(0), Duration::from_secs(60))
-            .await;
+        insert_mock_with_config(&manager, &registry, &mock, Some(0), Duration::from_secs(60)).await;
 
         // Fire 10 slow calls
         let mut handles = Vec::new();
@@ -304,8 +290,14 @@ mod tests {
         let registry = ToolRegistry::new();
         let mock_a = MockBackend::new("rapid-test", Duration::from_millis(200));
 
-        insert_mock_with_config(&manager, &registry, &mock_a, Some(0), Duration::from_secs(60))
-            .await;
+        insert_mock_with_config(
+            &manager,
+            &registry,
+            &mock_a,
+            Some(0),
+            Duration::from_secs(60),
+        )
+        .await;
 
         // Fire calls to mock_a
         let mut handles = Vec::new();
@@ -320,8 +312,14 @@ mod tests {
         tokio::time::sleep(Duration::from_millis(50)).await;
 
         let mock_b = MockBackend::new("rapid-test", Duration::ZERO);
-        insert_mock_with_config(&manager, &registry, &mock_b, Some(0), Duration::from_secs(60))
-            .await;
+        insert_mock_with_config(
+            &manager,
+            &registry,
+            &mock_b,
+            Some(0),
+            Duration::from_secs(60),
+        )
+        .await;
 
         // All tasks should complete without panic
         for h in handles {
@@ -330,7 +328,11 @@ mod tests {
 
         // New backend should be accessible
         let result = manager
-            .call_tool("rapid-test", "echo_tool", Some(serde_json::json!({"new": true})))
+            .call_tool(
+                "rapid-test",
+                "echo_tool",
+                Some(serde_json::json!({"new": true})),
+            )
             .await;
         assert!(result.is_ok());
     }

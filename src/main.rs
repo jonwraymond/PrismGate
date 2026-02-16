@@ -5,17 +5,17 @@ mod cli;
 mod config;
 #[cfg(feature = "semantic")]
 mod embeddings;
+#[cfg(test)]
+mod integration_inventory;
 mod ipc;
+#[cfg(test)]
+mod mcp_compliance_tests;
 mod prompts;
 mod registry;
 mod resources;
 mod sandbox;
 mod secrets;
 mod server;
-#[cfg(test)]
-mod integration_inventory;
-#[cfg(test)]
-mod mcp_compliance_tests;
 #[cfg(test)]
 mod testutil;
 mod tools;

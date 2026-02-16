@@ -5,8 +5,8 @@
 //! testing `BackendManager`, semaphores, and concurrency without real child
 //! processes or network connections.
 
-use std::sync::atomic::{AtomicBool, AtomicU8, AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU8, AtomicUsize, Ordering};
 use std::time::Duration;
 
 use anyhow::Result;
@@ -15,7 +15,7 @@ use serde_json::Value;
 use tokio::sync::Mutex;
 
 use crate::backend::{
-    Backend, BackendState, is_available_from_atomic, state_from_atomic, store_state, STATE_HEALTHY,
+    Backend, BackendState, STATE_HEALTHY, is_available_from_atomic, state_from_atomic, store_state,
 };
 use crate::registry::ToolEntry;
 
@@ -98,6 +98,7 @@ impl MockBackend {
     }
 
     /// Get the current number of in-flight calls.
+    #[allow(dead_code)]
     pub fn current_concurrent(&self) -> usize {
         self.concurrent_calls.load(Ordering::SeqCst)
     }
@@ -105,6 +106,17 @@ impl MockBackend {
     /// Get a snapshot of all recorded calls.
     pub async fn call_log(&self) -> Vec<(String, Option<Value>)> {
         self.call_log.lock().await.clone()
+    }
+}
+
+/// RAII guard that decrements an `AtomicUsize` counter on drop.
+/// Ensures the concurrent call counter stays accurate even if the
+/// future is cancelled (e.g., via `tokio::select!` or `abort()`).
+struct ConcurrencyGuard<'a>(&'a AtomicUsize);
+
+impl Drop for ConcurrencyGuard<'_> {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::SeqCst);
     }
 }
 
@@ -125,9 +137,13 @@ impl Backend for MockBackend {
     }
 
     async fn call_tool(&self, tool_name: &str, arguments: Option<Value>) -> Result<Value> {
-        // Track concurrent calls
+        // Track concurrent calls with RAII guard for cancellation safety.
+        // If this future is dropped (e.g., via abort or select!), the guard's
+        // Drop impl ensures the counter is decremented.
         let current = self.concurrent_calls.fetch_add(1, Ordering::SeqCst) + 1;
-        self.max_seen_concurrent.fetch_max(current, Ordering::SeqCst);
+        self.max_seen_concurrent
+            .fetch_max(current, Ordering::SeqCst);
+        let _guard = ConcurrencyGuard(&self.concurrent_calls);
 
         // Record the call
         self.call_log
@@ -137,7 +153,6 @@ impl Backend for MockBackend {
 
         // Check error injection (global or error_tool)
         if self.inject_error.load(Ordering::SeqCst) || tool_name == "error_tool" {
-            self.concurrent_calls.fetch_sub(1, Ordering::SeqCst);
             anyhow::bail!("injected error for tool '{}'", tool_name);
         }
 
@@ -158,7 +173,6 @@ impl Backend for MockBackend {
             _ => serde_json::json!({"tool": tool_name, "status": "ok"}),
         };
 
-        self.concurrent_calls.fetch_sub(1, Ordering::SeqCst);
         Ok(result)
     }
 
@@ -180,7 +194,7 @@ impl Backend for MockBackend {
 }
 
 /// Helper: insert a mock backend into a `BackendManager` and register its tools.
-/// Uses default transport settings (stdio: max 10 concurrent, 60s timeout).
+/// Uses no concurrency limit (unlimited) with a 60s semaphore timeout.
 pub async fn insert_mock(
     manager: &crate::backend::BackendManager,
     registry: &Arc<crate::registry::ToolRegistry>,
@@ -200,18 +214,19 @@ pub async fn insert_mock_with_config(
 ) {
     let tools = mock.discover_tools().await.unwrap();
     registry.register_backend_tools(mock.name(), tools);
-    manager
-        .backends
-        .insert(mock.name().to_string(), Arc::clone(mock) as Arc<dyn Backend>);
+    manager.backends.insert(
+        mock.name().to_string(),
+        Arc::clone(mock) as Arc<dyn Backend>,
+    );
 
     // Create semaphore if configured
-    if let Some(max) = max_concurrent {
-        if max > 0 {
-            manager.call_semaphores.insert(
-                mock.name().to_string(),
-                Arc::new(tokio::sync::Semaphore::new(max as usize)),
-            );
-        }
+    if let Some(max) = max_concurrent
+        && max > 0
+    {
+        manager.call_semaphores.insert(
+            mock.name().to_string(),
+            Arc::new(tokio::sync::Semaphore::new(max as usize)),
+        );
     }
     manager
         .semaphore_timeouts
@@ -226,7 +241,10 @@ mod tests {
     async fn test_mock_server_echo() {
         let mock = MockBackend::new("test", Duration::ZERO);
         let args = serde_json::json!({"message": "hello", "count": 42});
-        let result = mock.call_tool("echo_tool", Some(args.clone())).await.unwrap();
+        let result = mock
+            .call_tool("echo_tool", Some(args.clone()))
+            .await
+            .unwrap();
         assert_eq!(result, args);
     }
 
@@ -237,7 +255,10 @@ mod tests {
         let result = mock.call_tool("slow_tool", None).await.unwrap();
         let elapsed = start.elapsed();
 
-        assert!(elapsed >= Duration::from_millis(90), "delay too short: {elapsed:?}");
+        assert!(
+            elapsed >= Duration::from_millis(90),
+            "delay too short: {elapsed:?}"
+        );
         assert_eq!(result["status"], "completed");
     }
 
@@ -314,8 +335,7 @@ mod tests {
         let mock = MockBackend::new("sem-test", Duration::from_millis(500));
 
         // max=2: only 2 concurrent calls allowed
-        insert_mock_with_config(&manager, &registry, &mock, Some(2), Duration::from_secs(60))
-            .await;
+        insert_mock_with_config(&manager, &registry, &mock, Some(2), Duration::from_secs(60)).await;
 
         let mut handles = Vec::new();
         for i in 0..5u32 {
@@ -370,9 +390,7 @@ mod tests {
         tokio::time::sleep(Duration::from_millis(50)).await;
 
         // Second call should timeout waiting for permit
-        let result = manager
-            .call_tool("timeout-test", "echo_tool", None)
-            .await;
+        let result = manager.call_tool("timeout-test", "echo_tool", None).await;
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
         assert!(
@@ -393,7 +411,11 @@ mod tests {
         // No semaphore should be created by insert_mock (it doesn't set one by default)
         // Calls should proceed without semaphore
         let result = manager
-            .call_tool("defaults-test", "echo_tool", Some(serde_json::json!({"x": 1})))
+            .call_tool(
+                "defaults-test",
+                "echo_tool",
+                Some(serde_json::json!({"x": 1})),
+            )
             .await;
         assert!(result.is_ok());
     }
@@ -404,14 +426,16 @@ mod tests {
         let registry = crate::registry::ToolRegistry::new();
         let mock = MockBackend::new("cleanup-test", Duration::ZERO);
 
-        insert_mock_with_config(&manager, &registry, &mock, Some(5), Duration::from_secs(60))
-            .await;
+        insert_mock_with_config(&manager, &registry, &mock, Some(5), Duration::from_secs(60)).await;
 
         // Verify semaphore exists
         assert!(manager.call_semaphores.contains_key("cleanup-test"));
 
         // Remove backend
-        manager.remove_backend("cleanup-test", &registry).await.unwrap();
+        manager
+            .remove_backend("cleanup-test", &registry)
+            .await
+            .unwrap();
 
         // Semaphore should be cleaned up
         assert!(!manager.call_semaphores.contains_key("cleanup-test"));
@@ -425,8 +449,7 @@ mod tests {
         let mock = MockBackend::new("unlimited-test", Duration::from_millis(100));
 
         // max=0: no semaphore created
-        insert_mock_with_config(&manager, &registry, &mock, Some(0), Duration::from_secs(60))
-            .await;
+        insert_mock_with_config(&manager, &registry, &mock, Some(0), Duration::from_secs(60)).await;
 
         // No semaphore should exist
         assert!(!manager.call_semaphores.contains_key("unlimited-test"));
@@ -456,14 +479,7 @@ mod tests {
         let mock = MockBackend::new("error-release-test", Duration::ZERO);
 
         // max=1: only 1 concurrent call
-        insert_mock_with_config(
-            &manager,
-            &registry,
-            &mock,
-            Some(1),
-            Duration::from_secs(60),
-        )
-        .await;
+        insert_mock_with_config(&manager, &registry, &mock, Some(1), Duration::from_secs(60)).await;
 
         // Call that errors — should still release the permit
         let result = manager
@@ -473,7 +489,11 @@ mod tests {
 
         // Next call should succeed (permit was released)
         let result = manager
-            .call_tool("error-release-test", "echo_tool", Some(serde_json::json!({"ok": true})))
+            .call_tool(
+                "error-release-test",
+                "echo_tool",
+                Some(serde_json::json!({"ok": true})),
+            )
             .await;
         assert!(result.is_ok());
     }
@@ -533,7 +553,10 @@ mod tests {
             &semaphore,
         )
         .await;
-        assert!(result.is_ok(), "direct call should bypass sandbox: {result:?}");
+        assert!(
+            result.is_ok(),
+            "direct call should bypass sandbox: {result:?}"
+        );
     }
 
     #[tokio::test]

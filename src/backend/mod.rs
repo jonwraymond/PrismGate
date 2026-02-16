@@ -290,8 +290,10 @@ impl BackendManager {
                 Transport::StreamableHttp => DEFAULT_HTTP_MAX_CONCURRENT,
             });
         if max_calls > 0 {
-            self.call_semaphores
-                .insert(name.to_string(), Arc::new(Semaphore::new(max_calls as usize)));
+            self.call_semaphores.insert(
+                name.to_string(),
+                Arc::new(Semaphore::new(max_calls as usize)),
+            );
         }
         self.semaphore_timeouts
             .insert(name.to_string(), config.semaphore_timeout);
@@ -708,9 +710,8 @@ mod map_result_tests {
 
     #[test]
     fn test_json_text_content_is_parsed() {
-        let result = CallToolResult::success(vec![
-            Content::text(r#"{"id": 123, "title": "test"}"#),
-        ]);
+        let result =
+            CallToolResult::success(vec![Content::text(r#"{"id": 123, "title": "test"}"#)]);
         let value = map_call_tool_result(result);
         // Should be a parsed object, not a JSON string
         assert!(value.is_object());
@@ -720,9 +721,7 @@ mod map_result_tests {
 
     #[test]
     fn test_plain_text_content_stays_string() {
-        let result = CallToolResult::success(vec![
-            Content::text("Title: awaiting review"),
-        ]);
+        let result = CallToolResult::success(vec![Content::text("Title: awaiting review")]);
         let value = map_call_tool_result(result);
         // Should remain a string
         assert!(value.is_string());
@@ -731,9 +730,7 @@ mod map_result_tests {
 
     #[test]
     fn test_json_array_text_content_is_parsed() {
-        let result = CallToolResult::success(vec![
-            Content::text(r#"[1, 2, 3]"#),
-        ]);
+        let result = CallToolResult::success(vec![Content::text(r#"[1, 2, 3]"#)]);
         let value = map_call_tool_result(result);
         assert!(value.is_array());
     }
@@ -755,9 +752,7 @@ mod map_result_tests {
     #[test]
     fn test_bare_string_json_stays_string() {
         // A JSON string literal like "\"hello\"" should parse to Value::String("hello")
-        let result = CallToolResult::success(vec![
-            Content::text(r#""hello""#),
-        ]);
+        let result = CallToolResult::success(vec![Content::text(r#""hello""#)]);
         let value = map_call_tool_result(result);
         // JSON parse of "\"hello\"" → Value::String("hello"), same as before
         assert!(value.is_string());

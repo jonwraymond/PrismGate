@@ -9,8 +9,8 @@ mod tests {
     use std::sync::Arc;
     use std::time::Duration;
 
-    use rmcp::model::*;
     use rmcp::ServiceExt;
+    use rmcp::model::*;
     use tokio::sync::Semaphore;
 
     use crate::backend::BackendManager;
@@ -56,10 +56,10 @@ mod tests {
         });
 
         // Client side — handshake
-        let client_service = ()
-            .serve((client_read, client_write))
-            .await
-            .expect("client handshake failed");
+        let client_service =
+            ().serve((client_read, client_write))
+                .await
+                .expect("client handshake failed");
 
         let peer = client_service.peer().clone();
         // Keep the service alive in background
@@ -99,10 +99,7 @@ mod tests {
             }
         });
 
-        let client_service = ()
-            .serve((client_read, client_write))
-            .await
-            .expect("handshake failed");
+        let client_service = ().serve((client_read, client_write)).await.expect("handshake failed");
 
         // Verify peer info
         let peer_info = client_service.peer_info().expect("no peer info");
@@ -143,10 +140,7 @@ mod tests {
         let tools = peer.list_all_tools().await.unwrap();
 
         for tool in &tools {
-            assert!(
-                !tool.name.is_empty(),
-                "tool name should not be empty"
-            );
+            assert!(!tool.name.is_empty(), "tool name should not be empty");
             assert!(
                 tool.description.is_some(),
                 "tool '{}' should have a description",
@@ -178,7 +172,12 @@ mod tests {
             .call_tool(CallToolRequestParams {
                 meta: None,
                 name: "search_tools".to_string().into(),
-                arguments: Some(serde_json::json!({"task_description": "echo"}).as_object().unwrap().clone()),
+                arguments: Some(
+                    serde_json::json!({"task_description": "echo"})
+                        .as_object()
+                        .unwrap()
+                        .clone(),
+                ),
                 task: None,
             })
             .await
@@ -264,10 +263,10 @@ mod tests {
             .await;
 
         // Should either return an error result or a protocol error
-        match result {
-            Ok(r) => assert!(r.is_error.unwrap_or(false), "should be an error result"),
-            Err(_) => {} // Protocol error is also acceptable
+        if let Ok(r) = result {
+            assert!(r.is_error.unwrap_or(false), "should be an error result");
         }
+        // Protocol error (Err) is also acceptable — tool is still reachable
     }
 
     #[tokio::test]

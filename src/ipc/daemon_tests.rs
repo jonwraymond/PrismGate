@@ -10,15 +10,15 @@ mod tests {
     use std::sync::Arc;
     use std::time::Duration;
 
-    use rmcp::model::*;
     use rmcp::ServiceExt;
+    use rmcp::model::*;
     use tokio::net::UnixStream;
 
+    use crate::InitializedGateway;
     use crate::backend::BackendManager;
     use crate::config::{Config, DaemonConfig};
     use crate::registry::ToolRegistry;
     use crate::testutil::{MockBackend, insert_mock};
-    use crate::InitializedGateway;
 
     /// Build a minimal Config from defaults with a custom idle_timeout.
     fn test_config(idle_timeout: Duration) -> Config {
@@ -59,9 +59,7 @@ mod tests {
         };
 
         let sock = socket_path.clone();
-        let handle = tokio::spawn(async move {
-            crate::ipc::daemon::run(gw, Some(sock)).await
-        });
+        let handle = tokio::spawn(async move { crate::ipc::daemon::run(gw, Some(sock)).await });
 
         // Wait for socket to become available
         for _ in 0..50 {
@@ -97,8 +95,7 @@ mod tests {
     /// Daemon stays alive throughout.
     #[tokio::test]
     async fn test_multi_client_connect_disconnect() {
-        let (socket_path, daemon_handle, _mock, _tmp) =
-            spawn_test_daemon(Duration::ZERO).await; // No idle timeout
+        let (socket_path, daemon_handle, _mock, _tmp) = spawn_test_daemon(Duration::ZERO).await; // No idle timeout
 
         for _ in 0..5 {
             let (peer, service_handle) = connect_client(&socket_path).await;
@@ -124,8 +121,7 @@ mod tests {
     /// Assert all responses correct, no cross-client contamination.
     #[tokio::test]
     async fn test_concurrent_tool_calls_across_clients() {
-        let (socket_path, daemon_handle, _mock, _tmp) =
-            spawn_test_daemon(Duration::ZERO).await;
+        let (socket_path, daemon_handle, _mock, _tmp) = spawn_test_daemon(Duration::ZERO).await;
 
         let mut client_handles = Vec::new();
         for client_id in 0..3u32 {
@@ -176,8 +172,7 @@ mod tests {
     /// A's call should still complete.
     #[tokio::test]
     async fn test_client_disconnect_does_not_affect_others() {
-        let (socket_path, daemon_handle, _mock, _tmp) =
-            spawn_test_daemon(Duration::ZERO).await;
+        let (socket_path, daemon_handle, _mock, _tmp) = spawn_test_daemon(Duration::ZERO).await;
 
         // Client A: connect and start a tool call (takes some time due to search)
         let (peer_a, _service_a) = connect_client(&socket_path).await;
