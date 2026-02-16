@@ -49,11 +49,20 @@ pub async fn execute(
     std::thread::Builder::new()
         .name("gatemini-sandbox".to_string())
         .spawn(move || {
-            let result = run_sandbox(main_handle, manager, registry, tools, &code, timeout, heap_size);
+            let result = run_sandbox(
+                main_handle,
+                manager,
+                registry,
+                tools,
+                &code,
+                timeout,
+                heap_size,
+            );
             let _ = tx.send(result);
         })?;
 
-    rx.await.map_err(|_| anyhow::anyhow!("sandbox thread panicked"))?
+    rx.await
+        .map_err(|_| anyhow::anyhow!("sandbox thread panicked"))?
 }
 
 /// Run the sandboxed execution on a dedicated thread.
@@ -208,13 +217,12 @@ fn run_sandbox(
     let preamble = bridge::generate_preamble(&tools);
 
     // Wrap user code in an async main function if not already exported
-    let full_code = if code.contains("export default") || code.contains("export async function main") {
-        format!("{preamble}\n{code}")
-    } else {
-        format!(
-            "{preamble}\nexport default async function main() {{\n{code}\n}}",
-        )
-    };
+    let full_code =
+        if code.contains("export default") || code.contains("export async function main") {
+            format!("{preamble}\n{code}")
+        } else {
+            format!("{preamble}\nexport default async function main() {{\n{code}\n}}",)
+        };
 
     let module = Module::new("sandbox.ts", &full_code);
     let module_handle = runtime

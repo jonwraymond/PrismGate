@@ -121,9 +121,9 @@ impl SecretResolver {
             .get(provider_name)
             .with_context(|| format!("unknown secret provider: '{provider_name}'"))?;
 
-        let resolved = provider
-            .resolve(reference)
-            .with_context(|| format!("provider '{provider_name}' failed to resolve '{reference}'"))?;
+        let resolved = provider.resolve(reference).with_context(|| {
+            format!("provider '{provider_name}' failed to resolve '{reference}'")
+        })?;
 
         if self.strict && resolved.is_empty() {
             bail!(
@@ -203,10 +203,7 @@ mod tests {
                 "https://api.example.com?key=secretref:stub:project/dotenv/key/API_KEY&token=secretref:stub:project/dotenv/key/TOKEN",
             )
             .unwrap();
-        assert_eq!(
-            result,
-            "https://api.example.com?key=sk-12345&token=tok-abc"
-        );
+        assert_eq!(result, "https://api.example.com?key=sk-12345&token=tok-abc");
     }
 
     #[test]

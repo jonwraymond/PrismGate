@@ -1,9 +1,5 @@
 use anyhow::{Context, Result};
-use rmcp::{
-    ServiceExt,
-    model::*,
-    service::RunningService,
-};
+use rmcp::{ServiceExt, model::*, service::RunningService};
 use serde_json::Value;
 use std::process::Stdio;
 use std::sync::atomic::{AtomicU8, Ordering};
@@ -12,7 +8,10 @@ use tokio::sync::RwLock;
 use tracing::{debug, error, info, warn};
 
 use super::{Backend, BackendState, STATE_HEALTHY, STATE_STARTING, STATE_STOPPED};
-use super::{map_call_tool_result, map_tools_to_entries, state_from_atomic, is_available_from_atomic, store_state};
+use super::{
+    is_available_from_atomic, map_call_tool_result, map_tools_to_entries, state_from_atomic,
+    store_state,
+};
 use crate::config::BackendConfig;
 use crate::registry::ToolEntry;
 
@@ -100,21 +99,25 @@ impl Backend for StdioBackend {
         #[cfg(unix)]
         cmd.process_group(0);
 
-        let mut child = cmd.spawn()
+        let mut child = cmd
+            .spawn()
             .with_context(|| format!("failed to spawn backend '{}'", self.name))?;
 
         let pid = child.id();
         debug!(backend = %self.name, pid = ?pid, "spawned child process");
 
-        let stdout = child.stdout.take()
-            .ok_or_else(|| anyhow::anyhow!("failed to capture stdout from backend '{}'", self.name))?;
-        let stdin = child.stdin.take()
-            .ok_or_else(|| anyhow::anyhow!("failed to capture stdin from backend '{}'", self.name))?;
+        let stdout = child.stdout.take().ok_or_else(|| {
+            anyhow::anyhow!("failed to capture stdout from backend '{}'", self.name)
+        })?;
+        let stdin = child.stdin.take().ok_or_else(|| {
+            anyhow::anyhow!("failed to capture stdin from backend '{}'", self.name)
+        })?;
 
         // rmcp accepts (AsyncRead, AsyncWrite) tuples as IntoTransport
-        let service = ().serve((stdout, stdin)).await.with_context(|| {
-            format!("failed MCP handshake with backend '{}'", self.name)
-        })?;
+        let service = ()
+            .serve((stdout, stdin))
+            .await
+            .with_context(|| format!("failed MCP handshake with backend '{}'", self.name))?;
 
         if let Some(peer) = service.peer_info() {
             info!(
@@ -198,11 +201,7 @@ impl Backend for StdioBackend {
             .ok_or_else(|| anyhow::anyhow!("backend '{}' not started", self.name))?;
 
         let tools = service.list_all_tools().await.map_err(|e| {
-            anyhow::anyhow!(
-                "tool discovery on backend '{}' failed: {}",
-                self.name,
-                e
-            )
+            anyhow::anyhow!("tool discovery on backend '{}' failed: {}", self.name, e)
         })?;
 
         let entries = map_tools_to_entries(tools, &self.name);

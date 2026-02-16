@@ -58,9 +58,7 @@ impl StreamableHttpClient for LenientClient {
         auth_token: Option<String>,
     ) -> Result<(), StreamableHttpError<Self::Error>> {
         // Delegate directly
-        self.inner
-            .delete_session(uri, session_id, auth_token)
-            .await
+        self.inner.delete_session(uri, session_id, auth_token).await
     }
 
     async fn post_message(

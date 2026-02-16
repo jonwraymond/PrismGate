@@ -32,8 +32,7 @@ pub async fn handle_call_tool_chain(
     #[cfg(feature = "sandbox")]
     #[allow(clippy::needless_return)]
     {
-        let timeout_dur =
-            std::time::Duration::from_millis(timeout.unwrap_or(30_000));
+        let timeout_dur = std::time::Duration::from_millis(timeout.unwrap_or(30_000));
         let result = crate::sandbox::execute(
             registry,
             manager,
@@ -162,10 +161,17 @@ async fn call_tool_by_dotted_name(
             manager
                 .call_tool(&entry.backend_name, &tool_name, arguments)
                 .await
-                .with_context(|| format!("retry after restart: tool '{}' on '{}'", tool_name, entry.backend_name))?
+                .with_context(|| {
+                    format!(
+                        "retry after restart: tool '{}' on '{}'",
+                        tool_name, entry.backend_name
+                    )
+                })?
         }
         Err(e) => {
-            return Err(e).with_context(|| format!("tool '{}' on backend '{}'", tool_name, entry.backend_name));
+            return Err(e).with_context(|| {
+                format!("tool '{}' on backend '{}'", tool_name, entry.backend_name)
+            });
         }
     };
 

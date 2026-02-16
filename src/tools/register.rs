@@ -14,9 +14,7 @@ static BACKEND_NAME_RE: LazyLock<regex::Regex> =
 /// Validate a backend name against the safe character set.
 fn validate_backend_name(name: &str) -> Result<()> {
     if !BACKEND_NAME_RE.is_match(name) {
-        anyhow::bail!(
-            "invalid backend name '{name}': must match [a-zA-Z0-9][a-zA-Z0-9_-]{{0,63}}"
-        );
+        anyhow::bail!("invalid backend name '{name}': must match [a-zA-Z0-9][a-zA-Z0-9_-]{{0,63}}");
     }
     Ok(())
 }
@@ -61,7 +59,10 @@ pub async fn handle_register(
     };
 
     // Build BackendConfig from template
-    let command = obj.get("command").and_then(|v| v.as_str()).map(String::from);
+    let command = obj
+        .get("command")
+        .and_then(|v| v.as_str())
+        .map(String::from);
     let args: Vec<String> = obj
         .get("args")
         .and_then(|v| v.as_array())

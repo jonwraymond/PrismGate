@@ -131,9 +131,7 @@ pub fn handle_list_paginated(
     let mut names = registry.get_all_names();
     names.sort(); // Stable ordering for pagination
 
-    let start = cursor
-        .and_then(|c| c.parse::<usize>().ok())
-        .unwrap_or(0);
+    let start = cursor.and_then(|c| c.parse::<usize>().ok()).unwrap_or(0);
 
     let page: Vec<String> = names
         .into_iter()
@@ -211,18 +209,9 @@ mod tests {
             first_sentence("Search the web. Returns results in JSON format."),
             "Search the web."
         );
-        assert_eq!(
-            first_sentence("Search the web"),
-            "Search the web"
-        );
-        assert_eq!(
-            first_sentence("Search the web."),
-            "Search the web."
-        );
-        assert_eq!(
-            first_sentence("Search.\nMore info here."),
-            "Search."
-        );
+        assert_eq!(first_sentence("Search the web"), "Search the web");
+        assert_eq!(first_sentence("Search the web."), "Search the web.");
+        assert_eq!(first_sentence("Search.\nMore info here."), "Search.");
         // Long text without period
         let long = "a".repeat(250);
         let result = first_sentence(&long);

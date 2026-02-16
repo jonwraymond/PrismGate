@@ -3,7 +3,7 @@
 
 #[cfg(feature = "admin")]
 pub mod api {
-    use axum::{extract::State, routing::get, Json, Router};
+    use axum::{Json, Router, extract::State, routing::get};
     use serde::Serialize;
     use serde_json::Value;
     use std::sync::Arc;
@@ -20,7 +20,11 @@ pub mod api {
         pub backend_manager: Arc<BackendManager>,
     }
 
-    pub async fn start(state: AdminState, listen: &str, shutdown: Arc<Notify>) -> anyhow::Result<()> {
+    pub async fn start(
+        state: AdminState,
+        listen: &str,
+        shutdown: Arc<Notify>,
+    ) -> anyhow::Result<()> {
         let app = Router::new()
             .route("/api/health", get(health))
             .route("/api/backends", get(backends))
@@ -55,9 +59,7 @@ pub mod api {
         })
     }
 
-    async fn backends(
-        State(state): State<AdminState>,
-    ) -> Json<Vec<crate::backend::BackendStatus>> {
+    async fn backends(State(state): State<AdminState>) -> Json<Vec<crate::backend::BackendStatus>> {
         Json(state.backend_manager.get_all_status())
     }
 

@@ -77,8 +77,7 @@ impl BwsSdkProvider {
 
             for secret in &secrets_resp.data {
                 if let Some(project_id) = secret.project_id {
-                    secret_cache
-                        .insert((project_id, secret.key.clone()), secret.value.clone());
+                    secret_cache.insert((project_id, secret.key.clone()), secret.value.clone());
                 }
             }
         }
@@ -133,9 +132,7 @@ impl SecretProvider for BwsSdkProvider {
         self.secret_cache
             .get(&(*project_id, key.to_string()))
             .cloned()
-            .with_context(|| {
-                format!("BWS secret not found: project='{project_name}', key='{key}'")
-            })
+            .with_context(|| format!("BWS secret not found: project='{project_name}', key='{key}'"))
     }
 }
 
@@ -156,10 +153,7 @@ mod tests {
             (project_id, "API_KEY".to_string()),
             "sk-secret-123".to_string(),
         );
-        secret_cache.insert(
-            (project_id, "TOKEN".to_string()),
-            "tok-abc-456".to_string(),
-        );
+        secret_cache.insert((project_id, "TOKEN".to_string()), "tok-abc-456".to_string());
         secret_cache.insert(
             (project2_id, "DB_URL".to_string()),
             "postgres://prod:pass@db:5432".to_string(),
@@ -187,7 +181,12 @@ mod tests {
         let provider = make_provider();
         let result = provider.resolve("project/unknown/key/API_KEY");
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("project not found"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("project not found")
+        );
     }
 
     #[test]

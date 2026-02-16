@@ -59,10 +59,7 @@ pub async fn get_prompt(
                 .and_then(|args| args.get("task"))
                 .and_then(|v| v.as_str())
                 .ok_or_else(|| {
-                    McpError::invalid_params(
-                        "Required argument 'task' missing".to_string(),
-                        None,
-                    )
+                    McpError::invalid_params("Required argument 'task' missing".to_string(), None)
                 })?;
             Ok(find_tool_prompt(task, registry))
         }

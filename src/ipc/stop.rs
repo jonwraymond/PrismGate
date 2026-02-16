@@ -13,7 +13,10 @@ pub fn run() -> Result<()> {
     };
 
     if !socket::is_daemon_alive(&socket_path) {
-        println!("Daemon (PID {}) is not running. Cleaning up stale files.", pid);
+        println!(
+            "Daemon (PID {}) is not running. Cleaning up stale files.",
+            pid
+        );
         socket::cleanup_files(&socket_path);
         return Ok(());
     }
@@ -34,6 +37,9 @@ pub fn run() -> Result<()> {
         std::thread::sleep(std::time::Duration::from_millis(100));
     }
 
-    println!("Daemon did not stop within 5s. You may need to kill PID {} manually.", pid);
+    println!(
+        "Daemon did not stop within 5s. You may need to kill PID {} manually.",
+        pid
+    );
     Ok(())
 }

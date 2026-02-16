@@ -16,10 +16,7 @@ pub fn generate_preamble(tools: &[ToolEntry]) -> String {
     // Group tools by backend
     let mut by_backend: HashMap<&str, Vec<&ToolEntry>> = HashMap::new();
     for tool in tools {
-        by_backend
-            .entry(&tool.backend_name)
-            .or_default()
-            .push(tool);
+        by_backend.entry(&tool.backend_name).or_default().push(tool);
     }
 
     let mut preamble = String::with_capacity(4096);
