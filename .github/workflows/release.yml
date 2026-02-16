@@ -1,0 +1,197 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build-macos-intel:
+    name: Build macOS Intel
+    runs-on: macos-13
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-apple-darwin
+      - name: Build release binary
+        run: |
+          cargo build --locked --release --target x86_64-apple-darwin
+      - name: Package artifact
+        run: |
+          mkdir -p dist
+          cp target/x86_64-apple-darwin/release/gatemini dist/gatemini
+          tar -czf "dist/gatemini-${GITHUB_REF_NAME}-darwin-x86_64.tar.gz" -C dist gatemini
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-macos-intel
+          path: dist/*.tar.gz
+
+  build-macos-silicon:
+    name: Build macOS Apple Silicon
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin
+      - name: Build release binary
+        run: |
+          cargo build --locked --release --target aarch64-apple-darwin
+      - name: Package artifact
+        run: |
+          mkdir -p dist
+          cp target/aarch64-apple-darwin/release/gatemini dist/gatemini
+          tar -czf "dist/gatemini-${GITHUB_REF_NAME}-darwin-arm64.tar.gz" -C dist gatemini
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-macos-silicon
+          path: dist/*.tar.gz
+
+  build-windows:
+    name: Build Windows
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+      - name: Build release binary
+        run: |
+          cargo build --locked --release --target x86_64-pc-windows-msvc
+      - name: Package artifact
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Copy-Item "target\x86_64-pc-windows-msvc\release\gatemini.exe" -Destination "dist\gatemini.exe"
+          Compress-Archive -Path "dist\gatemini.exe" -DestinationPath "dist\gatemini-${env:GITHUB_REF_NAME}-windows-x86_64.zip" -Force
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-windows
+          path: dist\*.zip
+
+  build-linux-packages:
+    name: Build Linux + DEB + RPM
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-gnu
+      - name: Install package tooling
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y rpm
+          gem install --no-document fpm
+      - name: Build release binary
+        run: |
+          cargo build --locked --release --target x86_64-unknown-linux-gnu
+      - name: Package Linux artifacts
+        id: package
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#v}"
+          mkdir -p dist
+          cp target/x86_64-unknown-linux-gnu/release/gatemini dist/gatemini
+          tar -czf "dist/gatemini-${GITHUB_REF_NAME}-linux-x86_64.tar.gz" -C dist gatemini
+
+          mkdir -p pkg/usr/local/bin
+          cp target/x86_64-unknown-linux-gnu/release/gatemini pkg/usr/local/bin/gatemini
+
+          fpm -s dir -t deb -n gatemini -v "$VERSION" --iteration 1 \
+            --architecture amd64 \
+            --description "MCP gateway that aggregates tools from multiple backend MCP servers" \
+            --license MIT \
+            --maintainer "gatemini" \
+            --url "https://github.com/${{ github.repository }}" \
+            --package dist/gatemini_${VERSION}_amd64.deb \
+            -C pkg .
+
+          fpm -s dir -t rpm -n gatemini -v "$VERSION" --iteration 1 \
+            --architecture x86_64 \
+            --description "MCP gateway that aggregates tools from multiple backend MCP servers" \
+            --license MIT \
+            --maintainer "gatemini" \
+            --url "https://github.com/${{ github.repository }}" \
+            --package dist/gatemini-${VERSION}-1.x86_64.rpm \
+            -C pkg .
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-linux
+          path: dist/*
+
+  publish-release:
+    name: Publish GitHub Release
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs:
+      - build-macos-intel
+      - build-macos-silicon
+      - build-windows
+      - build-linux-packages
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          pattern: release-*
+          merge-multiple: true
+      - name: Create checksums
+        run: |
+          cd artifacts
+          sha256sum * > checksums.txt
+      - name: Create release and upload artifacts
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+
+  publish-nightly:
+    name: Publish Nightly (main)
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    needs:
+      - build-macos-intel
+      - build-macos-silicon
+      - build-windows
+      - build-linux-packages
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          pattern: release-*
+          merge-multiple: true
+      - name: Create checksums
+        run: |
+          cd artifacts
+          sha256sum * > checksums.txt
+      - name: Publish nightly release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="nightly"
+          CHECKSUM_FILE="artifacts/checksums.txt"
+          if gh release view "$TAG" -R "${{ github.repository }}"; then
+            gh release delete "$TAG" -y -R "${{ github.repository }}"
+          fi
+          gh release create "$TAG" \
+            --target "${{ github.sha }}" \
+            --title "Nightly (${GITHUB_SHA})" \
+            --prerelease \
+            --notes "Automated nightly build from main (git commit: ${GITHUB_SHA})." \
+            --repo "${{ github.repository }}" \
+            artifacts/*
