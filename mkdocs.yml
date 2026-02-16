@@ -1,0 +1,85 @@
+site_name: Gatemini
+site_description: Rust MCP gateway with progressive tool discovery
+repo_url: https://github.com/jraymond/gatemini
+repo_name: jraymond/gatemini
+
+theme:
+  name: material
+  palette:
+    - scheme: default
+      primary: deep purple
+      accent: amber
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - scheme: slate
+      primary: deep purple
+      accent: amber
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+  features:
+    - navigation.instant
+    - navigation.instant.progress
+    - navigation.tabs
+    - navigation.tabs.sticky
+    - navigation.sections
+    - navigation.indexes
+    - navigation.path
+    - toc.follow
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.code.annotate
+    - content.tabs.link
+  icon:
+    repo: fontawesome/brands/github
+
+plugins:
+  - search
+  - d2:
+      layout: elk
+      theme: 200
+      dark_theme: 200
+  - git-revision-date-localized:
+      enable_creation_date: true
+  - minify:
+      minify_html: true
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.tabbed:
+      alternate_style: true
+  - attr_list
+  - md_in_html
+  - toc:
+      permalink: true
+  - tables
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+
+nav:
+  - Home: README.md
+  - Architecture: architecture.md
+  - Tool Discovery: tool-discovery.md
+  - Token Efficiency: token-efficiency.md
+  - Sandbox: sandbox.md
+  - Backend Management: backend-management.md
+  - Secrets & Config: secrets-and-config.md
+  - Resources & Prompts: resources-and-prompts.md
+  - Telemetry: telemetry-strategy.md
+  - Benchmarks:
+      - Search Quality: benchmarks/search-quality.md
+      - Token Savings: benchmarks/token-savings.md
+  - References:
+      - MCP Best Practices: references/mcp-best-practices.md
+      - Competing Gateways: references/competing-gateways.md
