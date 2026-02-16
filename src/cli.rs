@@ -6,8 +6,9 @@ use std::path::PathBuf;
 /// Falls back to `.gatemini` in the current directory if home cannot be resolved.
 pub fn prismgate_home() -> PathBuf {
     dirs::config_dir()
-        .unwrap_or_else(dirs::data_dir)
-        .unwrap_or_else(|| dirs::home_dir().map(|h| h.join(".gatemini")).unwrap_or_else(|| PathBuf::from(".gatemini")))
+        .or_else(dirs::data_dir)
+        .or_else(|| dirs::home_dir().map(|h| h.join(".gatemini")))
+        .unwrap_or_else(|| PathBuf::from(".gatemini"))
         .join("gatemini")
 }
 
@@ -18,7 +19,8 @@ pub fn prismgate_cache_home() -> PathBuf {
     dirs::cache_dir()
         .or_else(dirs::config_dir)
         .or_else(dirs::data_dir)
-        .unwrap_or_else(|| dirs::home_dir().map(|h| h.join(".gatemini_cache")).unwrap_or_else(|| PathBuf::from(".gatemini_cache")))
+        .or_else(|| dirs::home_dir().map(|h| h.join(".gatemini_cache")))
+        .unwrap_or_else(|| PathBuf::from(".gatemini_cache"))
         .join("gatemini")
 }
 

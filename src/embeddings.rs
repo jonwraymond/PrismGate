@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::path::PathBuf;
 use std::sync::RwLock;
 
 use model2vec_rs::model::StaticModel;
@@ -24,33 +23,16 @@ pub struct EmbeddingIndex {
 impl EmbeddingIndex {
     /// Load an embedding model from a local path or HuggingFace Hub model ID.
     ///
-    /// For HF hub models (e.g., "minishlab/potion-base-8M"), the model is
-    /// auto-downloaded and cached locally on first use.
-    ///
-    /// Uses `hf_hub::ApiBuilder::from_env()` to respect `HF_HOME` for cache
-    /// location, working around `model2vec_rs` using `Api::new()` which ignores it.
+    /// For HF hub models (for example, `minishlab/potion-base-8M`), model2vec
+    /// handles first-use download and local caching on demand.
     pub fn new(model_path: &str) -> anyhow::Result<Self> {
         info!(model = model_path, "loading embedding model");
 
-        // If model_path looks like a HF Hub ID (contains '/'), pre-download
-        // the required files via the env-aware API so they land in the correct
-        // cache directory (respecting HF_HOME). Then pass the local snapshot
-        // path to from_pretrained.
-        let local_path: Option<PathBuf> = if model_path.contains('/') && !std::path::Path::new(model_path).exists() {
-            match Self::ensure_cached(model_path) {
-                Ok(path) => Some(path),
-                Err(e) => {
-                    tracing::warn!(error = %e, "failed to pre-cache model via hf-hub, falling back to model2vec default");
-                    None
-                }
-            }
-        } else {
-            None
-        };
-
-        let load_path = local_path.as_ref()
-            .map(|p| p.to_string_lossy().into_owned())
-            .unwrap_or_else(|| model_path.to_string());
+        // If model_path looks like a Hugging Face ID, the model file download
+        // is handled by model2vec. Keep env var overrides (`HF_HOME` /
+        // `HF_HUB_CACHE`) in `main.rs` so downloads are written to platform
+        // cache locations.
+        let load_path = model_path.to_string();
 
         let model = StaticModel::from_pretrained(&load_path, None, Some(true), None)
             .map_err(|e| anyhow::anyhow!("failed to load embedding model: {e}"))?;
@@ -59,34 +41,6 @@ impl EmbeddingIndex {
             model,
             embeddings: RwLock::new(HashMap::new()),
         })
-    }
-
-    /// Download model files using the env-aware `hf_hub` API.
-    ///
-    /// Returns the local snapshot directory path containing the model files.
-    /// Respects `HF_HOME` env var for cache location.
-    fn ensure_cached(model_id: &str) -> anyhow::Result<PathBuf> {
-        use hf_hub::api::sync::ApiBuilder;
-
-        let api = ApiBuilder::from_env()
-            .build()
-            .map_err(|e| anyhow::anyhow!("hf-hub API init failed: {e}"))?;
-        let repo = api.model(model_id.to_string());
-
-        // Download the three files model2vec needs
-        let _tok = repo.get("tokenizer.json")
-            .map_err(|e| anyhow::anyhow!("failed to download tokenizer.json: {e}"))?;
-        let _mdl = repo.get("model.safetensors")
-            .map_err(|e| anyhow::anyhow!("failed to download model.safetensors: {e}"))?;
-        let cfg = repo.get("config.json")
-            .map_err(|e| anyhow::anyhow!("failed to download config.json: {e}"))?;
-
-        // Return the parent directory (snapshot dir) as the local model path
-        let snapshot_dir = cfg.parent()
-            .ok_or_else(|| anyhow::anyhow!("config.json has no parent directory"))?;
-
-        info!(path = %snapshot_dir.display(), "model cached via hf-hub");
-        Ok(snapshot_dir.to_path_buf())
     }
 
     /// Embed text and L2-normalize the result.

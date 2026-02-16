@@ -154,7 +154,7 @@ jobs:
           "$FPM_BIN" -s dir -t deb -n gatemini -v "$VERSION" --iteration 1 \
             --architecture amd64 \
             --description "MCP gateway that aggregates tools from multiple backend MCP servers" \
-            --license MIT \
+            --license Apache-2.0 \
             --maintainer "gatemini" \
             --url "https://github.com/${{ github.repository }}" \
             --package dist/gatemini_${VERSION}_amd64.deb \
@@ -163,7 +163,7 @@ jobs:
           "$FPM_BIN" -s dir -t rpm -n gatemini -v "$VERSION" --iteration 1 \
             --architecture x86_64 \
             --description "MCP gateway that aggregates tools from multiple backend MCP servers" \
-            --license MIT \
+            --license Apache-2.0 \
             --maintainer "gatemini" \
             --url "https://github.com/${{ github.repository }}" \
             --package dist/gatemini-${VERSION}-1.x86_64.rpm \

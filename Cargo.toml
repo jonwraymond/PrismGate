@@ -2,6 +2,9 @@
 name = "gatemini"
 version = "0.3.0"
 edition = "2024"
+license = "Apache-2.0"
+description = "MCP gateway that multiplexes backend MCP servers through a shared daemon"
+repository = "https://github.com/jonwraymond/prismgate"
 
 [dependencies]
 # MCP protocol (client + server)
@@ -24,6 +27,7 @@ rustyscript = { version = "0.12", features = ["safe_extensions"], optional = tru
 
 # Semantic embedding search (optional)
 model2vec-rs = { version = "0.1", optional = true }
+hf-hub = { version = "0.4", features = ["ureq"], default-features = false, optional = true }
 
 # Serialization (pinned <1.0.220 for swc/rustyscript compat)
 serde = { version = ">=1.0.197, <1.0.220", features = ["derive"] }
@@ -92,4 +96,4 @@ tempfile = "3"
 default = ["admin", "sandbox", "semantic"]
 admin = ["dep:axum"]
 sandbox = ["dep:rustyscript"]
-semantic = ["dep:model2vec-rs"]
+semantic = ["dep:model2vec-rs", "dep:hf-hub"]
