@@ -16,6 +16,8 @@ Research confirms this is an industry-wide problem. Performance degrades after ~
 
 ## The Solution: 4-Step Progressive Disclosure
 
+![Progressive Disclosure Workflow](diagrams/discovery-flow.svg)
+
 ```
 Step 1: search_tools(brief=true)     ~60 tokens/result    "What tools exist?"
 Step 2: tool_info(detail="brief")    ~200 tokens           "Tell me more about this one"

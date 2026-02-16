@@ -370,9 +370,11 @@ impl BackendManager {
                         // Unhealthy or Stopped — fail immediately, no point retrying
                         _ => {
                             anyhow::bail!(
-                                "backend '{}' is not available (state: {:?})",
+                                "backend '{}' is not available (state: {:?}). \
+                                 Check status: @gatemini://backend/{}",
                                 backend_name,
-                                state
+                                state,
+                                backend_name
                             );
                         }
                     }
@@ -396,23 +398,28 @@ impl BackendManager {
             Some(BackendState::Starting) => {
                 anyhow::bail!(
                     "backend '{}' is still starting (retried {} times over ~3.5s). \
-                     The tool '{}' is cached but the backend hasn't connected yet.",
+                     Tool '{}' is cached but the backend hasn't connected yet. \
+                     Check status: @gatemini://backend/{}",
                     backend_name,
                     RETRY_DELAYS.len(),
-                    tool_name
+                    tool_name,
+                    backend_name
                 )
             }
             Some(state) => {
                 anyhow::bail!(
-                    "backend '{}' is not available (state: {:?})",
+                    "backend '{}' is not available (state: {:?}). \
+                     Check status: @gatemini://backend/{}",
                     backend_name,
-                    state
+                    state,
+                    backend_name
                 )
             }
             None => {
                 anyhow::bail!(
                     "backend '{}' not found after {} retries. \
-                     It may not be configured or failed to start.",
+                     It may not be configured or failed to start. \
+                     See all backends: @gatemini://backends",
                     backend_name,
                     RETRY_DELAYS.len()
                 )

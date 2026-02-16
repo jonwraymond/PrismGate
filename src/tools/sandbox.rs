@@ -147,11 +147,29 @@ async fn call_tool_by_dotted_name(
     }
 
     let result = manager
-        .call_tool(&entry.backend_name, &tool_name, arguments)
-        .await
-        .with_context(|| format!("tool '{}' on backend '{}'", tool_name, entry.backend_name))?;
+        .call_tool(&entry.backend_name, &tool_name, arguments.clone())
+        .await;
 
-    serde_json::to_string_pretty(&result)
+    let value = match result {
+        Ok(v) => v,
+        Err(e) if e.to_string().contains("not available") && e.to_string().contains("Stopped") => {
+            // Attempt on-demand restart and retry once
+            debug!(backend = %entry.backend_name, tool = %tool_name, "attempting on-demand restart for stopped backend");
+            manager
+                .restart_backend(&entry.backend_name, registry)
+                .await
+                .with_context(|| format!("on-demand restart of '{}' failed", entry.backend_name))?;
+            manager
+                .call_tool(&entry.backend_name, &tool_name, arguments)
+                .await
+                .with_context(|| format!("retry after restart: tool '{}' on '{}'", tool_name, entry.backend_name))?
+        }
+        Err(e) => {
+            return Err(e).with_context(|| format!("tool '{}' on backend '{}'", tool_name, entry.backend_name));
+        }
+    };
+
+    serde_json::to_string_pretty(&value)
         .map_err(|e| anyhow::anyhow!("failed to serialize tool result: {e}"))
 }
 

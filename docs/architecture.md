@@ -4,6 +4,8 @@ PrismGate uses a shared daemon model to multiplex backend MCP servers across mul
 
 ## Process Model
 
+![IPC & Process Model](diagrams/architecture.svg)
+
 ```
 Claude Code ──stdio──▸ gatemini (proxy) ──┐
 Claude Code ──stdio──▸ gatemini (proxy) ──┤ Unix socket

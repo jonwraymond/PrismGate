@@ -27,6 +27,24 @@ pub fn generate_preamble(tools: &[ToolEntry]) -> String {
     // Helper alias
     preamble.push_str("const __ct = rustyscript.async_functions['__call_tool'];\n\n");
 
+    // Node.js compatibility shim — catch common LLM mistakes with helpful errors
+    preamble.push_str(
+        "function require(module) {\n\
+         \x20 throw new Error(\n\
+         \x20   `require('${module}') is not available. This is an ES module sandbox, not Node.js.\\n` +\n\
+         \x20   `Available in this sandbox:\\n` +\n\
+         \x20   `  - Backend tools: const r = await backend_name.tool_name({args}); return r;\\n` +\n\
+         \x20   `  - Introspection: __getToolInterface('backend.tool')\\n` +\n\
+         \x20   `  - Standard JS: JSON, Math, Array, Object, Promise, async/await, console\\n` +\n\
+         \x20   `  - NO require(), import, fs, path, child_process, or network access`\n\
+         \x20 );\n\
+         }\n\
+         const process = undefined;\n\
+         const module = undefined;\n\
+         const exports = undefined;\n\
+         const Buffer = undefined;\n\n",
+    );
+
     // Generate backend accessor objects
     for (backend_name, backend_tools) in &by_backend {
         // Sanitize backend name for use as JS identifier
@@ -85,7 +103,7 @@ pub fn generate_preamble(tools: &[ToolEntry]) -> String {
 
 /// Sanitize a string into a valid JavaScript identifier.
 /// Replaces hyphens and other invalid chars with underscores.
-fn sanitize_identifier(name: &str) -> String {
+pub(crate) fn sanitize_identifier(name: &str) -> String {
     let mut result = String::with_capacity(name.len());
     for c in name.chars() {
         if c.is_ascii_alphanumeric() || c == '_' || c == '$' {
@@ -201,5 +219,26 @@ mod tests {
         let preamble = generate_preamble(&[]);
         assert!(preamble.contains("const __interfaces = {"));
         assert!(preamble.contains("function __getToolInterface"));
+    }
+
+    #[test]
+    fn test_generate_preamble_contains_require_shim() {
+        let preamble = generate_preamble(&[]);
+        assert!(
+            preamble.contains("function require(module)"),
+            "preamble should contain require() shim"
+        );
+        assert!(
+            preamble.contains("not available"),
+            "require shim should explain the error"
+        );
+        assert!(
+            preamble.contains("const process = undefined;"),
+            "preamble should neutralize Node.js globals"
+        );
+        assert!(
+            preamble.contains("const Buffer = undefined;"),
+            "preamble should neutralize Buffer"
+        );
     }
 }

@@ -4,6 +4,8 @@ PrismGate's `call_tool_chain` meta-tool lets AI agents execute TypeScript code t
 
 ## Three-Tier Execution Strategy
 
+![V8 Sandbox Execution Strategy](diagrams/sandbox-execution.svg)
+
 `call_tool_chain` uses a performance-optimized tiered approach:
 
 ```

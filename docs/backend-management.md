@@ -2,6 +2,8 @@
 
 PrismGate manages 30+ backend MCP servers through a concurrent lifecycle system with health monitoring, circuit breaking, and automatic recovery.
 
+![Backend Health & Circuit Breaker](diagrams/backend-lifecycle.svg)
+
 ## BackendManager
 
 **Source**: [`src/backend/mod.rs`](../src/backend/mod.rs)

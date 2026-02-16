@@ -2,6 +2,8 @@
 
 PrismGate's progressive disclosure system delivers 82-98% token savings compared to exposing tool definitions directly. This document presents measured data from the production tool registry.
 
+![Token Usage Comparison](diagrams/token-comparison.svg)
+
 ## Summary
 
 | Feature | Without PrismGate | With PrismGate | Savings |

@@ -10,7 +10,7 @@ use anyhow::Result;
 #[cfg(feature = "sandbox")]
 use serde_json::Value;
 #[cfg(feature = "sandbox")]
-use tracing::debug;
+use tracing::{debug, info, warn};
 
 #[cfg(feature = "sandbox")]
 use crate::backend::BackendManager;
@@ -119,6 +119,8 @@ fn run_sandbox(
                     };
 
                     // Dispatch to the main tokio runtime where rmcp services live
+                    let mgr_for_restart = mgr.clone();
+                    let args_for_retry = arguments.clone();
                     let bn = backend_name.clone();
                     let tn = tool_name.clone();
                     let result = handle
@@ -134,6 +136,44 @@ fn run_sandbox(
                         Ok(value) => Ok(value),
                         Err(e) => {
                             let err_str = e.to_string();
+
+                            // On-demand restart for stopped backends
+                            if err_str.contains("not available") && err_str.contains("Stopped") {
+                                info!(backend = %backend_name, tool = %tool_name,
+                                      "attempting on-demand restart for stopped backend");
+                                let restart_reg = reg.clone();
+                                let restart_bn = backend_name.clone();
+                                let restart_mgr = mgr_for_restart.clone();
+                                let restart_result = handle
+                                    .spawn(async move {
+                                        restart_mgr.restart_backend(&restart_bn, &restart_reg).await
+                                    })
+                                    .await
+                                    .map_err(|e| rustyscript::Error::Runtime(format!("restart join: {e}")))
+                                    .and_then(|r| r.map_err(|e| rustyscript::Error::Runtime(format!("restart failed: {e}"))));
+
+                                if let Ok(tool_count) = restart_result {
+                                    info!(backend = %backend_name, tools = tool_count, "on-demand restart succeeded, retrying call");
+                                    // Retry the tool call once
+                                    let retry_mgr = mgr_for_restart;
+                                    let retry_bn = backend_name.clone();
+                                    let retry_tn = tool_name.clone();
+                                    let retry_result = handle
+                                        .spawn(async move {
+                                            retry_mgr.call_tool(&retry_bn, &retry_tn, args_for_retry).await
+                                        })
+                                        .await
+                                        .map_err(|e| rustyscript::Error::Runtime(format!("retry join: {e}")))?;
+                                    return match retry_result {
+                                        Ok(value) => Ok(value),
+                                        Err(e) => Err(rustyscript::Error::Runtime(e.to_string())),
+                                    };
+                                } else {
+                                    warn!(backend = %backend_name, "on-demand restart failed, returning enhanced error");
+                                    // Intentionally falls through to the "not available" error enhancement below
+                                }
+                            }
+
                             // Enhance error if tool is cached but backend isn't ready
                             if (err_str.contains("not found") || err_str.contains("still starting"))
                                 && reg.get_by_name(&tool_name).is_some()
@@ -144,6 +184,18 @@ fn run_sandbox(
                                     backend_name, tool_name
                                 )));
                             }
+
+                            // Backend stopped or transport closed
+                            if err_str.contains("not available") || err_str.contains("Transport closed") {
+                                return Err(rustyscript::Error::Runtime(format!(
+                                    "Backend '{}' is not available for tool '{}'. \
+                                     The backend may have stopped or lost connection.\n\
+                                     To check status: load @gatemini://backend/{}\n\
+                                     To see all backends: load @gatemini://backends",
+                                    backend_name, tool_name, backend_name
+                                )));
+                            }
+
                             Err(rustyscript::Error::Runtime(err_str))
                         }
                     }
