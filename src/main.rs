@@ -43,8 +43,7 @@ pub async fn initialize(config_path: &Path) -> Result<InitializedGateway> {
     let mut config = config::Config::load(config_path)?;
 
     // Initialize tracing (logs to stderr so stdio transport is clean)
-    let filter =
-        EnvFilter::try_new(&config.log_level).unwrap_or_else(|_| EnvFilter::new("info"));
+    let filter = EnvFilter::try_new(&config.log_level).unwrap_or_else(|_| EnvFilter::new("info"));
     tracing_subscriber::fmt()
         .with_env_filter(filter)
         .with_writer(std::io::stderr)
@@ -186,8 +185,7 @@ async fn run_direct(gw: InitializedGateway) -> Result<()> {
     {
         let mut sigterm =
             tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
-        let mut sigint =
-            tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())?;
+        let mut sigint = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())?;
 
         tokio::select! {
             result = service.waiting() => {

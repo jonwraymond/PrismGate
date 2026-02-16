@@ -1,14 +1,14 @@
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use anyhow::Result;
 use tokio::net::UnixListener;
 use tracing::{error, info, warn};
 
+use crate::InitializedGateway;
 use crate::ipc::socket;
 use crate::server::GateminiServer;
-use crate::InitializedGateway;
 
 /// Run the daemon: bind a Unix socket and accept MCP client connections.
 ///
@@ -150,7 +150,9 @@ pub async fn run(gw: InitializedGateway, custom_socket: Option<PathBuf>) -> Resu
 
                 // After each iteration: keep timer pushed forward while clients are active.
                 if idle_enabled && active_sessions.load(Ordering::SeqCst) > 0 {
-                    idle_sleep.as_mut().reset(tokio::time::Instant::now() + idle_timeout);
+                    idle_sleep
+                        .as_mut()
+                        .reset(tokio::time::Instant::now() + idle_timeout);
                 }
             }
             Ok(())

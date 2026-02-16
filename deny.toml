@@ -1,0 +1,135 @@
+[advisories]
+version = 2
+ignore = [
+    # unic-* crates are unmaintained transitive deps from rustyscript/deno.
+    "RUSTSEC-2025-0075", # unic-char-range
+    "RUSTSEC-2025-0080", # unic-common
+    "RUSTSEC-2025-0081", # unic-char-property
+    "RUSTSEC-2025-0098", # unic-ucd-version
+    "RUSTSEC-2025-0100", # unic-ucd-ident
+
+    # Transitive deps from bitwarden-sdk and rustyscript/deno — no direct fix.
+    "RUSTSEC-2023-0071", # Marvin Attack in rsa crate (via bitwarden-crypto)
+    "RUSTSEC-2024-0436", # bincode unmaintained (via bitwarden-sm)
+    "RUSTSEC-2025-0119", # number_prefix unmaintained (via indicatif)
+    "RUSTSEC-2025-0141", # paste unmaintained (via bitwarden-error-macro)
+    "RUSTSEC-2026-0009", # DoS via stack exhaustion (transitive dep)
+]
+
+[licenses]
+version = 2
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "CC0-1.0",
+    "CDLA-Permissive-2.0",
+    "ISC",
+    "MPL-2.0",
+    "OpenSSL",
+    "Unicode-3.0",
+    "Zlib",
+]
+# Bitwarden SDK crates are GPL-3.0 per their GitHub repo.
+exceptions = [
+    { allow = ["GPL-3.0-only"], crate = "bitwarden" },
+    { allow = ["GPL-3.0-only"], crate = "bitwarden-api-api" },
+    { allow = ["GPL-3.0-only"], crate = "bitwarden-api-identity" },
+    { allow = ["GPL-3.0-only"], crate = "bitwarden-core" },
+    { allow = ["GPL-3.0-only"], crate = "bitwarden-crypto" },
+    { allow = ["GPL-3.0-only"], crate = "bitwarden-encoding" },
+    { allow = ["GPL-3.0-only"], crate = "bitwarden-error" },
+    { allow = ["GPL-3.0-only"], crate = "bitwarden-error-macro" },
+    { allow = ["GPL-3.0-only"], crate = "bitwarden-generators" },
+    { allow = ["GPL-3.0-only"], crate = "bitwarden-sm" },
+    { allow = ["GPL-3.0-only"], crate = "bitwarden-state" },
+    { allow = ["GPL-3.0-only"], crate = "bitwarden-threading" },
+    { allow = ["GPL-3.0-only"], crate = "bitwarden-uuid" },
+    { allow = ["GPL-3.0-only"], crate = "bitwarden-uuid-macro" },
+]
+
+# Bitwarden SDK crates have no SPDX license in Cargo.toml metadata.
+[[licenses.clarify]]
+crate = "bitwarden"
+expression = "GPL-3.0-only"
+license-files = []
+
+[[licenses.clarify]]
+crate = "bitwarden-api-api"
+expression = "GPL-3.0-only"
+license-files = []
+
+[[licenses.clarify]]
+crate = "bitwarden-api-identity"
+expression = "GPL-3.0-only"
+license-files = []
+
+[[licenses.clarify]]
+crate = "bitwarden-core"
+expression = "GPL-3.0-only"
+license-files = []
+
+[[licenses.clarify]]
+crate = "bitwarden-crypto"
+expression = "GPL-3.0-only"
+license-files = []
+
+[[licenses.clarify]]
+crate = "bitwarden-encoding"
+expression = "GPL-3.0-only"
+license-files = []
+
+[[licenses.clarify]]
+crate = "bitwarden-error"
+expression = "GPL-3.0-only"
+license-files = []
+
+[[licenses.clarify]]
+crate = "bitwarden-error-macro"
+expression = "GPL-3.0-only"
+license-files = []
+
+[[licenses.clarify]]
+crate = "bitwarden-generators"
+expression = "GPL-3.0-only"
+license-files = []
+
+[[licenses.clarify]]
+crate = "bitwarden-sm"
+expression = "GPL-3.0-only"
+license-files = []
+
+[[licenses.clarify]]
+crate = "bitwarden-state"
+expression = "GPL-3.0-only"
+license-files = []
+
+[[licenses.clarify]]
+crate = "bitwarden-threading"
+expression = "GPL-3.0-only"
+license-files = []
+
+[[licenses.clarify]]
+crate = "bitwarden-uuid"
+expression = "GPL-3.0-only"
+license-files = []
+
+[[licenses.clarify]]
+crate = "bitwarden-uuid-macro"
+expression = "GPL-3.0-only"
+license-files = []
+
+[[licenses.clarify]]
+crate = "gatemini"
+expression = "MIT"
+license-files = []
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"

@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use tokio::sync::Notify;
-use tokio::time::{timeout, Instant};
+use tokio::time::{Instant, timeout};
 use tracing::{debug, error, info, warn};
 
 use crate::backend::{BackendManager, BackendState};
@@ -204,7 +204,8 @@ pub async fn run_health_checker(
                         let recovery_window = config.interval * 3; // 3x check interval
                         if opened.elapsed() >= recovery_window {
                             debug!(backend = %status.name, "circuit half-open, probing");
-                            match timeout(config.timeout, manager.ping_backend(&status.name)).await {
+                            match timeout(config.timeout, manager.ping_backend(&status.name)).await
+                            {
                                 Ok(Ok(())) => {
                                     info!(backend = %status.name, "circuit breaker reset — backend recovered");
                                     health.record_success();
@@ -247,9 +248,14 @@ pub async fn run_health_checker(
 
                         if can_restart {
                             // Ensure prerequisite is running before restart
-                            if let Some(backend_config) = manager.get_backend_config(&status.name).await
+                            if let Some(backend_config) =
+                                manager.get_backend_config(&status.name).await
                                 && let Some(prereq) = &backend_config.prerequisite
-                                && let Err(e) = crate::backend::prerequisite::ensure_prerequisite(&status.name, prereq).await
+                                && let Err(e) = crate::backend::prerequisite::ensure_prerequisite(
+                                    &status.name,
+                                    prereq,
+                                )
+                                .await
                             {
                                 error!(backend = %status.name, error = %e, "prerequisite failed before restart");
                                 health.restart_count += 1;
@@ -265,7 +271,8 @@ pub async fn run_health_checker(
                             );
 
                             // Reset restart window if needed
-                            if health.restart_window_start
+                            if health
+                                .restart_window_start
                                 .map(|t| t.elapsed() > config.restart_window)
                                 .unwrap_or(true)
                             {
@@ -276,7 +283,9 @@ pub async fn run_health_checker(
                             match timeout(
                                 Duration::from_secs(30),
                                 manager.restart_backend(&status.name, &registry),
-                            ).await {
+                            )
+                            .await
+                            {
                                 Ok(Ok(tool_count)) => {
                                     info!(
                                         backend = %status.name,
@@ -375,7 +384,8 @@ pub async fn run_health_checker(
             // Ensure prerequisite is running before starting pending backend
             if let Some(backend_config) = manager.get_backend_config(name).await
                 && let Some(prereq) = &backend_config.prerequisite
-                && let Err(e) = crate::backend::prerequisite::ensure_prerequisite(name, prereq).await
+                && let Err(e) =
+                    crate::backend::prerequisite::ensure_prerequisite(name, prereq).await
             {
                 error!(backend = %name, error = %e, "prerequisite failed before pending backend start");
                 health.restart_count += 1;

@@ -2,7 +2,11 @@ use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
 #[derive(Parser)]
-#[command(name = "gatemini", version, about = "MCP gateway with meta-tool server")]
+#[command(
+    name = "gatemini",
+    version,
+    about = "MCP gateway with meta-tool server"
+)]
 pub struct Cli {
     /// Path to the configuration file.
     #[arg(short, long, default_value = "config/gatemini.yaml")]

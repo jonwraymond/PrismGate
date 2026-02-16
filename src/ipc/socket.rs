@@ -85,7 +85,6 @@ pub fn try_acquire_lock(socket: &Path) -> io::Result<fs::File> {
     Ok(file)
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;

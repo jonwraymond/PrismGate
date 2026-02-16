@@ -1,0 +1,149 @@
+direction: right
+
+title: Gatemini IPC & Process Model {
+  shape: text
+  near: top-center
+  style.font-size: 28
+  style.bold: true
+}
+
+# Claude Code sessions
+sessions: Claude Code Sessions {
+  style.fill: "#E3F2FD"
+  style.border-radius: 8
+
+  s1: Session 1 {
+    style.fill: "#BBDEFB"
+    style.border-radius: 4
+  }
+  s2: Session 2 {
+    style.fill: "#BBDEFB"
+    style.border-radius: 4
+  }
+  s3: Session 3 {
+    style.fill: "#BBDEFB"
+    style.border-radius: 4
+  }
+}
+
+# Proxy processes
+proxies: Proxy Processes {
+  style.fill: "#F3E5F5"
+  style.border-radius: 8
+
+  p1: gatemini (proxy) {
+    style.fill: "#CE93D8"
+    style.border-radius: 4
+  }
+  p2: gatemini (proxy) {
+    style.fill: "#CE93D8"
+    style.border-radius: 4
+  }
+  p3: gatemini (proxy) {
+    style.fill: "#CE93D8"
+    style.border-radius: 4
+  }
+}
+
+# Unix socket
+socket: Unix Socket {
+  shape: diamond
+  style.fill: "#FFF3E0"
+  style.font-size: 14
+  tooltip: "/tmp/gatemini-{UID}.sock"
+}
+
+# Shared daemon
+daemon: Shared Daemon {
+  style.fill: "#E8F5E9"
+  style.border-radius: 8
+  style.shadow: true
+
+  registry: Tool Registry {
+    style.fill: "#A5D6A7"
+    style.border-radius: 4
+  }
+  health: Health Checker {
+    style.fill: "#A5D6A7"
+    style.border-radius: 4
+  }
+  sandbox: V8 Sandbox {
+    style.fill: "#A5D6A7"
+    style.border-radius: 4
+  }
+}
+
+# Backend MCP servers
+backends: Backend MCP Servers {
+  style.fill: "#FFF9C4"
+  style.border-radius: 8
+
+  b1: exa {
+    style.fill: "#FFF176"
+    style.border-radius: 4
+  }
+  b2: tavily {
+    style.fill: "#FFF176"
+    style.border-radius: 4
+  }
+  b3: context7 {
+    style.fill: "#FFF176"
+    style.border-radius: 4
+  }
+  b4: "... 27+ more" {
+    style.fill: "#FFF176"
+    style.border-radius: 4
+    style.font-size: 12
+  }
+}
+
+# Connections
+sessions.s1 -> proxies.p1: stdio {
+  style.stroke: "#1565C0"
+}
+sessions.s2 -> proxies.p2: stdio {
+  style.stroke: "#1565C0"
+}
+sessions.s3 -> proxies.p3: stdio {
+  style.stroke: "#1565C0"
+}
+
+proxies.p1 -> socket {
+  style.stroke: "#7B1FA2"
+}
+proxies.p2 -> socket {
+  style.stroke: "#7B1FA2"
+}
+proxies.p3 -> socket {
+  style.stroke: "#7B1FA2"
+}
+
+socket -> daemon: {
+  style.stroke: "#2E7D32"
+  style.stroke-width: 3
+}
+
+daemon -> backends.b1: MCP {
+  style.stroke: "#F57F17"
+}
+daemon -> backends.b2: MCP {
+  style.stroke: "#F57F17"
+}
+daemon -> backends.b3: MCP {
+  style.stroke: "#F57F17"
+}
+daemon -> backends.b4: MCP {
+  style.stroke: "#F57F17"
+}
+
+# Annotations
+note1: |md
+  **Key benefits:**
+  - One daemon, many clients
+  - Backends shared across sessions
+  - Auto-start on first use
+  - Idle shutdown after 5m
+| {
+  near: bottom-center
+  style.font-size: 14
+}

@@ -12,12 +12,14 @@ pub struct SearchResult {
     pub backend: String,
 }
 
-/// Brief search result — name, backend, first sentence of description.
+/// Brief search result — name, backend, first sentence of description, call example.
 #[derive(Debug, Serialize)]
 pub struct BriefSearchResult {
     pub name: String,
     pub backend: String,
     pub description: String,
+    /// How to call this tool (backend tools are NOT direct MCP tools).
+    pub call: String,
 }
 
 /// Full tool info returned by tool_info (full mode).
@@ -29,13 +31,21 @@ pub struct ToolInfoResult {
     pub input_schema: Value,
 }
 
-/// Brief tool info — name, backend, first sentence of description, parameter names only.
+/// Brief tool info — name, backend, first sentence of description, parameter names, call example.
 #[derive(Debug, Serialize)]
 pub struct BriefToolInfoResult {
     pub name: String,
     pub backend: String,
     pub description: String,
     pub parameters: Vec<String>,
+    /// How to call this tool (backend tools are NOT direct MCP tools).
+    pub call: String,
+}
+
+/// Sanitize a name for use in a JS call example.
+/// Delegates to the shared `sanitize_identifier` which handles leading digits and empty strings.
+fn sanitize_js_name(name: &str) -> String {
+    crate::sandbox::bridge::sanitize_identifier(name)
 }
 
 /// Extract the first sentence from a description string.
@@ -96,10 +106,18 @@ pub fn handle_search_brief(
 ) -> Vec<BriefSearchResult> {
     search_tools(registry, query, limit)
         .into_iter()
-        .map(|e| BriefSearchResult {
-            name: e.name,
-            backend: e.backend_name,
-            description: first_sentence(&e.description),
+        .map(|e| {
+            let call = format!(
+                "call_tool_chain: await {}.{}({{...}})",
+                sanitize_js_name(&e.backend_name),
+                sanitize_js_name(&e.name)
+            );
+            BriefSearchResult {
+                name: e.name,
+                backend: e.backend_name,
+                description: first_sentence(&e.description),
+                call,
+            }
         })
         .collect()
 }
@@ -113,9 +131,7 @@ pub fn handle_list_paginated(
     let mut names = registry.get_all_names();
     names.sort(); // Stable ordering for pagination
 
-    let start = cursor
-        .and_then(|c| c.parse::<usize>().ok())
-        .unwrap_or(0);
+    let start = cursor.and_then(|c| c.parse::<usize>().ok()).unwrap_or(0);
 
     let page: Vec<String> = names
         .into_iter()
@@ -149,11 +165,17 @@ pub fn handle_tool_info_brief(
 ) -> Option<BriefToolInfoResult> {
     registry.get_by_name(tool_name).map(|e| {
         let parameters = extract_param_names(&e.input_schema);
+        let call = format!(
+            "call_tool_chain: await {}.{}({{...}})",
+            sanitize_js_name(&e.backend_name),
+            sanitize_js_name(&e.name)
+        );
         BriefToolInfoResult {
             name: e.name,
             backend: e.backend_name,
             description: first_sentence(&e.description),
             parameters,
+            call,
         }
     })
 }
@@ -187,18 +209,9 @@ mod tests {
             first_sentence("Search the web. Returns results in JSON format."),
             "Search the web."
         );
-        assert_eq!(
-            first_sentence("Search the web"),
-            "Search the web"
-        );
-        assert_eq!(
-            first_sentence("Search the web."),
-            "Search the web."
-        );
-        assert_eq!(
-            first_sentence("Search.\nMore info here."),
-            "Search."
-        );
+        assert_eq!(first_sentence("Search the web"), "Search the web");
+        assert_eq!(first_sentence("Search the web."), "Search the web.");
+        assert_eq!(first_sentence("Search.\nMore info here."), "Search.");
         // Long text without period
         let long = "a".repeat(250);
         let result = first_sentence(&long);
@@ -223,5 +236,34 @@ mod tests {
     fn test_extract_param_names_empty() {
         let schema = serde_json::json!({"type": "object"});
         assert_eq!(extract_param_names(&schema), Vec::<String>::new());
+    }
+
+    #[test]
+    fn test_sanitize_js_name_basic() {
+        assert_eq!(sanitize_js_name("exa"), "exa");
+        assert_eq!(sanitize_js_name("web_search"), "web_search");
+    }
+
+    #[test]
+    fn test_sanitize_js_name_hyphens() {
+        assert_eq!(sanitize_js_name("my-backend"), "my_backend");
+        assert_eq!(sanitize_js_name("web-search-exa"), "web_search_exa");
+    }
+
+    #[test]
+    fn test_sanitize_js_name_leading_digit() {
+        // Must prefix with underscore to be valid JS identifier
+        assert_eq!(sanitize_js_name("123api"), "_123api");
+    }
+
+    #[test]
+    fn test_sanitize_js_name_dots_and_special() {
+        assert_eq!(sanitize_js_name("my.tool"), "my_tool");
+        assert_eq!(sanitize_js_name("tool@v2"), "tool_v2");
+    }
+
+    #[test]
+    fn test_sanitize_js_name_empty() {
+        assert_eq!(sanitize_js_name(""), "_unnamed");
     }
 }

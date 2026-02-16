@@ -1,0 +1,136 @@
+direction: down
+
+title: V8 Sandbox Execution Strategy {
+  shape: text
+  near: top-center
+  style.font-size: 28
+  style.bold: true
+}
+
+# Input
+input: "call_tool_chain(code)" {
+  shape: parallelogram
+  style.fill: "#E8EAF6"
+  style.stroke: "#3949AB"
+  style.font-size: 18
+}
+
+# Tier 1: Direct JSON
+tier1: "Tier 1: Direct JSON Detection" {
+  style.fill: "#E8F5E9"
+  style.border-radius: 8
+
+  check1: "Is code a JSON object?" {
+    shape: diamond
+    style.fill: "#C8E6C9"
+  }
+
+  direct: "Direct tool call\n(no V8 needed)" {
+    style.fill: "#A5D6A7"
+    style.border-radius: 4
+    style.font-size: 14
+  }
+}
+
+# Tier 2: Simple TS parsing
+tier2: "Tier 2: Simple TS Parsing" {
+  style.fill: "#FFF3E0"
+  style.border-radius: 8
+
+  check2: "Single await\nbackend.tool(args)?" {
+    shape: diamond
+    style.fill: "#FFE0B2"
+  }
+
+  parse: "Extract & call directly\n(regex fast path)" {
+    style.fill: "#FFCC80"
+    style.border-radius: 4
+    style.font-size: 14
+  }
+}
+
+# Tier 3: V8 Sandbox
+tier3: "Tier 3: Full V8 Sandbox" {
+  style.fill: "#FCE4EC"
+  style.border-radius: 8
+
+  v8: "rustyscript V8 engine" {
+    style.fill: "#F48FB1"
+    style.border-radius: 4
+    style.font-size: 14
+  }
+
+  bridge: "tokio ↔ V8 bridge" {
+    style.fill: "#F48FB1"
+    style.border-radius: 4
+    style.font-size: 14
+  }
+
+  preamble: "JS preamble\n(backend.tool() functions)" {
+    style.fill: "#F48FB1"
+    style.border-radius: 4
+    style.font-size: 14
+  }
+}
+
+# Output
+output: "Result (JSON)" {
+  shape: parallelogram
+  style.fill: "#E8EAF6"
+  style.stroke: "#3949AB"
+  style.font-size: 18
+}
+
+# Flow
+input -> tier1.check1 {
+  style.stroke-width: 2
+}
+
+tier1.check1 -> tier1.direct: "yes" {
+  style.stroke: "#2E7D32"
+  style.stroke-width: 2
+}
+
+tier1.check1 -> tier2.check2: "no" {
+  style.stroke: "#EF6C00"
+}
+
+tier2.check2 -> tier2.parse: "yes" {
+  style.stroke: "#2E7D32"
+  style.stroke-width: 2
+}
+
+tier2.check2 -> tier3.v8: "no" {
+  style.stroke: "#C62828"
+}
+
+tier3.v8 -> tier3.preamble {
+  style.stroke: "#C62828"
+}
+tier3.preamble -> tier3.bridge {
+  style.stroke: "#C62828"
+}
+
+tier1.direct -> output {
+  style.stroke: "#2E7D32"
+  style.stroke-width: 2
+}
+tier2.parse -> output {
+  style.stroke: "#EF6C00"
+  style.stroke-width: 2
+}
+tier3.bridge -> output {
+  style.stroke: "#C62828"
+  style.stroke-width: 2
+}
+
+# Performance note
+perf: |md
+  **Performance (fastest → slowest):**
+  - Tier 1: ~0ms overhead (JSON passthrough)
+  - Tier 2: ~1ms (regex parse + direct call)
+  - Tier 3: ~50ms (V8 init + execution)
+| {
+  near: bottom-center
+  style.font-size: 13
+}

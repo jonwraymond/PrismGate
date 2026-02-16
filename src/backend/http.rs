@@ -14,7 +14,10 @@ use tracing::{debug, error, info, warn};
 
 use super::lenient_client::LenientClient;
 use super::{Backend, BackendState, STATE_HEALTHY, STATE_STARTING, STATE_STOPPED};
-use super::{map_call_tool_result, map_tools_to_entries, state_from_atomic, is_available_from_atomic, store_state};
+use super::{
+    is_available_from_atomic, map_call_tool_result, map_tools_to_entries, state_from_atomic,
+    store_state,
+};
 use crate::config::BackendConfig;
 use crate::registry::ToolEntry;
 
@@ -70,7 +73,10 @@ impl Backend for HttpBackend {
             if key.eq_ignore_ascii_case("Authorization") {
                 continue;
             }
-            match (key.parse::<reqwest::header::HeaderName>(), value.parse::<reqwest::header::HeaderValue>()) {
+            match (
+                key.parse::<reqwest::header::HeaderName>(),
+                value.parse::<reqwest::header::HeaderValue>(),
+            ) {
                 (Ok(name), Ok(val)) => {
                     default_headers.insert(name, val);
                 }

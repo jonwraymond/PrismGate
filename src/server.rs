@@ -185,7 +185,9 @@ impl GateminiServer {
         }
     }
 
-    #[tool(description = "Searches for relevant tools based on a task description. Covers: web search (tavily, exa, zai), code intelligence (auggie, serena, octocode), browser automation (playwright, chrome-devtools), AI models (cerebras, pal, minimax), databases (supabase), file processing (repomix, firecrawl), docs (context7, deepwiki, ref), and more. Default: brief=true for compact results.")]
+    #[tool(
+        description = "Searches for relevant tools based on a task description. Covers: web search (tavily, exa, zai), code intelligence (auggie, serena, octocode), browser automation (playwright, chrome-devtools), AI models (cerebras, pal, minimax), databases (supabase), file processing (repomix, firecrawl), docs (context7, deepwiki, ref), and more. Default: brief=true for compact results."
+    )]
     async fn search_tools(
         &self,
         Parameters(params): Parameters<SearchToolsParams>,
@@ -228,7 +230,9 @@ impl GateminiServer {
         Ok(CallToolResult::success(vec![Content::text(json)]))
     }
 
-    #[tool(description = "Get complete information about a specific tool including its input schema.")]
+    #[tool(
+        description = "Get complete information about a specific tool including its input schema."
+    )]
     async fn tool_info(
         &self,
         Parameters(params): Parameters<ToolInfoParams>,
@@ -288,7 +292,9 @@ impl GateminiServer {
         }
     }
 
-    #[tool(description = "Execute TypeScript code with direct access to all registered tools as hierarchical functions (e.g., manual.tool()).")]
+    #[tool(
+        description = "Execute TypeScript code with direct access to all registered tools as hierarchical functions (e.g., manual.tool())."
+    )]
     async fn call_tool_chain(
         &self,
         Parameters(params): Parameters<CallToolChainParams>,
@@ -321,7 +327,9 @@ impl ServerHandler for GateminiServer {
                 .build(),
             server_info: Implementation::from_build_env(),
             instructions: Some(
-                "gatemini is an MCP gateway that aggregates tools from multiple backend MCP servers. Use search_tools to find tools, tool_info for details, and call_tool_chain to execute TypeScript code that calls backend tools.\n\n\
+                "gatemini is an MCP gateway that aggregates tools from multiple backend MCP servers.\n\n\
+                 IMPORTANT: Backend tools (e.g. firecrawl_search, web_search_exa) are NOT direct MCP tools. \
+                 Do NOT call them directly. They MUST be called via call_tool_chain.\n\n\
                  ## Discovery Workflow (use progressive disclosure to save context)\n\
                  1. search_tools(\"your task\") → brief results by default (~60 tokens/result)\n\
                  2. tool_info(\"name\") → brief: name, backend, description, param names (~200 tokens)\n\
@@ -342,6 +350,12 @@ impl ServerHandler for GateminiServer {
                  - /mcp__gatemini__discover → guided progressive discovery walkthrough\n\
                  - /mcp__gatemini__find_tool → search + top match's full schema + execution example\n\
                  - /mcp__gatemini__backend_status → health/status table for all backends\n\n\
+                 ## call_tool_chain Sandbox\n\
+                 - ES module sandbox (V8) — NO require(), import, fs, path, or Node.js APIs\n\
+                 - Tools as functions: `const r = await backend.tool_name({params}); return r;`\n\
+                 - Introspection: `__getToolInterface('backend.tool')` returns schema\n\
+                 - Standard JS only: JSON, Math, Array, Object, Promise, async/await, console\n\
+                 - If a backend is stopped, the tool call will auto-restart it\n\n\
                  ## Example: Find and use a web search tool\n\
                  ```\n\
                  search_tools(\"web search\")           → [{name: \"web_search_exa\", backend: \"exa\", ...}]\n\
@@ -386,9 +400,7 @@ impl ServerHandler for GateminiServer {
     ) -> impl std::future::Future<Output = Result<ReadResourceResult, McpError>> + Send + '_ {
         let registry = Arc::clone(&self.registry);
         let backend_manager = Arc::clone(&self.backend_manager);
-        async move {
-            crate::resources::read_resource(&request.uri, &registry, &backend_manager).await
-        }
+        async move { crate::resources::read_resource(&request.uri, &registry, &backend_manager).await }
     }
 
     fn list_prompts(
@@ -411,8 +423,13 @@ impl ServerHandler for GateminiServer {
         let registry = Arc::clone(&self.registry);
         let backend_manager = Arc::clone(&self.backend_manager);
         async move {
-            crate::prompts::get_prompt(&request.name, request.arguments, &registry, &backend_manager)
-                .await
+            crate::prompts::get_prompt(
+                &request.name,
+                request.arguments,
+                &registry,
+                &backend_manager,
+            )
+            .await
         }
     }
 

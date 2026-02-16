@@ -60,7 +60,7 @@ impl ToolRegistry {
 
         // Insert into DashMap first (source of truth for search results)
         #[cfg(feature = "semantic")]
-        let tools_for_embedding: Vec<ToolEntry> = tools.iter().cloned().collect();
+        let tools_for_embedding: Vec<ToolEntry> = tools.to_vec();
 
         for tool in tools {
             self.tools.insert(tool.name.clone(), tool);
@@ -150,8 +150,7 @@ impl ToolRegistry {
         }
 
         // Average document length
-        let avgdl: f64 =
-            corpus.iter().map(|(_, t)| t.len() as f64).sum::<f64>() / n;
+        let avgdl: f64 = corpus.iter().map(|(_, t)| t.len() as f64).sum::<f64>() / n;
 
         // Document frequency: how many docs contain each query term
         let mut df: HashMap<&str, f64> = HashMap::new();
@@ -175,7 +174,10 @@ impl ToolRegistry {
                 // Term frequencies in this doc
                 let mut tf: HashMap<&str, f64> = HashMap::new();
                 for term in &query_terms {
-                    let count = tokens.iter().filter(|t| t.as_str() == term.as_str()).count();
+                    let count = tokens
+                        .iter()
+                        .filter(|t| t.as_str() == term.as_str())
+                        .count();
                     tf.insert(term.as_str(), count as f64);
                 }
 
@@ -237,10 +239,7 @@ impl ToolRegistry {
     /// Get all backend names.
     #[allow(dead_code)]
     pub fn get_backend_names(&self) -> Vec<String> {
-        self.backend_tools
-            .iter()
-            .map(|r| r.key().clone())
-            .collect()
+        self.backend_tools.iter().map(|r| r.key().clone()).collect()
     }
 
     /// Hybrid BM25 + semantic search using Reciprocal Rank Fusion (RRF).
@@ -269,13 +268,11 @@ impl ToolRegistry {
         let mut rrf_scores: HashMap<String, f64> = HashMap::new();
 
         for (rank, entry) in bm25_results.iter().enumerate() {
-            *rrf_scores.entry(entry.name.clone()).or_default() +=
-                1.0 / (RRF_K + rank as f64 + 1.0);
+            *rrf_scores.entry(entry.name.clone()).or_default() += 1.0 / (RRF_K + rank as f64 + 1.0);
         }
 
         for (rank, (name, _similarity)) in semantic_results.iter().enumerate() {
-            *rrf_scores.entry(name.clone()).or_default() +=
-                1.0 / (RRF_K + rank as f64 + 1.0);
+            *rrf_scores.entry(name.clone()).or_default() += 1.0 / (RRF_K + rank as f64 + 1.0);
         }
 
         // Sort by combined RRF score descending
@@ -366,10 +363,7 @@ mod tests {
     #[test]
     fn test_remove_backend() {
         let reg = ToolRegistry::new();
-        reg.register_backend_tools(
-            "exa",
-            vec![make_entry("web_search", "Search", "exa")],
-        );
+        reg.register_backend_tools("exa", vec![make_entry("web_search", "Search", "exa")]);
         reg.register_backend_tools(
             "tavily",
             vec![make_entry("tavily_search", "Search with Tavily", "tavily")],
@@ -394,7 +388,11 @@ mod tests {
         );
         reg.register_backend_tools(
             "tavily",
-            vec![make_entry("tavily_search", "Web search via Tavily", "tavily")],
+            vec![make_entry(
+                "tavily_search",
+                "Web search via Tavily",
+                "tavily",
+            )],
         );
 
         // "search" appears in web_search (name+desc) and tavily_search (name+desc)
@@ -438,7 +436,11 @@ mod tests {
             vec![
                 make_entry("list_files", "List all files in a directory", "backend"),
                 make_entry("search_code", "Search through code for patterns", "backend"),
-                make_entry("delete_file", "Delete a file from the filesystem", "backend"),
+                make_entry(
+                    "delete_file",
+                    "Delete a file from the filesystem",
+                    "backend",
+                ),
             ],
         );
 
@@ -464,9 +466,17 @@ mod tests {
         reg.register_backend_tools(
             "backend",
             vec![
-                make_entry("get_current_time", "Get current time in a specific timezone", "backend"),
+                make_entry(
+                    "get_current_time",
+                    "Get current time in a specific timezone",
+                    "backend",
+                ),
                 make_entry("convert_time", "Convert time between timezones", "backend"),
-                make_entry("get_weather", "Get current weather for a location", "backend"),
+                make_entry(
+                    "get_weather",
+                    "Get current weather for a location",
+                    "backend",
+                ),
             ],
         );
 

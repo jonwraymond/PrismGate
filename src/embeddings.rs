@@ -124,12 +124,18 @@ impl EmbeddingIndex {
     /// Number of currently stored embeddings.
     #[allow(dead_code)]
     pub fn len(&self) -> usize {
-        self.embeddings.read().expect("embedding lock poisoned").len()
+        self.embeddings
+            .read()
+            .expect("embedding lock poisoned")
+            .len()
     }
 
     /// Whether the embedding store is empty.
     pub fn is_empty(&self) -> bool {
-        self.embeddings.read().expect("embedding lock poisoned").is_empty()
+        self.embeddings
+            .read()
+            .expect("embedding lock poisoned")
+            .is_empty()
     }
 }
 

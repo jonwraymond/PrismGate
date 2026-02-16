@@ -11,8 +11,8 @@ use rmcp::model::{CallToolResult, RawContent};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashSet;
-use std::sync::atomic::{AtomicU8, AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU8, AtomicUsize, Ordering};
 use std::time::Duration;
 use tokio::sync::RwLock;
 use tracing::{debug, error, info, warn};
@@ -45,7 +45,10 @@ pub(crate) fn map_call_tool_result(result: CallToolResult) -> Value {
 }
 
 /// Map rmcp Tool list to ToolEntry vec.
-pub(crate) fn map_tools_to_entries(tools: Vec<rmcp::model::Tool>, backend_name: &str) -> Vec<ToolEntry> {
+pub(crate) fn map_tools_to_entries(
+    tools: Vec<rmcp::model::Tool>,
+    backend_name: &str,
+) -> Vec<ToolEntry> {
     tools
         .into_iter()
         .map(|t| ToolEntry {
@@ -196,10 +199,7 @@ impl BackendManager {
         // Wait for all backends to start
         while join_set.join_next().await.is_some() {}
 
-        info!(
-            backends = self.backends.len(),
-            "all backends started"
-        );
+        info!(backends = self.backends.len(), "all backends started");
 
         Ok(())
     }
@@ -348,7 +348,10 @@ impl BackendManager {
 
         for (attempt, delay) in RETRY_DELAYS.iter().enumerate() {
             // Check if backend exists in the DashMap
-            let backend = self.backends.get(backend_name).map(|r| Arc::clone(r.value()));
+            let backend = self
+                .backends
+                .get(backend_name)
+                .map(|r| Arc::clone(r.value()));
 
             match backend {
                 Some(b) => {
@@ -370,9 +373,11 @@ impl BackendManager {
                         // Unhealthy or Stopped — fail immediately, no point retrying
                         _ => {
                             anyhow::bail!(
-                                "backend '{}' is not available (state: {:?})",
+                                "backend '{}' is not available (state: {:?}). \
+                                 Check status: @gatemini://backend/{}",
                                 backend_name,
-                                state
+                                state,
+                                backend_name
                             );
                         }
                     }
@@ -396,23 +401,28 @@ impl BackendManager {
             Some(BackendState::Starting) => {
                 anyhow::bail!(
                     "backend '{}' is still starting (retried {} times over ~3.5s). \
-                     The tool '{}' is cached but the backend hasn't connected yet.",
+                     Tool '{}' is cached but the backend hasn't connected yet. \
+                     Check status: @gatemini://backend/{}",
                     backend_name,
                     RETRY_DELAYS.len(),
-                    tool_name
+                    tool_name,
+                    backend_name
                 )
             }
             Some(state) => {
                 anyhow::bail!(
-                    "backend '{}' is not available (state: {:?})",
+                    "backend '{}' is not available (state: {:?}). \
+                     Check status: @gatemini://backend/{}",
                     backend_name,
-                    state
+                    state,
+                    backend_name
                 )
             }
             None => {
                 anyhow::bail!(
                     "backend '{}' not found after {} retries. \
-                     It may not be configured or failed to start.",
+                     It may not be configured or failed to start. \
+                     See all backends: @gatemini://backends",
                     backend_name,
                     RETRY_DELAYS.len()
                 )
@@ -515,11 +525,7 @@ impl BackendManager {
     }
 
     /// Restart a backend: stop it, re-read config, start fresh, re-discover tools.
-    pub async fn restart_backend(
-        &self,
-        name: &str,
-        registry: &Arc<ToolRegistry>,
-    ) -> Result<usize> {
+    pub async fn restart_backend(&self, name: &str, registry: &Arc<ToolRegistry>) -> Result<usize> {
         // Stop old backend
         if let Some((_, backend)) = self.backends.remove(name)
             && let Err(e) = backend.stop().await

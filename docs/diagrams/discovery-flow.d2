@@ -1,0 +1,152 @@
+direction: down
+
+title: Progressive Disclosure Workflow {
+  shape: text
+  near: top-center
+  style.font-size: 28
+  style.bold: true
+}
+
+# Steps
+step1: "1. search_tools(query)" {
+  shape: step
+  style.fill: "#E8EAF6"
+  style.border-radius: 8
+  style.font-size: 18
+}
+
+cost1: "~60 tokens/result" {
+  shape: text
+  style.font-size: 14
+  style.font-color: "#5C6BC0"
+  style.bold: true
+}
+
+detail1: |md
+  BM25 keyword search
+  Returns: name, backend, first sentence
+| {
+  style.font-size: 12
+}
+
+step2: "2. tool_info(name, brief)" {
+  shape: step
+  style.fill: "#E0F2F1"
+  style.border-radius: 8
+  style.font-size: 18
+}
+
+cost2: "~200 tokens" {
+  shape: text
+  style.font-size: 14
+  style.font-color: "#00897B"
+  style.bold: true
+}
+
+detail2: |md
+  Name, backend, description
+  Parameter names only
+| {
+  style.font-size: 12
+}
+
+step3: "3. tool_info(name, full)" {
+  shape: step
+  style.fill: "#FFF3E0"
+  style.border-radius: 8
+  style.font-size: 18
+}
+
+cost3: "~800 tokens" {
+  shape: text
+  style.font-size: 14
+  style.font-color: "#EF6C00"
+  style.bold: true
+}
+
+detail3: |md
+  Complete JSON schema
+  Full descriptions, types, defaults
+| {
+  style.font-size: 12
+}
+
+step4: "4. call_tool_chain(code)" {
+  shape: step
+  style.fill: "#FCE4EC"
+  style.border-radius: 8
+  style.font-size: 18
+}
+
+cost4: "execution" {
+  shape: text
+  style.font-size: 14
+  style.font-color: "#C62828"
+  style.bold: true
+}
+
+detail4: |md
+  TypeScript in V8 sandbox
+  Direct tool access as functions
+| {
+  style.font-size: 12
+}
+
+# Flow connections
+step1 -> step2: "found relevant tool" {
+  style.stroke: "#3949AB"
+  style.stroke-width: 2
+}
+step2 -> step3: "need full schema" {
+  style.stroke: "#00796B"
+  style.stroke-width: 2
+}
+step3 -> step4: "ready to call" {
+  style.stroke: "#E65100"
+  style.stroke-width: 2
+}
+
+# Cost annotations
+step1 -> cost1 {
+  style.stroke-dash: 3
+  style.stroke: "#9FA8DA"
+}
+step2 -> cost2 {
+  style.stroke-dash: 3
+  style.stroke: "#80CBC4"
+}
+step3 -> cost3 {
+  style.stroke-dash: 3
+  style.stroke: "#FFCC80"
+}
+step4 -> cost4 {
+  style.stroke-dash: 3
+  style.stroke: "#EF9A9A"
+}
+
+# Detail connections
+cost1 -> detail1 {
+  style.stroke-dash: 3
+  style.stroke: "#9FA8DA"
+}
+cost2 -> detail2 {
+  style.stroke-dash: 3
+  style.stroke: "#80CBC4"
+}
+cost3 -> detail3 {
+  style.stroke-dash: 3
+  style.stroke: "#FFCC80"
+}
+cost4 -> detail4 {
+  style.stroke-dash: 3
+  style.stroke: "#EF9A9A"
+}
+
+# Traditional comparison
+traditional: "Traditional: dump all 258 tools = 67,000 tokens" {
+  shape: text
+  near: bottom-center
+  style.font-size: 16
+  style.font-color: "#B71C1C"
+  style.bold: true
+}
