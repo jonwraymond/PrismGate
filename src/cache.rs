@@ -20,9 +20,9 @@ struct ToolCache {
     usage_stats: Option<HashMap<String, u64>>,
 }
 
-/// Default cache path: ~/.prismgate/cache.json
+/// Default cache path: platform cache directory
 pub fn default_cache_path() -> PathBuf {
-    crate::cli::prismgate_home().join("cache.json")
+    crate::cli::prismgate_cache_home().join("cache.json")
 }
 
 /// Derive cache path from config path (legacy, kept for backward compatibility).

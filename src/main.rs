@@ -47,7 +47,7 @@ pub async fn initialize(config_path: &Path) -> Result<InitializedGateway> {
     // Load ~/.env into process environment (once, before any concurrent work).
     config::load_dotenv();
 
-    // Ensure ~/.prismgate directory exists
+    // Ensure config directory exists
     let prismgate_home = cli::prismgate_home();
     if !prismgate_home.exists() {
         std::fs::create_dir_all(&prismgate_home)?;
@@ -56,6 +56,11 @@ pub async fn initialize(config_path: &Path) -> Result<InitializedGateway> {
             "created prismgate home directory: {}",
             prismgate_home.display()
         );
+    }
+
+    let prismgate_cache_home = cli::prismgate_cache_home();
+    if !prismgate_cache_home.exists() {
+        std::fs::create_dir_all(&prismgate_cache_home)?;
     }
 
     // Load config (env var expansion + YAML parse)
@@ -82,12 +87,12 @@ pub async fn initialize(config_path: &Path) -> Result<InitializedGateway> {
     let registry = {
         #[cfg(feature = "semantic")]
         {
-            // Direct HuggingFace model downloads to ~/.prismgate/models/
+            // Store semantic models under the platform cache directory.
             let models_dir = config
                 .semantic
                 .as_ref()
                 .and_then(|s| s.cache_dir.clone())
-                .unwrap_or_else(|| cli::prismgate_home().join("models"));
+                .unwrap_or_else(|| cli::prismgate_cache_home().join("models"));
             if !models_dir.exists() {
                 std::fs::create_dir_all(&models_dir)?;
             }
@@ -97,7 +102,7 @@ pub async fn initialize(config_path: &Path) -> Result<InitializedGateway> {
             // Set both HF_HOME and HF_HUB_CACHE: the hf_hub crate checks
             // HF_HUB_CACHE first (exact cache path), then falls back to
             // HF_HOME/hub/. Setting both ensures the model downloads land
-            // in ~/.prismgate/models/ regardless of crate internals.
+            // in cache dir regardless of crate internals.
             unsafe {
                 std::env::set_var("HF_HOME", &models_dir);
                 std::env::set_var("HF_HUB_CACHE", &models_dir);

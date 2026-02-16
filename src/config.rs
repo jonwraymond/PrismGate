@@ -65,7 +65,7 @@ pub struct Config {
     #[serde(default)]
     pub daemon: DaemonConfig,
 
-    /// Custom cache file location. Default: ~/.prismgate/cache.json
+    /// Custom cache file location. Default: platform cache directory
     #[serde(default)]
     pub cache_path: Option<PathBuf>,
 
@@ -380,7 +380,7 @@ pub struct SemanticConfig {
     #[serde(default = "default_semantic_model")]
     pub model_path: String,
 
-    /// Directory for cached embedding models. Default: ~/.prismgate/models/
+    /// Directory for cached embedding models. Default: platform cache directory.
     #[serde(default)]
     pub cache_dir: Option<PathBuf>,
 }

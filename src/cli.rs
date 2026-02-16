@@ -1,12 +1,25 @@
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
-/// Standard prismgate home directory (~/.prismgate).
-/// Falls back to `.prismgate` in the current directory if home cannot be resolved.
+/// Standard prismgate config directory.
+/// Uses platform config dirs (Linux/macOS: ~/.config, Windows: %APPDATA%).
+/// Falls back to `.gatemini` in the current directory if home cannot be resolved.
 pub fn prismgate_home() -> PathBuf {
-    dirs::home_dir()
-        .map(|h| h.join(".prismgate"))
-        .unwrap_or_else(|| PathBuf::from(".prismgate"))
+    dirs::config_dir()
+        .unwrap_or_else(dirs::data_dir)
+        .unwrap_or_else(|| dirs::home_dir().map(|h| h.join(".gatemini")).unwrap_or_else(|| PathBuf::from(".gatemini")))
+        .join("gatemini")
+}
+
+/// Standard cache root for downloaded assets and generated caches.
+/// Uses the platform cache directory (Linux/macOS: ~/.cache, Windows: %LOCALAPPDATA%)
+/// with fallback to config/data home.
+pub fn prismgate_cache_home() -> PathBuf {
+    dirs::cache_dir()
+        .or_else(dirs::config_dir)
+        .or_else(dirs::data_dir)
+        .unwrap_or_else(|| dirs::home_dir().map(|h| h.join(".gatemini_cache")).unwrap_or_else(|| PathBuf::from(".gatemini_cache")))
+        .join("gatemini")
 }
 
 #[derive(Parser)]
