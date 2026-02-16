@@ -8,7 +8,7 @@ build:
 
 install: build
 	@mkdir -p $(INSTALL_DIR)
-	cp target/release/$(BINARY) $(INSTALL_DIR)/$(BINARY)
+	/usr/bin/install -m 755 target/release/$(BINARY) $(INSTALL_DIR)/$(BINARY)
 	@echo "Installed $(INSTALL_DIR)/$(BINARY)"
 
 clean:

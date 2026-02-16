@@ -300,9 +300,19 @@ async fn main() -> Result<()> {
         }
 
         // Daemon mode: gatemini serve
+        // Bind socket FIRST so the proxy can connect immediately while
+        // initialize() resolves secrets and loads embedding models.
         (Some(cli::Command::Serve { socket }), _) => {
-            let gw = initialize(&cli.config).await?;
-            ipc::daemon::run(gw, socket.clone()).await
+            let bound = ipc::daemon::bind_early(socket.clone())?;
+            let gw = match initialize(&cli.config).await {
+                Ok(gw) => gw,
+                Err(e) => {
+                    // Clean up socket so proxies don't connect to a dead daemon
+                    ipc::socket::cleanup_files(&bound.socket_path);
+                    return Err(e);
+                }
+            };
+            ipc::daemon::run(gw, bound).await
         }
 
         // Status check

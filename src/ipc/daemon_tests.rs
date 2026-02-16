@@ -59,8 +59,9 @@ mod tests {
             shutdown_notify: Arc::new(tokio::sync::Notify::new()),
         };
 
-        let sock = socket_path.clone();
-        let handle = tokio::spawn(async move { crate::ipc::daemon::run(gw, Some(sock)).await });
+        let bound = crate::ipc::daemon::bind_early(Some(socket_path.clone()))
+            .expect("bind_early failed in test");
+        let handle = tokio::spawn(async move { crate::ipc::daemon::run(gw, bound).await });
 
         // Wait for socket to become available
         for _ in 0..50 {

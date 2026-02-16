@@ -10,12 +10,22 @@ use crate::InitializedGateway;
 use crate::ipc::socket;
 use crate::server::GateminiServer;
 
-/// Run the daemon: bind a Unix socket and accept MCP client connections.
+/// Bound daemon socket, ready to accept connections.
 ///
-/// Each connected client gets its own `GateminiServer` instance (cheap: Arc clones + tool_router
-/// build). rmcp handles the full MCP protocol per-session. Client disconnect = transport EOF =
-/// task ends. Other clients are unaffected.
-pub async fn run(gw: InitializedGateway, custom_socket: Option<PathBuf>) -> Result<()> {
+/// Created early (before gateway initialization) so the proxy can connect
+/// immediately. MCP bytes queue in the kernel socket buffer until `run()`
+/// starts accepting.
+pub struct BoundSocket {
+    pub listener: UnixListener,
+    pub socket_path: PathBuf,
+}
+
+/// Bind the daemon socket early, before heavy initialization.
+///
+/// This lets the proxy connect immediately while `initialize()` resolves
+/// secrets, loads embedding models, and starts backends. Connections queue
+/// in the kernel's listen backlog until `run()` calls `accept()`.
+pub fn bind_early(custom_socket: Option<PathBuf>) -> Result<BoundSocket> {
     let socket_path = custom_socket.unwrap_or_else(socket::default_socket_path);
 
     // Check for an existing daemon by trying to connect rather than stat-checking.
@@ -46,10 +56,34 @@ pub async fn run(gw: InitializedGateway, custom_socket: Option<PathBuf>) -> Resu
     let pid = std::process::id();
     std::fs::write(socket::pid_path(&socket_path), pid.to_string())?;
 
+    // Note: tracing may not be initialized yet, so use eprintln
+    eprintln!(
+        "daemon socket bound: {} (pid {})",
+        socket_path.display(),
+        pid
+    );
+
+    Ok(BoundSocket {
+        listener,
+        socket_path,
+    })
+}
+
+/// Run the daemon accept loop on a pre-bound socket.
+///
+/// Each connected client gets its own `GateminiServer` instance (cheap: Arc clones + tool_router
+/// build). rmcp handles the full MCP protocol per-session. Client disconnect = transport EOF =
+/// task ends. Other clients are unaffected.
+pub async fn run(gw: InitializedGateway, bound: BoundSocket) -> Result<()> {
+    let BoundSocket {
+        listener,
+        socket_path,
+    } = bound;
+
     info!(
         socket = %socket_path.display(),
-        pid = pid,
-        "daemon listening"
+        pid = std::process::id(),
+        "daemon accepting connections"
     );
 
     // Wrap shared state for cloning into client tasks.
