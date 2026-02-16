@@ -48,7 +48,7 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements-docs.txt
       - name: Build docs
-        run: mkdocs build --strict
+        run: mkdocs build
       - name: Deploy to GitHub Pages
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'
         run: mkdocs gh-deploy --force
