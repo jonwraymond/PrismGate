@@ -12,6 +12,12 @@ mod resources;
 mod sandbox;
 mod secrets;
 mod server;
+#[cfg(test)]
+mod integration_inventory;
+#[cfg(test)]
+mod mcp_compliance_tests;
+#[cfg(test)]
+mod testutil;
 mod tools;
 
 use anyhow::Result;
@@ -170,12 +176,16 @@ pub async fn initialize(config_path: &Path) -> Result<InitializedGateway> {
 
 /// Run in direct (legacy) mode: single Claude Code session over stdio.
 async fn run_direct(gw: InitializedGateway) -> Result<()> {
+    let sandbox_semaphore = Arc::new(tokio::sync::Semaphore::new(
+        gw.config.sandbox.max_concurrent_sandboxes as usize,
+    ));
     let server = server::GateminiServer::new(
         Arc::clone(&gw.registry),
         Arc::clone(&gw.backend_manager),
         gw.cache_path.clone(),
         gw.config.allow_runtime_registration,
         gw.config.max_dynamic_backends,
+        sandbox_semaphore,
     );
 
     info!("starting MCP stdio server (direct mode)");

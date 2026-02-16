@@ -118,6 +118,8 @@ pub async fn handle_register(
             })
             .unwrap_or_default(),
         timeout: std::time::Duration::from_secs(30),
+        max_concurrent_calls: None,
+        semaphore_timeout: std::time::Duration::from_secs(60),
         required_keys: Vec::new(),
         prerequisite: None,
     };

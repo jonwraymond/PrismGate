@@ -140,6 +140,15 @@ pub struct BackendConfig {
     #[serde(default)]
     pub required_keys: Vec<String>,
 
+    /// Max concurrent tool calls to this backend. None = use transport default
+    /// (stdio: 10, HTTP: 100). Set to 0 for unlimited.
+    #[serde(default)]
+    pub max_concurrent_calls: Option<u32>,
+
+    /// Timeout for acquiring a call semaphore permit (seconds). Default: 60s.
+    #[serde(default = "default_semaphore_timeout", with = "humantime_duration")]
+    pub semaphore_timeout: Duration,
+
     /// Optional prerequisite process that must be running before this backend starts.
     #[serde(default)]
     pub prerequisite: Option<PrerequisiteConfig>,
@@ -223,6 +232,10 @@ pub struct SandboxConfig {
 
     #[serde(default = "default_max_output_size")]
     pub max_output_size: usize,
+
+    /// Max concurrent V8 sandbox executions. Default: 8.
+    #[serde(default = "default_max_concurrent_sandboxes")]
+    pub max_concurrent_sandboxes: u32,
 }
 
 /// Daemon lifecycle configuration.
@@ -305,6 +318,12 @@ fn default_max_dynamic_backends() -> usize {
 fn default_startup_delay() -> Duration {
     Duration::from_secs(2)
 }
+fn default_semaphore_timeout() -> Duration {
+    Duration::from_secs(60)
+}
+fn default_max_concurrent_sandboxes() -> u32 {
+    8
+}
 
 // --- Default impls ---
 
@@ -335,6 +354,7 @@ impl Default for SandboxConfig {
         Self {
             timeout: default_sandbox_timeout(),
             max_output_size: default_max_output_size(),
+            max_concurrent_sandboxes: default_max_concurrent_sandboxes(),
         }
     }
 }
@@ -502,6 +522,14 @@ impl Config {
                         );
                     }
                 }
+            }
+
+            if let Some(max) = backend.max_concurrent_calls
+                && max > 10_000
+            {
+                anyhow::bail!(
+                    "backend '{name}': max_concurrent_calls ({max}) exceeds limit of 10,000"
+                );
             }
 
             if let Some(prereq) = &backend.prerequisite
@@ -951,5 +979,56 @@ backends:
         assert!(diff.added.is_empty());
         assert!(diff.removed.is_empty());
         assert!(diff.changed.is_empty());
+    }
+
+    #[test]
+    fn test_parse_max_concurrent_calls_default() {
+        let yaml = r#"
+backends:
+  test:
+    transport: stdio
+    command: echo
+"#;
+        let config: Config = serde_yaml_ng::from_str(yaml).unwrap();
+        let backend = config.backends.get("test").unwrap();
+        assert!(backend.max_concurrent_calls.is_none());
+        assert_eq!(backend.semaphore_timeout, Duration::from_secs(60));
+    }
+
+    #[test]
+    fn test_parse_max_concurrent_calls_explicit() {
+        let yaml = r#"
+backends:
+  test:
+    transport: stdio
+    command: echo
+    max_concurrent_calls: 25
+    semaphore_timeout: 30s
+"#;
+        let config: Config = serde_yaml_ng::from_str(yaml).unwrap();
+        let backend = config.backends.get("test").unwrap();
+        assert_eq!(backend.max_concurrent_calls, Some(25));
+        assert_eq!(backend.semaphore_timeout, Duration::from_secs(30));
+    }
+
+    #[test]
+    fn test_validate_max_concurrent_calls_too_high() {
+        let yaml = r#"
+backends:
+  test:
+    transport: stdio
+    command: echo
+    max_concurrent_calls: 99999
+"#;
+        let config: Config = serde_yaml_ng::from_str(yaml).unwrap();
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn test_sandbox_config_defaults() {
+        let yaml = "{}";
+        let config: Config = serde_yaml_ng::from_str(yaml).unwrap();
+        assert_eq!(config.sandbox.max_concurrent_sandboxes, 8);
+        assert_eq!(config.sandbox.timeout, Duration::from_secs(30));
     }
 }

@@ -4,6 +4,9 @@ pub mod lenient_client;
 pub mod prerequisite;
 pub mod stdio;
 
+#[cfg(test)]
+mod concurrency_tests;
+
 use anyhow::Result;
 use async_trait::async_trait;
 use dashmap::DashMap;
@@ -14,11 +17,16 @@ use std::collections::HashSet;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU8, AtomicUsize, Ordering};
 use std::time::Duration;
-use tokio::sync::RwLock;
+use tokio::sync::{RwLock, Semaphore};
 use tracing::{debug, error, info, warn};
 
 use crate::config::{BackendConfig, Config, Transport};
 use crate::registry::{ToolEntry, ToolRegistry};
+
+/// Default max concurrent calls for stdio backends.
+const DEFAULT_STDIO_MAX_CONCURRENT: u32 = 10;
+/// Default max concurrent calls for HTTP backends.
+const DEFAULT_HTTP_MAX_CONCURRENT: u32 = 100;
 
 // Shared state constants used by both stdio and http backends.
 pub(crate) const STATE_STARTING: u8 = 0;
@@ -32,7 +40,9 @@ pub(crate) fn map_call_tool_result(result: CallToolResult) -> Value {
         .content
         .into_iter()
         .map(|c| match c.raw {
-            RawContent::Text(t) => Value::String(t.text),
+            RawContent::Text(t) => {
+                serde_json::from_str(&t.text).unwrap_or_else(|_| Value::String(t.text))
+            }
             _ => Value::String("[non-text content]".to_string()),
         })
         .collect();
@@ -143,9 +153,25 @@ const RETRY_DELAYS: [Duration; 3] = [
 
 /// Manages all backends: startup, shutdown, tool forwarding.
 pub struct BackendManager {
+    #[cfg(not(test))]
     backends: DashMap<String, Arc<dyn Backend>>,
+    #[cfg(test)]
+    pub backends: DashMap<String, Arc<dyn Backend>>,
+    #[cfg(not(test))]
     configs: RwLock<std::collections::HashMap<String, BackendConfig>>,
+    #[cfg(test)]
+    pub configs: RwLock<std::collections::HashMap<String, BackendConfig>>,
     in_flight_calls: Arc<AtomicUsize>,
+    /// Per-backend call semaphores for concurrency limiting.
+    #[cfg(not(test))]
+    call_semaphores: DashMap<String, Arc<Semaphore>>,
+    #[cfg(test)]
+    pub call_semaphores: DashMap<String, Arc<Semaphore>>,
+    /// Per-backend semaphore acquire timeout.
+    #[cfg(not(test))]
+    semaphore_timeouts: DashMap<String, Duration>,
+    #[cfg(test)]
+    pub semaphore_timeouts: DashMap<String, Duration>,
     /// Backends registered at runtime via register_manual (not from config file).
     dynamic_backends: RwLock<HashSet<String>>,
     /// PIDs of managed prerequisite processes (stopped on daemon shutdown).
@@ -158,6 +184,8 @@ impl BackendManager {
             backends: DashMap::new(),
             configs: RwLock::new(std::collections::HashMap::new()),
             in_flight_calls: Arc::new(AtomicUsize::new(0)),
+            call_semaphores: DashMap::new(),
+            semaphore_timeouts: DashMap::new(),
             dynamic_backends: RwLock::new(HashSet::new()),
             prerequisite_pids: DashMap::new(),
         })
@@ -254,6 +282,20 @@ impl BackendManager {
         // Store backend
         self.backends.insert(name.to_string(), Arc::clone(&backend));
 
+        // Create per-backend call semaphore (0 = unlimited)
+        let max_calls = config
+            .max_concurrent_calls
+            .unwrap_or(match config.transport {
+                Transport::Stdio => DEFAULT_STDIO_MAX_CONCURRENT,
+                Transport::StreamableHttp => DEFAULT_HTTP_MAX_CONCURRENT,
+            });
+        if max_calls > 0 {
+            self.call_semaphores
+                .insert(name.to_string(), Arc::new(Semaphore::new(max_calls as usize)));
+        }
+        self.semaphore_timeouts
+            .insert(name.to_string(), config.semaphore_timeout);
+
         // Spawn reaper task for stdio backends — monitors child process and
         // marks backend as Stopped immediately on unexpected exit.
         // The health checker will then auto-restart it with backoff.
@@ -318,11 +360,13 @@ impl BackendManager {
         // Remove tools from registry
         registry.remove_backend_tools(name);
 
-        // Remove config and dynamic tracking
+        // Remove config, semaphore, and dynamic tracking
         let mut configs = self.configs.write().await;
         configs.remove(name);
         drop(configs);
 
+        self.call_semaphores.remove(name);
+        self.semaphore_timeouts.remove(name);
         self.dynamic_backends.write().await.remove(name);
 
         // Stop managed prerequisite if tracked
@@ -338,6 +382,9 @@ impl BackendManager {
     ///
     /// If the backend is in `Starting` state (not yet connected), retries up to 3 times
     /// with exponential backoff (500ms, 1s, 2s). Fails immediately for `Unhealthy`/`Stopped`.
+    ///
+    /// Acquires a per-backend semaphore permit before dispatching. If the semaphore
+    /// is full, the call queues with a configurable timeout (default 60s).
     pub async fn call_tool(
         &self,
         backend_name: &str,
@@ -345,6 +392,36 @@ impl BackendManager {
         arguments: Option<Value>,
     ) -> Result<Value> {
         let _guard = CallGuard::new(&self.in_flight_calls);
+
+        // Acquire per-backend semaphore permit (if semaphore exists for this backend).
+        let _permit = if let Some(sem) = self.call_semaphores.get(backend_name) {
+            let timeout = self
+                .semaphore_timeouts
+                .get(backend_name)
+                .map(|r| *r.value())
+                .unwrap_or(Duration::from_secs(60));
+
+            match tokio::time::timeout(timeout, sem.clone().acquire_owned()).await {
+                Ok(Ok(permit)) => Some(permit),
+                Ok(Err(_)) => {
+                    anyhow::bail!(
+                        "backend '{}' semaphore closed (backend shutting down)",
+                        backend_name
+                    );
+                }
+                Err(_) => {
+                    anyhow::bail!(
+                        "backend '{}' is at max concurrent calls. \
+                         Timed out after {:?} waiting for a permit. \
+                         Consider increasing max_concurrent_calls for this backend.",
+                        backend_name,
+                        timeout
+                    );
+                }
+            }
+        } else {
+            None
+        };
 
         for (attempt, delay) in RETRY_DELAYS.iter().enumerate() {
             // Check if backend exists in the DashMap
@@ -460,6 +537,8 @@ impl BackendManager {
 
         // Clear the map first so no new calls can be dispatched
         self.backends.clear();
+        self.call_semaphores.clear();
+        self.semaphore_timeouts.clear();
 
         // Wait for in-flight calls to drain (max 10s)
         let drain_start = std::time::Instant::now();
@@ -620,4 +699,68 @@ pub struct BackendStatus {
     pub name: String,
     pub state: BackendState,
     pub available: bool,
+}
+
+#[cfg(test)]
+mod map_result_tests {
+    use super::*;
+    use rmcp::model::Content;
+
+    #[test]
+    fn test_json_text_content_is_parsed() {
+        let result = CallToolResult::success(vec![
+            Content::text(r#"{"id": 123, "title": "test"}"#),
+        ]);
+        let value = map_call_tool_result(result);
+        // Should be a parsed object, not a JSON string
+        assert!(value.is_object());
+        assert_eq!(value["id"], 123);
+        assert_eq!(value["title"], "test");
+    }
+
+    #[test]
+    fn test_plain_text_content_stays_string() {
+        let result = CallToolResult::success(vec![
+            Content::text("Title: awaiting review"),
+        ]);
+        let value = map_call_tool_result(result);
+        // Should remain a string
+        assert!(value.is_string());
+        assert_eq!(value.as_str().unwrap(), "Title: awaiting review");
+    }
+
+    #[test]
+    fn test_json_array_text_content_is_parsed() {
+        let result = CallToolResult::success(vec![
+            Content::text(r#"[1, 2, 3]"#),
+        ]);
+        let value = map_call_tool_result(result);
+        assert!(value.is_array());
+    }
+
+    #[test]
+    fn test_multiple_content_blocks() {
+        let result = CallToolResult::success(vec![
+            Content::text(r#"{"a": 1}"#),
+            Content::text("plain text"),
+        ]);
+        let value = map_call_tool_result(result);
+        // Multiple contents → array
+        assert!(value.is_array());
+        let arr = value.as_array().unwrap();
+        assert!(arr[0].is_object()); // JSON parsed
+        assert!(arr[1].is_string()); // plain text kept
+    }
+
+    #[test]
+    fn test_bare_string_json_stays_string() {
+        // A JSON string literal like "\"hello\"" should parse to Value::String("hello")
+        let result = CallToolResult::success(vec![
+            Content::text(r#""hello""#),
+        ]);
+        let value = map_call_tool_result(result);
+        // JSON parse of "\"hello\"" → Value::String("hello"), same as before
+        assert!(value.is_string());
+        assert_eq!(value.as_str().unwrap(), "hello");
+    }
 }

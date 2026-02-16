@@ -1,6 +1,7 @@
 use anyhow::{Context, Result};
 use serde_json::Value;
 use std::sync::Arc;
+use tokio::sync::Semaphore;
 use tracing::{debug, warn};
 
 use crate::backend::BackendManager;
@@ -9,8 +10,9 @@ use crate::registry::ToolRegistry;
 /// Handle call_tool_chain: execute TypeScript code that can call backend tools.
 ///
 /// Strategy:
-/// 1. Try direct tool call parsing (fast path for simple `backend.tool(args)` patterns)
-/// 2. If that fails and the sandbox feature is enabled, execute in the V8 sandbox
+/// 1. Try direct tool call parsing (fast path — bypasses sandbox semaphore)
+/// 2. If that fails and the sandbox feature is enabled, acquire sandbox semaphore
+///    and execute in the V8 sandbox
 /// 3. If sandbox is not available, return an error
 #[allow(unused_variables)]
 pub async fn handle_call_tool_chain(
@@ -19,20 +21,32 @@ pub async fn handle_call_tool_chain(
     code: &str,
     timeout: Option<u64>,
     max_output_size: Option<usize>,
+    sandbox_semaphore: &Semaphore,
 ) -> Result<String> {
     let max_output = max_output_size.unwrap_or(200_000);
 
-    // Try to parse as a direct tool call (fast path).
+    // Try to parse as a direct tool call (fast path — no V8, no semaphore needed).
     // Pattern: `await manual_name.tool_name({...})` or JSON with tool_name + arguments
     if let Some(result) = try_direct_tool_call(registry, manager, code).await {
         return result.map(|v| truncate_output(&v, max_output));
     }
 
-    // Fall back to full TypeScript sandbox
+    // Fall back to full TypeScript sandbox — acquire semaphore first
     #[cfg(feature = "sandbox")]
     #[allow(clippy::needless_return)]
     {
         let timeout_dur = std::time::Duration::from_millis(timeout.unwrap_or(30_000));
+
+        // Acquire sandbox semaphore to limit concurrent V8 isolates.
+        // Use the call's own timeout — no point waiting longer for a permit.
+        let _permit = match tokio::time::timeout(timeout_dur, sandbox_semaphore.acquire()).await {
+            Ok(Ok(permit)) => permit,
+            Ok(Err(_)) => anyhow::bail!("sandbox semaphore closed"),
+            Err(_) => anyhow::bail!(
+                "sandbox concurrency limit reached. All V8 isolates are busy. \
+                 Try again shortly or increase max_concurrent_sandboxes in config."
+            ),
+        };
         let result = crate::sandbox::execute(
             registry,
             manager,
