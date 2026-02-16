@@ -83,6 +83,7 @@ libc = "0.2"
 
 # Futures utilities
 futures = "0.3"
+futures-util = "0.3"
 
 [dev-dependencies]
 tempfile = "3"

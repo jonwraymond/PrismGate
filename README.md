@@ -129,6 +129,36 @@ cargo build --release          # Release build
 cargo test                     # Run tests
 ```
 
+## Releases
+
+Binary builds and packages are published from GitHub tags that match `v*` (for example `v0.3.0`).
+
+From a release tag `vX.Y.Z`, GitHub Releases will include:
+
+- `gatemini-vX.Y.Z-darwin-x86_64.tar.gz` (macOS Intel)
+- `gatemini-vX.Y.Z-darwin-arm64.tar.gz` (macOS Apple Silicon)
+- `gatemini-vX.Y.Z-windows-x86_64.zip` (Windows)
+- `gatemini-vX.Y.Z-linux-x86_64.tar.gz` (Linux x86_64)
+- `gatemini_X.Y.Z_amd64.deb` (Debian/Ubuntu package)
+- `gatemini-X.Y.Z-1.x86_64.rpm` (RPM package)
+- `checksums.txt` (SHA-256 for all assets)
+
+### Install examples
+
+```bash
+tar -xzf gatemini-vX.Y.Z-darwin-arm64.tar.gz   # macOS (Intel/ARM: pick the matching tarball)
+tar -xzf gatemini-vX.Y.Z-linux-x86_64.tar.gz    # Linux tarball
+
+dpkg -i gatemini_X.Y.Z_amd64.deb                # Debian/Ubuntu
+rpm -i gatemini-X.Y.Z-1.x86_64.rpm             # RHEL/Fedora/SLES
+
+# Windows
+# Extract gatemini-vX.Y.Z-windows-x86_64.zip and run gatemini.exe
+
+# Verify checksum
+sha256sum -c checksums.txt
+```
+
 ## License
 
 MIT

@@ -124,7 +124,7 @@ pub async fn run_health_checker(
                 .enumerate()
                 .map(|(i, name)| {
                     let mgr = Arc::clone(&manager);
-                    let name = name.clone();
+                    let name = name.to_string();
                     let ping_timeout = config.timeout;
                     let delay = stagger_delay * i as u32;
                     async move {

@@ -1,10 +1,14 @@
+#[cfg(unix)]
 use anyhow::{Result, bail};
+#[cfg(unix)]
 use nix::sys::signal::{self, Signal};
+#[cfg(unix)]
 use nix::unistd::Pid;
 
 use crate::ipc::socket;
 
 /// Stop a running gatemini daemon by sending SIGTERM.
+#[cfg(unix)]
 pub fn run() -> Result<()> {
     let socket_path = socket::default_socket_path();
 
@@ -41,5 +45,11 @@ pub fn run() -> Result<()> {
         "Daemon did not stop within 5s. You may need to kill PID {} manually.",
         pid
     );
+    Ok(())
+}
+
+#[cfg(not(unix))]
+pub fn run() -> anyhow::Result<()> {
+    println!("`gatemini stop` is not supported on Windows because the daemon mode uses Unix sockets.");
     Ok(())
 }

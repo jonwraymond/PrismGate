@@ -4,6 +4,8 @@ use std::time::Duration;
 
 use anyhow::{Context, Result, bail};
 use tokio::io;
+
+#[cfg(unix)]
 use tokio::net::UnixStream;
 
 use crate::ipc::socket;
@@ -12,6 +14,7 @@ use crate::ipc::socket;
 ///
 /// If no daemon is running, auto-start one. The proxy performs no initialization
 /// (no config loading, no tracing to stderr, no backend management). It's a pure byte pipe.
+#[cfg(unix)]
 pub async fn run(config_path: &Path) -> Result<()> {
     let socket_path = socket::default_socket_path();
 
@@ -52,8 +55,14 @@ pub async fn run(config_path: &Path) -> Result<()> {
     }
 }
 
+#[cfg(not(unix))]
+pub async fn run(_config_path: &Path) -> Result<()> {
+    bail!("daemon proxy mode is not supported on Windows. Use --direct mode.");
+}
+
 /// Remove stale socket/pid files if the daemon is dead.
 /// Deliberately does NOT remove the lock file — that's the flock coordination mechanism.
+#[cfg(unix)]
 fn cleanup_stale_socket(socket_path: &Path) {
     if socket_path.exists() && !socket::is_daemon_alive(socket_path) {
         let _ = std::fs::remove_file(socket_path);
@@ -63,6 +72,7 @@ fn cleanup_stale_socket(socket_path: &Path) {
 
 /// Try connecting to the daemon socket with a short timeout.
 /// Pure connectivity check — no side effects (no file deletion).
+#[cfg(unix)]
 async fn try_connect(socket_path: &Path) -> Result<UnixStream> {
     let stream = tokio::time::timeout(Duration::from_secs(2), UnixStream::connect(socket_path))
         .await
@@ -74,6 +84,7 @@ async fn try_connect(socket_path: &Path) -> Result<UnixStream> {
 
 /// Spawn the daemon as a detached child process.
 /// Called only after acquiring the exclusive flock and double-checking no daemon exists.
+#[cfg(unix)]
 fn spawn_daemon(config_path: &Path) -> Result<()> {
     let exe = std::env::current_exe().context("could not determine own executable path")?;
     let config_str = config_path
@@ -95,6 +106,7 @@ fn spawn_daemon(config_path: &Path) -> Result<()> {
 }
 
 /// Poll the socket path with exponential backoff until it's connectable.
+#[cfg(unix)]
 async fn wait_for_socket(socket_path: &Path, timeout: Duration) -> Result<UnixStream> {
     let start = std::time::Instant::now();
     let mut delay = Duration::from_millis(50);
@@ -119,6 +131,7 @@ async fn wait_for_socket(socket_path: &Path, timeout: Duration) -> Result<UnixSt
 
 /// Bidirectional byte bridge: stdin↔socket_read, socket_write↔stdout.
 /// Exits when either side closes.
+#[cfg(unix)]
 async fn bridge_stdio(stream: UnixStream) -> Result<()> {
     let (mut sock_read, mut sock_write) = stream.into_split();
 

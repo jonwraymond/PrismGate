@@ -93,7 +93,15 @@ pub async fn initialize(config_path: &Path) -> Result<InitializedGateway> {
             }
             // SAFETY: No concurrent env reads at this point — tokio worker threads
             // exist but no user tasks have been spawned yet.
-            unsafe { std::env::set_var("HF_HOME", &models_dir) };
+            //
+            // Set both HF_HOME and HF_HUB_CACHE: the hf_hub crate checks
+            // HF_HUB_CACHE first (exact cache path), then falls back to
+            // HF_HOME/hub/. Setting both ensures the model downloads land
+            // in ~/.prismgate/models/ regardless of crate internals.
+            unsafe {
+                std::env::set_var("HF_HOME", &models_dir);
+                std::env::set_var("HF_HUB_CACHE", &models_dir);
+            }
 
             let model_path = config
                 .semantic
