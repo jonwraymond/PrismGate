@@ -26,9 +26,16 @@ jobs:
         run: |
           cargo build --locked --release --target x86_64-apple-darwin
       - name: Package artifact
+        env:
+          BINARY_PATH: target/x86_64-apple-darwin/release/gatemini
         run: |
+          if [ ! -x "$BINARY_PATH" ]; then
+            echo "Expected binary not found at $BINARY_PATH"
+            ls -la target/x86_64-apple-darwin/release || true
+            exit 1
+          fi
           mkdir -p dist
-          cp target/x86_64-apple-darwin/release/gatemini dist/gatemini
+          cp "$BINARY_PATH" dist/gatemini
           tar -czf "dist/gatemini-${GITHUB_REF_NAME}-darwin-x86_64.tar.gz" -C dist gatemini
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -48,9 +55,16 @@ jobs:
         run: |
           cargo build --locked --release --target aarch64-apple-darwin
       - name: Package artifact
+        env:
+          BINARY_PATH: target/aarch64-apple-darwin/release/gatemini
         run: |
+          if [ ! -x "$BINARY_PATH" ]; then
+            echo "Expected binary not found at $BINARY_PATH"
+            ls -la target/aarch64-apple-darwin/release || true
+            exit 1
+          fi
           mkdir -p dist
-          cp target/aarch64-apple-darwin/release/gatemini dist/gatemini
+          cp "$BINARY_PATH" dist/gatemini
           tar -czf "dist/gatemini-${GITHUB_REF_NAME}-darwin-arm64.tar.gz" -C dist gatemini
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -72,8 +86,13 @@ jobs:
       - name: Package artifact
         shell: pwsh
         run: |
+          $binaryPath = "target\\x86_64-pc-windows-msvc\\release\\gatemini.exe"
+          if (-not (Test-Path $binaryPath)) {
+            Write-Error "Expected binary not found at $binaryPath"
+            exit 1
+          }
           New-Item -ItemType Directory -Force dist | Out-Null
-          Copy-Item "target\x86_64-pc-windows-msvc\release\gatemini.exe" -Destination "dist\gatemini.exe"
+          Copy-Item $binaryPath -Destination "dist\gatemini.exe"
           Compress-Archive -Path "dist\gatemini.exe" -DestinationPath "dist\gatemini-${env:GITHUB_REF_NAME}-windows-x86_64.zip" -Force
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -105,18 +124,34 @@ jobs:
         id: package
         run: |
           set -euo pipefail
+          FPM_BIN="${GEM_HOME:-$HOME/.local/share/gem}/bin/fpm"
+
+          if [ ! -x "$FPM_BIN" ]; then
+            echo "fpm not found at $FPM_BIN"
+            ls -la "${HOME}/.local/share/gem/bin" || true
+            exit 1
+          fi
+
           VERSION="${GITHUB_REF_NAME#v}"
           if [[ "$VERSION" == "main" ]]; then
             VERSION="0.0.0.${GITHUB_SHA::8}"
           fi
+
+          LINUX_BINARY="target/x86_64-unknown-linux-gnu/release/gatemini"
+          if [ ! -x "$LINUX_BINARY" ]; then
+            echo "Expected binary not found at $LINUX_BINARY"
+            ls -la target/x86_64-unknown-linux-gnu/release || true
+            exit 1
+          fi
+
           mkdir -p dist
-          cp target/x86_64-unknown-linux-gnu/release/gatemini dist/gatemini
+          cp "$LINUX_BINARY" dist/gatemini
           tar -czf "dist/gatemini-${GITHUB_REF_NAME}-linux-x86_64.tar.gz" -C dist gatemini
 
           mkdir -p pkg/usr/local/bin
-          cp target/x86_64-unknown-linux-gnu/release/gatemini pkg/usr/local/bin/gatemini
+          cp "$LINUX_BINARY" pkg/usr/local/bin/gatemini
 
-          fpm -s dir -t deb -n gatemini -v "$VERSION" --iteration 1 \
+          "$FPM_BIN" -s dir -t deb -n gatemini -v "$VERSION" --iteration 1 \
             --architecture amd64 \
             --description "MCP gateway that aggregates tools from multiple backend MCP servers" \
             --license MIT \
@@ -125,7 +160,7 @@ jobs:
             --package dist/gatemini_${VERSION}_amd64.deb \
             -C pkg .
 
-          fpm -s dir -t rpm -n gatemini -v "$VERSION" --iteration 1 \
+          "$FPM_BIN" -s dir -t rpm -n gatemini -v "$VERSION" --iteration 1 \
             --architecture x86_64 \
             --description "MCP gateway that aggregates tools from multiple backend MCP servers" \
             --license MIT \
