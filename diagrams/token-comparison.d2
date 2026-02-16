@@ -1,0 +1,100 @@
+direction: right
+
+title: Token Usage Comparison {
+  shape: text
+  near: top-center
+  style.font-size: 28
+  style.bold: true
+}
+
+# Traditional approach
+traditional: Traditional MCP Gateway {
+  style.fill: "#FFEBEE"
+  style.border-radius: 8
+  style.stroke: "#C62828"
+
+  dump: "Dump all 258 tools\ninto context" {
+    style.fill: "#FFCDD2"
+    style.border-radius: 4
+  }
+
+  cost_t: "67,000 tokens" {
+    shape: text
+    style.font-size: 24
+    style.font-color: "#C62828"
+    style.bold: true
+  }
+
+  pct: "33.7% of 200k context" {
+    shape: text
+    style.font-size: 14
+    style.font-color: "#E53935"
+  }
+
+  dump -> cost_t
+  cost_t -> pct
+}
+
+vs: "vs" {
+  shape: text
+  style.font-size: 32
+  style.bold: true
+}
+
+# PrismGate approach
+prismgate: PrismGate Progressive Disclosure {
+  style.fill: "#E8F5E9"
+  style.border-radius: 8
+  style.stroke: "#2E7D32"
+
+  step1: "7 meta-tools\n(always loaded)" {
+    style.fill: "#C8E6C9"
+    style.border-radius: 4
+  }
+
+  cost1: "~1,500 tokens" {
+    shape: text
+    style.font-size: 14
+    style.font-color: "#2E7D32"
+    style.bold: true
+  }
+
+  step2: "search + tool_info\n(on demand)" {
+    style.fill: "#C8E6C9"
+    style.border-radius: 4
+  }
+
+  cost2: "~1,300 tokens" {
+    shape: text
+    style.font-size: 14
+    style.font-color: "#2E7D32"
+    style.bold: true
+  }
+
+  total: "~2,800 tokens total" {
+    shape: text
+    style.font-size: 24
+    style.font-color: "#2E7D32"
+    style.bold: true
+  }
+
+  step1 -> cost1
+  step2 -> cost2
+  cost1 -> total
+  cost2 -> total
+}
+
+# Savings
+savings: |md
+  **96% token reduction**
+  67,000 → 2,800 tokens
+  Saves 64,200 tokens per session
+| {
+  near: bottom-center
+  style.font-size: 16
+  style.bold: true
+}
+
+# Flow
+traditional -> vs
+vs -> prismgate

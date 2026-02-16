@@ -1,0 +1,115 @@
+title: Backend Health & Circuit Breaker {
+  shape: text
+  near: top-center
+  style.font-size: 28
+  style.bold: true
+}
+
+# States
+starting: Starting {
+  shape: oval
+  style.fill: "#E3F2FD"
+  style.stroke: "#1565C0"
+  style.font-size: 16
+}
+
+healthy: Healthy {
+  shape: oval
+  style.fill: "#E8F5E9"
+  style.stroke: "#2E7D32"
+  style.font-size: 16
+  style.stroke-width: 3
+}
+
+degraded: Degraded {
+  shape: oval
+  style.fill: "#FFF3E0"
+  style.stroke: "#EF6C00"
+  style.font-size: 16
+}
+
+circuit_open: Circuit Open {
+  shape: oval
+  style.fill: "#FFEBEE"
+  style.stroke: "#C62828"
+  style.font-size: 16
+  style.stroke-width: 3
+}
+
+restarting: Restarting {
+  shape: oval
+  style.fill: "#F3E5F5"
+  style.stroke: "#7B1FA2"
+  style.font-size: 16
+}
+
+dead: Dead {
+  shape: oval
+  style.fill: "#ECEFF1"
+  style.stroke: "#546E7A"
+  style.font-size: 16
+  style.double-border: true
+}
+
+# Transitions
+starting -> healthy: "MCP handshake OK" {
+  style.stroke: "#2E7D32"
+  style.stroke-width: 2
+}
+
+healthy -> degraded: "ping timeout" {
+  style.stroke: "#EF6C00"
+}
+
+degraded -> healthy: "ping OK" {
+  style.stroke: "#2E7D32"
+}
+
+degraded -> circuit_open: "consecutive failures\n> threshold" {
+  style.stroke: "#C62828"
+  style.stroke-width: 2
+}
+
+circuit_open -> restarting: "backoff elapsed" {
+  style.stroke: "#7B1FA2"
+}
+
+restarting -> starting: "process respawned" {
+  style.stroke: "#1565C0"
+}
+
+restarting -> dead: "max_restarts\nexceeded" {
+  style.stroke: "#546E7A"
+  style.stroke-width: 2
+}
+
+starting -> dead: "handshake failed\nafter retries" {
+  style.stroke: "#546E7A"
+}
+
+# Health checker
+checker: Health Checker {
+  shape: hexagon
+  style.fill: "#E0F7FA"
+  style.stroke: "#00838F"
+  style.font-size: 14
+}
+
+checker -> healthy: "periodic ping" {
+  style.stroke-dash: 3
+  style.stroke: "#00838F"
+}
+checker -> degraded: "detect failure" {
+  style.stroke-dash: 3
+  style.stroke: "#00838F"
+}
+
+# Backoff annotation
+backoff: |md
+  **Exponential Backoff**
+  1s → 2s → 4s → 8s → ...
+  Within restart_window
+| {
+  near: bottom-center
+  style.font-size: 13
+}
