@@ -3,7 +3,7 @@ use serde_json::Value;
 use std::sync::Arc;
 use tracing::{debug, warn};
 
-use crate::backend::BackendManager;
+use crate::backend::{BackendError, BackendManager};
 use crate::registry::ToolRegistry;
 
 /// Handle call_tool_chain: execute TypeScript code that can call backend tools.
@@ -151,27 +151,37 @@ async fn call_tool_by_dotted_name(
 
     let value = match result {
         Ok(v) => v,
-        Err(e) if e.to_string().contains("not available") && e.to_string().contains("Stopped") => {
-            // Attempt on-demand restart and retry once
-            debug!(backend = %entry.backend_name, tool = %tool_name, "attempting on-demand restart for stopped backend");
-            manager
-                .restart_backend(&entry.backend_name, registry)
-                .await
-                .with_context(|| format!("on-demand restart of '{}' failed", entry.backend_name))?;
-            manager
-                .call_tool(&entry.backend_name, &tool_name, arguments)
-                .await
-                .with_context(|| {
-                    format!(
-                        "retry after restart: tool '{}' on '{}'",
-                        tool_name, entry.backend_name
-                    )
-                })?
-        }
         Err(e) => {
-            return Err(e).with_context(|| {
-                format!("tool '{}' on backend '{}'", tool_name, entry.backend_name)
-            });
+            // Check if this is a stopped backend error that can be restarted
+            if let Some(backend_err) = e.downcast_ref::<BackendError>() {
+                if backend_err.is_stopped_backend() {
+                    // Attempt on-demand restart and retry once
+                    debug!(backend = %entry.backend_name, tool = %tool_name, "attempting on-demand restart for stopped backend");
+                    manager
+                        .restart_backend(&entry.backend_name, registry)
+                        .await
+                        .with_context(|| {
+                            format!("on-demand restart of '{}' failed", entry.backend_name)
+                        })?;
+                    manager
+                        .call_tool(&entry.backend_name, &tool_name, arguments)
+                        .await
+                        .with_context(|| {
+                            format!(
+                                "retry after restart: tool '{}' on '{}'",
+                                tool_name, entry.backend_name
+                            )
+                        })?
+                } else {
+                    return Err(e).with_context(|| {
+                        format!("tool '{}' on backend '{}'", tool_name, entry.backend_name)
+                    });
+                }
+            } else {
+                return Err(e).with_context(|| {
+                    format!("tool '{}' on backend '{}'", tool_name, entry.backend_name)
+                });
+            }
         }
     };
 

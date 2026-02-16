@@ -13,7 +13,7 @@ use serde_json::Value;
 use tracing::{debug, info, warn};
 
 #[cfg(feature = "sandbox")]
-use crate::backend::BackendManager;
+use crate::backend::{BackendError, BackendManager};
 #[cfg(feature = "sandbox")]
 use crate::registry::ToolRegistry;
 
@@ -144,10 +144,12 @@ fn run_sandbox(
                     match result {
                         Ok(value) => Ok(value),
                         Err(e) => {
-                            let err_str = e.to_string();
+                            // Check if this is a stopped backend error (using the custom error type)
+                            let is_stopped = e.downcast_ref::<BackendError>()
+                                .map(|be: &BackendError| be.is_stopped_backend())
+                                .unwrap_or(false);
 
-                            // On-demand restart for stopped backends
-                            if err_str.contains("not available") && err_str.contains("Stopped") {
+                            if is_stopped {
                                 info!(backend = %backend_name, tool = %tool_name,
                                       "attempting on-demand restart for stopped backend");
                                 let restart_reg = reg.clone();
@@ -179,9 +181,12 @@ fn run_sandbox(
                                     };
                                 } else {
                                     warn!(backend = %backend_name, "on-demand restart failed, returning enhanced error");
-                                    // Intentionally falls through to the "not available" error enhancement below
+                                    // Intentionally falls through to error handling below
                                 }
                             }
+
+                            // Convert to string for V8 error handling
+                            let err_str = e.to_string();
 
                             // Enhance error if tool is cached but backend isn't ready
                             if (err_str.contains("not found") || err_str.contains("still starting"))

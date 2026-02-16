@@ -1,3 +1,4 @@
+pub mod error;
 pub mod health;
 pub mod http;
 pub mod lenient_client;
@@ -19,6 +20,8 @@ use tracing::{debug, error, info, warn};
 
 use crate::config::{BackendConfig, Config, Transport};
 use crate::registry::{ToolEntry, ToolRegistry};
+
+pub use error::BackendError;
 
 // Shared state constants used by both stdio and http backends.
 pub(crate) const STATE_STARTING: u8 = 0;
@@ -372,13 +375,11 @@ impl BackendManager {
                         }
                         // Unhealthy or Stopped — fail immediately, no point retrying
                         _ => {
-                            anyhow::bail!(
-                                "backend '{}' is not available (state: {:?}). \
-                                 Check status: @gatemini://backend/{}",
-                                backend_name,
+                            return Err(BackendError::Unavailable {
+                                backend: backend_name.to_string(),
                                 state,
-                                backend_name
-                            );
+                            }
+                            .into());
                         }
                     }
                 }
@@ -398,35 +399,22 @@ impl BackendManager {
 
         // All retries exhausted — produce a descriptive error
         match self.backends.get(backend_name).map(|r| r.value().state()) {
-            Some(BackendState::Starting) => {
-                anyhow::bail!(
-                    "backend '{}' is still starting (retried {} times over ~3.5s). \
-                     Tool '{}' is cached but the backend hasn't connected yet. \
-                     Check status: @gatemini://backend/{}",
-                    backend_name,
-                    RETRY_DELAYS.len(),
-                    tool_name,
-                    backend_name
-                )
+            Some(BackendState::Starting) => Err(BackendError::StillStarting {
+                backend: backend_name.to_string(),
+                tool: tool_name.to_string(),
+                retries: RETRY_DELAYS.len(),
             }
-            Some(state) => {
-                anyhow::bail!(
-                    "backend '{}' is not available (state: {:?}). \
-                     Check status: @gatemini://backend/{}",
-                    backend_name,
-                    state,
-                    backend_name
-                )
+            .into()),
+            Some(state) => Err(BackendError::Unavailable {
+                backend: backend_name.to_string(),
+                state,
             }
-            None => {
-                anyhow::bail!(
-                    "backend '{}' not found after {} retries. \
-                     It may not be configured or failed to start. \
-                     See all backends: @gatemini://backends",
-                    backend_name,
-                    RETRY_DELAYS.len()
-                )
+            .into()),
+            None => Err(BackendError::NotFound {
+                backend: backend_name.to_string(),
+                retries: RETRY_DELAYS.len(),
             }
+            .into()),
         }
     }
 
