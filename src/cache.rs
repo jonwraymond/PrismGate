@@ -26,11 +26,7 @@ pub fn cache_path_from_config(config_path: &Path) -> PathBuf {
 
 /// Load cached tools into the registry.
 /// Only loads backends that exist in the current config.
-pub async fn load(
-    path: &Path,
-    registry: &ToolRegistry,
-    config_backend_names: &[String],
-) -> usize {
+pub async fn load(path: &Path, registry: &ToolRegistry, config_backend_names: &[String]) -> usize {
     let data = match tokio::fs::read_to_string(path).await {
         Ok(d) => d,
         Err(_) => return 0, // no cache file yet
@@ -39,7 +35,10 @@ pub async fn load(
     let cache: ToolCache = match serde_json::from_str::<ToolCache>(&data) {
         Ok(c) if c.version == 1 || c.version == 2 => c,
         Ok(c) => {
-            warn!(version = c.version, "incompatible tool cache version, skipping");
+            warn!(
+                version = c.version,
+                "incompatible tool cache version, skipping"
+            );
             return 0;
         }
         Err(e) => {
@@ -58,11 +57,11 @@ pub async fn load(
 
     // Restore cached embeddings (semantic feature only)
     #[cfg(feature = "semantic")]
-    if let Some(embeddings) = cache.embeddings {
-        if !embeddings.is_empty() {
-            info!(count = embeddings.len(), "restoring cached embeddings");
-            registry.load_embeddings(embeddings);
-        }
+    if let Some(embeddings) = cache.embeddings
+        && !embeddings.is_empty()
+    {
+        info!(count = embeddings.len(), "restoring cached embeddings");
+        registry.load_embeddings(embeddings);
     }
 
     info!(tools = total, path = %path.display(), "loaded tools from cache");
@@ -142,10 +141,7 @@ mod tests {
                 make_entry("find_similar", "exa"),
             ],
         );
-        registry.register_backend_tools(
-            "tavily",
-            vec![make_entry("tavily_search", "tavily")],
-        );
+        registry.register_backend_tools("tavily", vec![make_entry("tavily_search", "tavily")]);
 
         // Save
         save(&cache_path, &registry).await;
@@ -167,10 +163,7 @@ mod tests {
         let cache_path = dir.path().join(".test.cache.json");
 
         let registry = ToolRegistry::new();
-        registry.register_backend_tools(
-            "exa",
-            vec![make_entry("web_search", "exa")],
-        );
+        registry.register_backend_tools("exa", vec![make_entry("web_search", "exa")]);
         registry.register_backend_tools(
             "removed_backend",
             vec![make_entry("old_tool", "removed_backend")],
@@ -210,7 +203,9 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let cache_path = dir.path().join(".test.cache.json");
         let bad = serde_json::json!({"version": 99, "backends": {}});
-        tokio::fs::write(&cache_path, bad.to_string()).await.unwrap();
+        tokio::fs::write(&cache_path, bad.to_string())
+            .await
+            .unwrap();
 
         let registry = ToolRegistry::new();
         let loaded = load(&cache_path, &registry, &[]).await;

@@ -18,20 +18,20 @@ pub fn load_dotenv() {
         let env_path = dirs::home_dir()
             .map(|h| h.join(".env"))
             .filter(|p| p.is_file());
-        if let Some(env_file) = env_path {
-            if let Ok(contents) = std::fs::read_to_string(&env_file) {
-                for line in contents.lines() {
-                    let line = line.trim();
-                    if line.is_empty() || line.starts_with('#') {
-                        continue;
-                    }
-                    if let Some((key, value)) = line.split_once('=') {
-                        // SAFETY: The tokio multi-thread runtime has worker threads
-                        // running, but no user tasks have been spawned yet and no
-                        // concurrent env var reads occur at this point. `Once` ensures
-                        // this runs at most once.
-                        unsafe { std::env::set_var(key.trim(), value.trim()) };
-                    }
+        if let Some(env_file) = env_path
+            && let Ok(contents) = std::fs::read_to_string(&env_file)
+        {
+            for line in contents.lines() {
+                let line = line.trim();
+                if line.is_empty() || line.starts_with('#') {
+                    continue;
+                }
+                if let Some((key, value)) = line.split_once('=') {
+                    // SAFETY: The tokio multi-thread runtime has worker threads
+                    // running, but no user tasks have been spawned yet and no
+                    // concurrent env var reads occur at this point. `Once` ensures
+                    // this runs at most once.
+                    unsafe { std::env::set_var(key.trim(), value.trim()) };
                 }
             }
         }
@@ -386,9 +386,9 @@ mod humantime_duration {
                 .map_err(|e| format!("invalid duration '{s}': {e}"))
         } else {
             // Try parsing as raw seconds
-            s.parse::<u64>()
-                .map(Duration::from_secs)
-                .map_err(|_| format!("invalid duration '{s}': expected format like '30s', '5m', '1h'"))
+            s.parse::<u64>().map(Duration::from_secs).map_err(|_| {
+                format!("invalid duration '{s}': expected format like '30s', '5m', '1h'")
+            })
         }
     }
 }
@@ -427,8 +427,9 @@ impl Config {
         // Resolve access token: config → env var
         let access_token = match &bws_config.access_token {
             Some(t) if !t.is_empty() => t.clone(),
-            _ => std::env::var("BWS_ACCESS_TOKEN")
-                .context("BWS enabled but access_token not in config and BWS_ACCESS_TOKEN env var not found")?,
+            _ => std::env::var("BWS_ACCESS_TOKEN").context(
+                "BWS enabled but access_token not in config and BWS_ACCESS_TOKEN env var not found",
+            )?,
         };
 
         let provider = crate::secrets::bws::BwsSdkProvider::new(
@@ -491,9 +492,7 @@ impl Config {
             match backend.transport {
                 Transport::Stdio => {
                     if backend.command.is_none() {
-                        anyhow::bail!(
-                            "backend '{name}': stdio transport requires 'command' field"
-                        );
+                        anyhow::bail!("backend '{name}': stdio transport requires 'command' field");
                     }
                 }
                 Transport::StreamableHttp => {
@@ -910,7 +909,13 @@ backends:
       command: my-app
 "#;
         let config: Config = serde_yaml_ng::from_str(yaml).unwrap();
-        let prereq = config.backends.get("test").unwrap().prerequisite.as_ref().unwrap();
+        let prereq = config
+            .backends
+            .get("test")
+            .unwrap()
+            .prerequisite
+            .as_ref()
+            .unwrap();
         assert!(!prereq.managed);
         assert_eq!(prereq.startup_delay, Duration::from_secs(2));
         assert!(prereq.process_match.is_none());
