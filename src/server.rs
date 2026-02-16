@@ -15,6 +15,8 @@ use serde_json::Value;
 use crate::backend::BackendManager;
 use crate::registry::ToolRegistry;
 
+use tokio::sync::Semaphore;
+
 // --- Parameter structs for each meta-tool ---
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -100,6 +102,8 @@ pub struct GateminiServer {
     pub cache_path: PathBuf,
     pub allow_runtime_registration: bool,
     pub max_dynamic_backends: usize,
+    /// Limits concurrent V8 sandbox executions to prevent OOM.
+    pub sandbox_semaphore: Arc<Semaphore>,
     tool_router: ToolRouter<Self>,
 }
 
@@ -110,6 +114,7 @@ impl GateminiServer {
         cache_path: PathBuf,
         allow_runtime_registration: bool,
         max_dynamic_backends: usize,
+        sandbox_semaphore: Arc<Semaphore>,
     ) -> Self {
         Self {
             registry,
@@ -117,6 +122,7 @@ impl GateminiServer {
             cache_path,
             allow_runtime_registration,
             max_dynamic_backends,
+            sandbox_semaphore,
             tool_router: Self::tool_router(),
         }
     }
@@ -305,6 +311,7 @@ impl GateminiServer {
             &params.code,
             params.timeout,
             params.max_output_size,
+            &self.sandbox_semaphore,
         )
         .await;
 

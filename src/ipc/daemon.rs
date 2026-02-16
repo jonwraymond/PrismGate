@@ -58,6 +58,9 @@ pub async fn run(gw: InitializedGateway, custom_socket: Option<PathBuf>) -> Resu
     let cache_path = gw.cache_path.clone();
     let allow_runtime_registration = gw.config.allow_runtime_registration;
     let max_dynamic_backends = gw.config.max_dynamic_backends;
+    let sandbox_semaphore = Arc::new(tokio::sync::Semaphore::new(
+        gw.config.sandbox.max_concurrent_sandboxes as usize,
+    ));
     let shutdown_notify = Arc::clone(&gw.shutdown_notify);
 
     // Track active client tasks for graceful shutdown.
@@ -65,6 +68,8 @@ pub async fn run(gw: InitializedGateway, custom_socket: Option<PathBuf>) -> Resu
 
     // Session counter for idle shutdown.
     let active_sessions = Arc::new(AtomicUsize::new(0));
+    // Notifies the accept loop when a client disconnects so the idle timer can be re-armed.
+    let session_change = Arc::new(tokio::sync::Notify::new());
     let idle_timeout = gw.config.daemon.idle_timeout;
     let idle_enabled = !idle_timeout.is_zero();
 
@@ -101,8 +106,10 @@ pub async fn run(gw: InitializedGateway, custom_socket: Option<PathBuf>) -> Resu
                                     cache_path.clone(),
                                     allow_runtime_registration,
                                     max_dynamic_backends,
+                                    Arc::clone(&sandbox_semaphore),
                                 );
 
+                                let notify = Arc::clone(&session_change);
                                 client_tracker.spawn(async move {
                                     use rmcp::ServiceExt;
                                     let (read, write) = stream.into_split();
@@ -118,6 +125,7 @@ pub async fn run(gw: InitializedGateway, custom_socket: Option<PathBuf>) -> Resu
                                     }
                                     let count = sessions.fetch_sub(1, Ordering::SeqCst) - 1;
                                     info!(active = count, "client disconnected");
+                                    notify.notify_one();
                                 });
 
                                 // Push idle timer forward while clients are active.
@@ -128,6 +136,12 @@ pub async fn run(gw: InitializedGateway, custom_socket: Option<PathBuf>) -> Resu
                             Err(e) => {
                                 error!(error = %e, "accept failed");
                             }
+                        }
+                    }
+                    _ = session_change.notified(), if idle_enabled => {
+                        // Client disconnected — re-arm idle timer if no sessions remain.
+                        if active_sessions.load(Ordering::SeqCst) == 0 {
+                            idle_sleep.as_mut().reset(tokio::time::Instant::now() + idle_timeout);
                         }
                     }
                     () = &mut idle_sleep, if idle_enabled
@@ -169,6 +183,7 @@ pub async fn run(gw: InitializedGateway, custom_socket: Option<PathBuf>) -> Resu
                             cache_path.clone(),
                             allow_runtime_registration,
                             max_dynamic_backends,
+                            Arc::clone(&sandbox_semaphore),
                         );
 
                         client_tracker.spawn(async move {
