@@ -112,11 +112,10 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y rpm
-          export GEM_HOME="$HOME/.local/share/gem"
-          export PATH="$GEM_HOME/bin:$PATH"
+          gem_user_bin="$(ruby -e 'puts Gem.user_dir')/bin"
           gem install --user-install --no-document fpm
-          echo "GEM_HOME=$GEM_HOME" >> "$GITHUB_ENV"
-          echo "$GEM_HOME/bin" >> "$GITHUB_PATH"
+          echo "GEM_BIN_DIR=$gem_user_bin" >> "$GITHUB_ENV"
+          echo "$gem_user_bin" >> "$GITHUB_PATH"
       - name: Build release binary
         run: |
           cargo build --locked --release --target x86_64-unknown-linux-gnu
@@ -124,7 +123,7 @@ jobs:
         id: package
         run: |
           set -euo pipefail
-          FPM_BIN="${GEM_HOME:-$HOME/.local/share/gem}/bin/fpm"
+          FPM_BIN="${GEM_BIN_DIR}/fpm"
 
           if [ ! -x "$FPM_BIN" ]; then
             echo "fpm not found at $FPM_BIN"
