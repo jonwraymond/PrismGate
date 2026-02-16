@@ -1,0 +1,84 @@
+# PrismGate example configuration
+# Copy to gatemini.yaml and customize for your environment.
+
+log_level: info
+
+secrets:
+  strict: true
+  providers:
+    bws:
+      enabled: true
+      access_token: "${BWS_ACCESS_TOKEN}"
+      organization_id: "${BWS_ORG_ID}"
+
+backends:
+  # ── Stdio backends ─────────────────────────────────────────────────
+
+  # Basic stdio backend — runs a command as a child process
+  sequential-thinking:
+    command: mcp-server-sequential-thinking
+    timeout: 120s
+
+  # Backend with environment variables using secretref
+  cerebras:
+    command: cerebras-mcp
+    env:
+      CEREBRAS_API_KEY: "secretref:bws:project/dotenv/key/CEREBRAS_API_KEY"
+    timeout: 120s
+
+  # Backend with a prerequisite process (auto-started if not running)
+  my-app:
+    command: npx
+    args: ["-y", "my-app-mcp@latest", "--mcp"]
+    timeout: 120s
+    prerequisite:
+      command: npx
+      args: ["-y", "my-app@latest"]
+      process_match: "my-app"
+      managed: false
+      startup_delay: 3s
+
+  # Backend with npx (no local install required)
+  playwright:
+    command: npx
+    args: ["-y", "@playwright/mcp@latest"]
+    timeout: 120s
+
+  # ── Streamable-HTTP backends ────────────────────────────────────────
+
+  # HTTP backend with bearer auth via secretref
+  github:
+    transport: streamable-http
+    url: "https://api.githubcopilot.com/mcp/"
+    headers:
+      Authorization: "Bearer secretref:bws:project/dotenv/key/GITHUB_PAT_TOKEN"
+    timeout: 60s
+
+  # HTTP backend with custom header auth
+  context7:
+    transport: streamable-http
+    url: "https://mcp.context7.com/mcp"
+    headers:
+      CONTEXT7_API_KEY: "secretref:bws:project/dotenv/key/CONTEXT7_API_KEY"
+    timeout: 90s
+
+  # Public HTTP backend (no auth required)
+  deepwiki:
+    transport: streamable-http
+    url: "https://mcp.deepwiki.com/mcp"
+    timeout: 90s
+
+health:
+  interval: 30s
+  timeout: 5s
+  failure_threshold: 3
+  max_restarts: 5
+  restart_window: 60s
+
+admin:
+  enabled: false
+  listen: "127.0.0.1:19999"
+
+sandbox:
+  timeout: 30s
+  max_output_size: 200000

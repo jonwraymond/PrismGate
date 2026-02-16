@@ -1,0 +1,91 @@
+[package]
+name = "gatemini"
+version = "0.2.0"
+edition = "2024"
+
+[dependencies]
+# MCP protocol (client + server)
+rmcp = { version = "0.15", features = [
+    "client",
+    "server",
+    "macros",
+    "transport-child-process",
+    "transport-io",
+    "transport-streamable-http-client",
+    "transport-streamable-http-client-reqwest",
+    "reqwest",
+] }
+
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+
+# TS/JS sandbox
+rustyscript = { version = "0.12", features = ["safe_extensions"], optional = true }
+
+# Semantic embedding search (optional)
+model2vec-rs = { version = "0.1", optional = true }
+
+# Serialization (pinned <1.0.220 for swc/rustyscript compat)
+serde = { version = ">=1.0.197, <1.0.220", features = ["derive"] }
+serde_json = "1"
+serde_yaml_ng = "0.10"
+
+# Admin API (optional)
+axum = { version = "0.8", optional = true }
+
+# Task tracking for daemon client sessions
+tokio-util = { version = "0.7", features = ["rt"] }
+
+# Concurrent data structures
+dashmap = "6"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+
+# Secret resolution
+regex = "1"
+bitwarden = { version = "2.0", features = ["secrets"] }
+uuid = { version = "1", features = ["serde"] }
+
+# HTTP (shared with rmcp for LenientClient wrapper)
+reqwest = { version = "0.12", features = ["json", "stream"], default-features = false }
+http = "1"
+sse-stream = "0.2"
+
+# Error handling
+anyhow = "1"
+thiserror = "2"
+
+# CLI
+clap = { version = "4", features = ["derive"] }
+
+# Unix IPC (socket path, PID checks)
+nix = { version = "0.29", features = ["signal", "user", "fs"] }
+
+# Env var expansion in config
+shellexpand = "3"
+dirs = "6"
+
+# Hot-reload
+notify = { version = "8", features = ["macos_kqueue"] }
+arc-swap = "1"
+
+# Async trait
+async-trait = "0.1"
+
+# Process group management (unix-only)
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+# Futures utilities
+futures = "0.3"
+
+[dev-dependencies]
+tempfile = "3"
+
+[features]
+default = ["admin", "sandbox", "semantic"]
+admin = ["dep:axum"]
+sandbox = ["dep:rustyscript"]
+semantic = ["dep:model2vec-rs"]

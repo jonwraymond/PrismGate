@@ -1,0 +1,21 @@
+/target
+.DS_Store
+*.swp
+*.swo
+*~
+
+# Secrets and personal config
+.env
+.env.*
+config/gatemini.yaml
+config/.gatemini.cache*.json
+config/test-*.yaml
+
+# ByteRover context
+.brv/
+
+# Claude plans and sessions
+.claude/
+
+# Git backup from repo init
+.git-backup/
