@@ -16,7 +16,7 @@ env:
 jobs:
   build-macos-intel:
     name: Build macOS Intel
-    runs-on: macos-13
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -38,7 +38,7 @@ jobs:
 
   build-macos-silicon:
     name: Build macOS Apple Silicon
-    runs-on: macos-14
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -135,7 +135,9 @@ jobs:
   publish-release:
     name: Publish GitHub Release
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: |
+      !cancelled() &&
+      (startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main')
     needs:
       - build-macos-intel
       - build-macos-silicon
@@ -149,6 +151,19 @@ jobs:
           path: artifacts
           pattern: release-*
           merge-multiple: true
+      - name: Set release metadata
+        id: release
+        shell: bash
+        run: |
+          if [[ "${GITHUB_REF}" == "refs/heads/main" ]]; then
+            echo "tag=main-${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+            echo "name=Main Release (${GITHUB_SHA::8})" >> "$GITHUB_OUTPUT"
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+            echo "name=Release ${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          fi
       - name: Create checksums
         run: |
           cd artifacts
@@ -156,42 +171,9 @@ jobs:
       - name: Create release and upload artifacts
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ steps.release.outputs.tag }}
+          name: ${{ steps.release.outputs.name }}
+          prerelease: ${{ steps.release.outputs.prerelease == 'true' }}
           files: artifacts/*
           generate_release_notes: true
           fail_on_unmatched_files: true
-
-  publish-nightly:
-    name: Publish Nightly (main)
-    runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main'
-    needs:
-      - build-macos-intel
-      - build-macos-silicon
-      - build-windows
-      - build-linux-packages
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          path: artifacts
-          pattern: release-*
-          merge-multiple: true
-      - name: Create checksums
-        run: |
-          cd artifacts
-          sha256sum * > checksums.txt
-      - name: Publish nightly release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          TAG="nightly"
-          CHECKSUM_FILE="artifacts/checksums.txt"
-          if gh release view "$TAG" -R "${{ github.repository }}"; then
-            gh release delete "$TAG" -y -R "${{ github.repository }}"
-          fi
-          gh release create "$TAG" \
-            --target "${{ github.sha }}" \
-            --title "Nightly (${GITHUB_SHA})" \
-            --prerelease \
-            --notes "Automated nightly build from main (git commit: ${GITHUB_SHA})." \
-            --repo "${{ github.repository }}" \
-            artifacts/*
