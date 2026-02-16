@@ -22,6 +22,9 @@ pub struct ToolEntry {
     pub backend_name: String,
     /// The full JSON schema for the tool's input.
     pub input_schema: Value,
+    /// Tags for categorization and filtering (inherited from backend config).
+    #[serde(default)]
+    pub tags: Vec<String>,
 }
 
 /// Concurrent tool registry aggregating tools from all backends.
@@ -44,6 +47,9 @@ pub struct ToolRegistry {
     /// bare_name -> list of (backend_name, namespace) pairs that own this tool name.
     /// Used for collision detection: len()==1 → bare alias OK, len()>1 → collision.
     bare_name_owners: DashMap<String, Vec<(String, String)>>,
+    /// User-defined aliases: shortcut name -> target tool name.
+    /// Resolved after direct lookup in get_by_name (one level, no chaining).
+    aliases: DashMap<String, String>,
     /// Optional semantic embedding index for hybrid search.
     #[cfg(feature = "semantic")]
     embedding_index: Option<EmbeddingIndex>,
@@ -55,6 +61,7 @@ impl ToolRegistry {
             tools: DashMap::new(),
             backend_tools: DashMap::new(),
             bare_name_owners: DashMap::new(),
+            aliases: DashMap::new(),
             #[cfg(feature = "semantic")]
             embedding_index: None,
         })
@@ -67,6 +74,7 @@ impl ToolRegistry {
             tools: DashMap::new(),
             backend_tools: DashMap::new(),
             bare_name_owners: DashMap::new(),
+            aliases: DashMap::new(),
             embedding_index: Some(index),
         })
     }
@@ -124,6 +132,7 @@ impl ToolRegistry {
                 description: tool.description.clone(),
                 backend_name: backend_name.to_string(),
                 input_schema: tool.input_schema.clone(),
+                tags: tool.tags.clone(),
             };
             self.tools.insert(ns_key.clone(), ns_entry.clone());
             registered_keys.push(ns_key);
@@ -146,6 +155,7 @@ impl ToolRegistry {
                     description: tool.description,
                     backend_name: backend_name.to_string(),
                     input_schema: tool.input_schema,
+                    tags: tool.tags,
                 };
                 self.tools.insert(original.clone(), bare_entry);
                 registered_keys.push(original);
@@ -216,6 +226,7 @@ impl ToolRegistry {
                         description: ns_entry.description.clone(),
                         backend_name: remaining_backend,
                         input_schema: ns_entry.input_schema.clone(),
+                        tags: ns_entry.tags.clone(),
                     };
                     self.tools.insert(bare_name, bare_entry);
                 }
@@ -238,7 +249,38 @@ impl ToolRegistry {
     /// Supports both bare names (`get_repo`) and namespaced names (`github.get_repo`).
     /// Bare names only resolve if there is no collision (single owner).
     pub fn get_by_name(&self, name: &str) -> Option<ToolEntry> {
-        self.tools.get(name).map(|r| r.value().clone())
+        // Direct lookup first
+        if let Some(entry) = self.tools.get(name) {
+            return Some(entry.value().clone());
+        }
+        // Try alias resolution (one level only — no chaining to prevent cycles)
+        if let Some(target) = self.aliases.get(name) {
+            return self.tools.get(target.value()).map(|r| r.value().clone());
+        }
+        None
+    }
+
+    /// Replace all aliases with the given mapping.
+    /// Aliases resolve after direct lookup, so they never shadow real tool names.
+    pub fn set_aliases(&self, aliases: HashMap<String, String>) {
+        self.aliases.clear();
+        for (alias, target) in aliases {
+            self.aliases.insert(alias, target);
+        }
+    }
+
+    /// Find a tool in a specific backend by its original_name.
+    /// Used for fallback chain resolution: find an equivalent tool in an alternative backend.
+    pub fn find_equivalent_tool(&self, backend_name: &str, original_name: &str) -> Option<String> {
+        self.backend_tools
+            .get(backend_name)?
+            .iter()
+            .find_map(|key| {
+                self.tools
+                    .get(key)
+                    .filter(|e| e.original_name == original_name)
+                    .map(|_| key.clone())
+            })
     }
 
     /// Get all tools for a specific backend.
@@ -259,7 +301,16 @@ impl ToolRegistry {
     /// BM25 parameters: k1=1.2 (term frequency saturation), b=0.75 (length normalization).
     /// Tool names are tokenized by splitting underscores/hyphens (e.g., "get_current_time"
     /// becomes ["get", "current", "time"]). Name tokens get a 2x boost over description tokens.
-    pub fn search(&self, query: &str, limit: u32) -> Vec<ToolEntry> {
+    ///
+    /// Optional `filter_tags`: if provided, only tools with at least one matching tag are included.
+    /// Optional `tracker`: if provided, applies logarithmic usage boost to BM25 scores.
+    pub fn search(
+        &self,
+        query: &str,
+        limit: u32,
+        filter_tags: Option<&[String]>,
+        tracker: Option<&crate::tracker::CallTracker>,
+    ) -> Vec<ToolEntry> {
         let query_terms = tokenize(query);
         if query_terms.is_empty() {
             return Vec::new();
@@ -269,6 +320,14 @@ impl ToolRegistry {
         let corpus: Vec<(ToolEntry, Vec<String>)> = self
             .tools
             .iter()
+            .filter(|r| {
+                // Apply tag filter if specified
+                if let Some(tags) = filter_tags {
+                    r.value().tags.iter().any(|t| tags.contains(t))
+                } else {
+                    true
+                }
+            })
             .map(|r| {
                 let entry = r.value().clone();
                 let mut tokens = tokenize(&entry.name);
@@ -336,6 +395,12 @@ impl ToolRegistry {
                 }
 
                 if score > 0.0 {
+                    // Apply logarithmic usage boost if tracker is available
+                    if let Some(t) = tracker {
+                        let usage = t.usage_count(&entry.name) as f64;
+                        let boost = 1.0 + 0.3 * (1.0 + usage).ln();
+                        score *= boost;
+                    }
                     Some((entry, score))
                 } else {
                     None
@@ -385,17 +450,23 @@ impl ToolRegistry {
     /// the incomparable BM25 scores (0-15+) and cosine similarities (0-1) into a
     /// single ranking without hyperparameter tuning.
     #[cfg(feature = "semantic")]
-    pub fn search_hybrid(&self, query: &str, limit: u32) -> Vec<ToolEntry> {
+    pub fn search_hybrid(
+        &self,
+        query: &str,
+        limit: u32,
+        filter_tags: Option<&[String]>,
+        tracker: Option<&crate::tracker::CallTracker>,
+    ) -> Vec<ToolEntry> {
         let index = match &self.embedding_index {
             Some(idx) if !idx.is_empty() => idx,
-            _ => return self.search(query, limit),
+            _ => return self.search(query, limit, filter_tags, tracker),
         };
 
         const RRF_K: f64 = 60.0;
         let fetch_limit = limit.max(30); // Fetch more candidates for fusion
 
-        // Get BM25 ranked results
-        let bm25_results = self.search(query, fetch_limit);
+        // Get BM25 ranked results (with tag filter and usage boost)
+        let bm25_results = self.search(query, fetch_limit, filter_tags, tracker);
 
         // Get semantic ranked results
         let semantic_results = index.search(query, fetch_limit as usize);
@@ -420,11 +491,22 @@ impl ToolRegistry {
         });
         scored.truncate(limit as usize);
 
-        // Look up full ToolEntry for each result
-        scored
+        // Look up full ToolEntry for each result, applying tag filter to
+        // semantic results that bypassed the BM25 tag filter.
+        let results: Vec<ToolEntry> = scored
             .into_iter()
-            .filter_map(|(name, _)| self.tools.get(&name).map(|r| r.value().clone()))
-            .collect()
+            .filter_map(|(name, _)| {
+                let entry = self.tools.get(&name)?.value().clone();
+                if let Some(tags) = filter_tags
+                    && !entry.tags.iter().any(|t| tags.contains(t))
+                {
+                    return None;
+                }
+                Some(entry)
+            })
+            .take(limit as usize)
+            .collect();
+        results
     }
 
     /// Export embedding vectors for cache persistence.
@@ -503,6 +585,7 @@ mod tests {
             description: desc.to_string(),
             backend_name: backend.to_string(),
             input_schema: json!({"type": "object"}),
+            tags: Vec::new(),
         }
     }
 
@@ -641,7 +724,7 @@ mod tests {
         );
 
         // Search for "get_repo" should find both the bare and namespaced entries
-        let results = reg.search("get repo", 10);
+        let results = reg.search("get repo", 10, None, None);
         assert!(!results.is_empty(), "search should find namespaced tools");
         // Should find entries with "get" and "repo" tokens
         assert!(results.iter().any(|r| r.name.contains("get_repo")));
@@ -667,7 +750,7 @@ mod tests {
         );
 
         // "similar" only in find_similar entries
-        let results = reg.search("similar", 10);
+        let results = reg.search("similar", 10, None, None);
         assert!(!results.is_empty());
         assert!(results.iter().any(|r| r.original_name == "find_similar"));
     }
@@ -684,7 +767,7 @@ mod tests {
             ],
         );
 
-        let results = reg.search("tool", 2);
+        let results = reg.search("tool", 2, None, None);
         assert_eq!(results.len(), 2);
     }
 
@@ -705,11 +788,11 @@ mod tests {
         );
 
         // "file" exact token: delete_file has "file" (name match + desc match)
-        let results = reg.search("file", 10);
+        let results = reg.search("file", 10, None, None);
         assert!(results.iter().any(|r| r.original_name == "delete_file"));
 
         // Multi-term: "delete file" — delete_file matches both terms in name
-        let results = reg.search("delete file", 10);
+        let results = reg.search("delete file", 10, None, None);
         assert!(results[0].original_name == "delete_file");
     }
 
@@ -734,7 +817,7 @@ mod tests {
         );
 
         // Multi-term: "current time" should rank get_current_time highest
-        let results = reg.search("current time", 10);
+        let results = reg.search("current time", 10, None, None);
         assert!(results[0].original_name == "get_current_time");
     }
 
@@ -746,7 +829,7 @@ mod tests {
             vec![make_entry("web_search", "Search the web", "backend")],
         );
 
-        let results = reg.search("database", 10);
+        let results = reg.search("database", 10, None, None);
         assert!(results.is_empty());
     }
 
@@ -853,5 +936,527 @@ mod tests {
         );
         assert!(reg.get_by_name("time.get_current_time").is_some());
         assert!(reg.get_by_name("other.get_current_time").is_some());
+    }
+
+    // --- Phase 1: Tag filtering and usage-weighted search tests ---
+
+    fn make_tagged_entry(name: &str, desc: &str, backend: &str, tags: &[&str]) -> ToolEntry {
+        ToolEntry {
+            name: name.to_string(),
+            original_name: name.to_string(),
+            description: desc.to_string(),
+            backend_name: backend.to_string(),
+            input_schema: json!({"type": "object"}),
+            tags: tags.iter().map(|t| t.to_string()).collect(),
+        }
+    }
+
+    #[test]
+    fn test_tag_filtering() {
+        let reg = ToolRegistry::new();
+        reg.register_backend_tools(
+            "exa",
+            vec![make_tagged_entry(
+                "web_search",
+                "Search the web",
+                "exa",
+                &["search", "web"],
+            )],
+        );
+        reg.register_backend_tools(
+            "github",
+            vec![make_tagged_entry(
+                "get_repo",
+                "Get a GitHub repository",
+                "github",
+                &["code", "git"],
+            )],
+        );
+
+        // Search with tag filter: only "search" tagged tools
+        let filter = vec!["search".to_string()];
+        let results = reg.search("web", 10, Some(&filter), None);
+        assert!(!results.is_empty(), "should find tagged tools");
+        assert!(
+            results
+                .iter()
+                .all(|r| r.tags.contains(&"search".to_string())),
+            "all results should have the 'search' tag"
+        );
+
+        // Search with "code" tag should not return exa tools
+        let filter = vec!["code".to_string()];
+        let results = reg.search("web search", 10, Some(&filter), None);
+        assert!(
+            results.iter().all(|r| r.tags.contains(&"code".to_string())),
+            "results should only include 'code' tagged tools"
+        );
+    }
+
+    #[test]
+    fn test_tag_no_filter_returns_all() {
+        let reg = ToolRegistry::new();
+        reg.register_backend_tools(
+            "exa",
+            vec![make_tagged_entry(
+                "web_search",
+                "Search the web",
+                "exa",
+                &["search"],
+            )],
+        );
+        reg.register_backend_tools(
+            "github",
+            vec![make_tagged_entry(
+                "search_code",
+                "Search through code",
+                "github",
+                &["code"],
+            )],
+        );
+
+        // No filter: all matching tools returned regardless of tags
+        let results = reg.search("search", 10, None, None);
+        assert!(
+            results.len() >= 2,
+            "should find all relevant tools without tag filter"
+        );
+    }
+
+    #[test]
+    fn test_usage_boost_ranking() {
+        let reg = ToolRegistry::new();
+        reg.register_backend_tools(
+            "backend",
+            vec![
+                make_entry("tool_alpha", "Search for content", "backend"),
+                make_entry("tool_beta", "Search for content", "backend"),
+            ],
+        );
+
+        let tracker = crate::tracker::CallTracker::new();
+
+        // Record many calls to tool_beta (namespaced as backend.tool_beta)
+        for _ in 0..50 {
+            tracker.record(
+                "backend.tool_beta",
+                "backend",
+                std::time::Duration::from_millis(10),
+                true,
+            );
+        }
+
+        // With usage boost, tool_beta should rank higher than tool_alpha
+        let results = reg.search("search content", 10, None, Some(&tracker));
+        assert!(results.len() >= 2, "should find both tools");
+        // tool_beta should be first due to usage boost
+        assert_eq!(
+            results[0].name, "backend.tool_beta",
+            "heavily-used tool should rank first"
+        );
+    }
+
+    #[test]
+    fn test_usage_boost_bounded() {
+        // Verify the boost doesn't exceed ~3x even with extreme usage
+        let tracker = crate::tracker::CallTracker::new();
+
+        // Record 10000 calls
+        for _ in 0..10000 {
+            tracker.record(
+                "popular_tool",
+                "backend",
+                std::time::Duration::from_millis(1),
+                true,
+            );
+        }
+
+        let usage = tracker.usage_count("popular_tool") as f64;
+        let boost = 1.0 + 0.3 * (1.0 + usage).ln();
+        assert!(boost < 4.0, "usage boost should be bounded, got {boost}");
+        assert!(boost > 1.0, "usage boost should be positive, got {boost}");
+    }
+
+    #[test]
+    fn test_tags_propagated_to_entries() {
+        let reg = ToolRegistry::new();
+        let tools = vec![make_tagged_entry(
+            "web_search",
+            "Search the web",
+            "exa",
+            &["search", "web"],
+        )];
+        reg.register_backend_tools("exa", tools);
+
+        // Both bare and namespaced entries should have tags
+        let entry = reg.get_by_name("web_search").unwrap();
+        assert_eq!(entry.tags, vec!["search", "web"]);
+
+        let ns_entry = reg.get_by_name("exa.web_search").unwrap();
+        assert_eq!(ns_entry.tags, vec!["search", "web"]);
+    }
+
+    // --- Phase 2: Tool alias tests ---
+
+    #[test]
+    fn test_alias_resolution() {
+        let reg = ToolRegistry::new();
+        reg.register_backend_tools(
+            "exa",
+            vec![make_entry("web_search", "Search the web", "exa")],
+        );
+
+        let mut aliases = HashMap::new();
+        aliases.insert("search".to_string(), "exa.web_search".to_string());
+        reg.set_aliases(aliases);
+
+        // Alias should resolve to the target tool
+        let entry = reg.get_by_name("search").unwrap();
+        assert_eq!(entry.name, "exa.web_search");
+        assert_eq!(entry.backend_name, "exa");
+    }
+
+    #[test]
+    fn test_alias_no_shadow() {
+        // An alias with the same name as an existing tool should not shadow it
+        let reg = ToolRegistry::new();
+        reg.register_backend_tools(
+            "exa",
+            vec![make_entry("web_search", "Search via Exa", "exa")],
+        );
+        reg.register_backend_tools(
+            "tavily",
+            vec![make_entry("tavily_search", "Search via Tavily", "tavily")],
+        );
+
+        // Alias "web_search" -> tavily.tavily_search, but direct lookup should win
+        let mut aliases = HashMap::new();
+        aliases.insert("web_search".to_string(), "tavily.tavily_search".to_string());
+        reg.set_aliases(aliases);
+
+        let entry = reg.get_by_name("web_search").unwrap();
+        assert_eq!(
+            entry.backend_name, "exa",
+            "direct lookup should win over alias"
+        );
+    }
+
+    #[test]
+    fn test_alias_no_chain() {
+        // Alias A->B and alias B->C: looking up A should resolve to B's target, not chain to C
+        let reg = ToolRegistry::new();
+        reg.register_backend_tools(
+            "backend",
+            vec![
+                make_entry("tool_b", "Tool B", "backend"),
+                make_entry("tool_c", "Tool C", "backend"),
+            ],
+        );
+
+        let mut aliases = HashMap::new();
+        aliases.insert("alias_a".to_string(), "alias_b".to_string()); // points to another alias
+        aliases.insert("alias_b".to_string(), "backend.tool_c".to_string());
+        reg.set_aliases(aliases);
+
+        // alias_a points to "alias_b", but alias_b is not a real tool — just another alias.
+        // One-level resolution means alias_a looks up "alias_b" in tools map (not found), done.
+        assert!(
+            reg.get_by_name("alias_a").is_none(),
+            "alias chaining should not work"
+        );
+
+        // alias_b points directly to a real tool — should resolve
+        let entry = reg.get_by_name("alias_b").unwrap();
+        assert_eq!(entry.name, "backend.tool_c");
+    }
+
+    #[test]
+    fn test_alias_hot_reload() {
+        let reg = ToolRegistry::new();
+        reg.register_backend_tools(
+            "backend",
+            vec![
+                make_entry("tool_a", "Tool A", "backend"),
+                make_entry("tool_b", "Tool B", "backend"),
+            ],
+        );
+
+        // Set initial aliases
+        let mut aliases = HashMap::new();
+        aliases.insert("my_alias".to_string(), "backend.tool_a".to_string());
+        reg.set_aliases(aliases);
+
+        assert_eq!(reg.get_by_name("my_alias").unwrap().name, "backend.tool_a");
+
+        // Hot-reload: change alias target
+        let mut new_aliases = HashMap::new();
+        new_aliases.insert("my_alias".to_string(), "backend.tool_b".to_string());
+        reg.set_aliases(new_aliases);
+
+        assert_eq!(
+            reg.get_by_name("my_alias").unwrap().name,
+            "backend.tool_b",
+            "alias should point to new target after reload"
+        );
+    }
+
+    // --- Phase 4: Fallback chain tests ---
+
+    #[test]
+    fn test_find_equivalent_tool() {
+        let reg = ToolRegistry::new();
+        reg.register_backend_tools(
+            "exa",
+            vec![make_entry("web_search", "Search via Exa", "exa")],
+        );
+        reg.register_backend_tools(
+            "tavily",
+            vec![make_entry("web_search", "Search via Tavily", "tavily")],
+        );
+
+        // Find web_search in tavily backend by original_name
+        let found = reg.find_equivalent_tool("tavily", "web_search");
+        assert!(found.is_some(), "should find equivalent tool");
+        assert!(
+            found.unwrap().contains("web_search"),
+            "should return key containing web_search"
+        );
+
+        // Non-existent tool
+        assert!(reg.find_equivalent_tool("tavily", "nonexistent").is_none());
+
+        // Non-existent backend
+        assert!(
+            reg.find_equivalent_tool("nonexistent", "web_search")
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn test_is_transient_error() {
+        use crate::backend::is_transient_error;
+
+        // Transient errors
+        assert!(is_transient_error(&anyhow::anyhow!("connection refused")));
+        assert!(is_transient_error(&anyhow::anyhow!("request timed out")));
+        assert!(is_transient_error(&anyhow::anyhow!("rate limit exceeded")));
+        assert!(is_transient_error(&anyhow::anyhow!("service unavailable")));
+        assert!(is_transient_error(&anyhow::anyhow!("network error")));
+
+        // Non-transient errors
+        assert!(!is_transient_error(&anyhow::anyhow!("invalid parameters")));
+        assert!(!is_transient_error(&anyhow::anyhow!("tool not found")));
+        assert!(!is_transient_error(&anyhow::anyhow!(
+            "authentication failed"
+        )));
+        // Should NOT match generic "connection" substring (false positive fix)
+        assert!(!is_transient_error(&anyhow::anyhow!(
+            "invalid connection string"
+        )));
+    }
+
+    #[test]
+    fn test_fallback_chain_from_config() {
+        let yaml = r#"
+            log_level: info
+            backends:
+              exa:
+                command: exa-mcp-server
+                fallback_chain: [tavily, brave-search]
+        "#;
+        let config: crate::config::Config = serde_yaml_ng::from_str(yaml).unwrap();
+        let exa = &config.backends["exa"];
+        assert_eq!(exa.fallback_chain, vec!["tavily", "brave-search"]);
+    }
+
+    #[test]
+    fn test_alias_from_config() {
+        // Verify aliases parse from YAML config
+        let yaml = r#"
+            log_level: info
+            backends: {}
+            aliases:
+              search: exa.web_search_exa
+              fetch: firecrawl.firecrawl_scrape
+        "#;
+        let config: crate::config::Config = serde_yaml_ng::from_str(yaml).unwrap();
+        assert_eq!(config.aliases.len(), 2);
+        assert_eq!(config.aliases["search"], "exa.web_search_exa");
+        assert_eq!(config.aliases["fetch"], "firecrawl.firecrawl_scrape");
+    }
+
+    // --- Phase 5: Composite Tools ---
+
+    #[test]
+    fn test_composite_tool_registration() {
+        use crate::backend::composite::COMPOSITE_BACKEND_NAME;
+
+        let reg = ToolRegistry::new();
+        let tools = vec![ToolEntry {
+            name: "search_and_scrape".to_string(),
+            original_name: "search_and_scrape".to_string(),
+            description: "Search the web and scrape the top result".to_string(),
+            backend_name: COMPOSITE_BACKEND_NAME.to_string(),
+            input_schema: serde_json::json!({"type": "object"}),
+            tags: vec!["composite".to_string()],
+        }];
+        reg.register_backend_tools_namespaced(
+            COMPOSITE_BACKEND_NAME,
+            COMPOSITE_BACKEND_NAME,
+            tools,
+        );
+
+        let entry = reg.get_by_name("search_and_scrape").unwrap();
+        assert_eq!(entry.backend_name, COMPOSITE_BACKEND_NAME);
+        assert_eq!(
+            entry.description,
+            "Search the web and scrape the top result"
+        );
+        assert!(entry.tags.contains(&"composite".to_string()));
+    }
+
+    #[test]
+    fn test_composite_tool_search() {
+        use crate::backend::composite::COMPOSITE_BACKEND_NAME;
+
+        let reg = ToolRegistry::new();
+        let tools = vec![ToolEntry {
+            name: "search_and_scrape".to_string(),
+            original_name: "search_and_scrape".to_string(),
+            description: "Search the web and scrape the top result".to_string(),
+            backend_name: COMPOSITE_BACKEND_NAME.to_string(),
+            input_schema: serde_json::json!({"type": "object"}),
+            tags: vec!["composite".to_string()],
+        }];
+        reg.register_backend_tools_namespaced(
+            COMPOSITE_BACKEND_NAME,
+            COMPOSITE_BACKEND_NAME,
+            tools,
+        );
+
+        let results = reg.search("search scrape web", 10, None, None);
+        assert!(
+            !results.is_empty(),
+            "composite tool should appear in search"
+        );
+        assert!(results.iter().any(|r| r.name == "search_and_scrape"));
+    }
+
+    #[test]
+    fn test_composite_config_parsing() {
+        let yaml = r#"
+            log_level: info
+            backends: {}
+            composite_tools:
+              search_and_scrape:
+                description: "Search the web and scrape the top result"
+                code: |
+                  const results = await exa.web_search_exa({query: params.query});
+                  return results;
+                input_schema:
+                  type: object
+                  properties:
+                    query:
+                      type: string
+                  required: [query]
+        "#;
+        let config: crate::config::Config = serde_yaml_ng::from_str(yaml).unwrap();
+        assert_eq!(config.composite_tools.len(), 1);
+        let tool = &config.composite_tools["search_and_scrape"];
+        assert_eq!(tool.description, "Search the web and scrape the top result");
+        assert!(tool.code.contains("web_search_exa"));
+        assert!(tool.input_schema.is_some());
+    }
+
+    #[test]
+    fn test_composite_tool_in_list() {
+        use crate::backend::composite::COMPOSITE_BACKEND_NAME;
+
+        let reg = ToolRegistry::new();
+        // Add a regular tool
+        reg.register_backend_tools(
+            "regular_backend",
+            vec![make_entry(
+                "regular_tool",
+                "A regular tool",
+                "regular_backend",
+            )],
+        );
+        // Add a composite tool
+        let composite_tools = vec![ToolEntry {
+            name: "my_composite".to_string(),
+            original_name: "my_composite".to_string(),
+            description: "A composite tool".to_string(),
+            backend_name: COMPOSITE_BACKEND_NAME.to_string(),
+            input_schema: serde_json::json!({"type": "object"}),
+            tags: vec!["composite".to_string()],
+        }];
+        reg.register_backend_tools_namespaced(
+            COMPOSITE_BACKEND_NAME,
+            COMPOSITE_BACKEND_NAME,
+            composite_tools,
+        );
+
+        let all = reg.get_all();
+        let names: Vec<&str> = all.iter().map(|t| t.name.as_str()).collect();
+        assert!(
+            names.contains(&"my_composite"),
+            "composite tool should be in get_all()"
+        );
+        assert!(
+            names.contains(&"regular_tool"),
+            "regular tool should still be in get_all()"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_composite_backend_discover_tools() {
+        use crate::backend::Backend;
+        use crate::backend::composite::CompositeBackend;
+        use std::collections::HashMap;
+
+        let mut tools = HashMap::new();
+        tools.insert(
+            "my_tool".to_string(),
+            crate::config::CompositeToolConfig {
+                description: "Does something cool".to_string(),
+                code: "return 42;".to_string(),
+                input_schema: Some(
+                    serde_json::json!({"type": "object", "properties": {"x": {"type": "number"}}}),
+                ),
+            },
+        );
+        tools.insert(
+            "another_tool".to_string(),
+            crate::config::CompositeToolConfig {
+                description: "Another composite".to_string(),
+                code: "return 'hello';".to_string(),
+                input_schema: None,
+            },
+        );
+
+        let backend = CompositeBackend::new(tools);
+        let discovered = backend.discover_tools().await.unwrap();
+
+        assert_eq!(discovered.len(), 2);
+        let names: Vec<&str> = discovered.iter().map(|t| t.name.as_str()).collect();
+        assert!(names.contains(&"my_tool"));
+        assert!(names.contains(&"another_tool"));
+
+        // Tool with custom schema should have it
+        let my_tool = discovered.iter().find(|t| t.name == "my_tool").unwrap();
+        assert!(my_tool.input_schema["properties"]["x"]["type"] == "number");
+
+        // Tool without schema gets default
+        let another = discovered
+            .iter()
+            .find(|t| t.name == "another_tool")
+            .unwrap();
+        assert!(another.input_schema["type"] == "object");
+
+        // All should have "composite" tag
+        for tool in &discovered {
+            assert!(tool.tags.contains(&"composite".to_string()));
+        }
     }
 }

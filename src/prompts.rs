@@ -4,6 +4,7 @@ use rmcp::{ErrorData as McpError, model::*};
 
 use crate::backend::BackendManager;
 use crate::registry::ToolRegistry;
+use crate::tracker::CallTracker;
 
 /// Return the list of available prompts.
 pub fn list_prompts() -> Vec<Prompt> {
@@ -50,6 +51,7 @@ pub async fn get_prompt(
     arguments: Option<JsonObject>,
     registry: &Arc<ToolRegistry>,
     backend_manager: &Arc<BackendManager>,
+    tracker: &Arc<CallTracker>,
 ) -> Result<GetPromptResult, McpError> {
     match name {
         "discover" => Ok(discover_prompt(registry)),
@@ -63,7 +65,7 @@ pub async fn get_prompt(
                 })?;
             Ok(find_tool_prompt(task, registry))
         }
-        "backend_status" => Ok(backend_status_prompt(registry, backend_manager)),
+        "backend_status" => Ok(backend_status_prompt(registry, backend_manager, tracker)),
         _ => Err(McpError::invalid_params(
             format!("Unknown prompt: {name}"),
             None,
@@ -111,7 +113,7 @@ fn discover_prompt(registry: &ToolRegistry) -> GetPromptResult {
 
 fn find_tool_prompt(task: &str, registry: &ToolRegistry) -> GetPromptResult {
     // Search for tools matching the task
-    let results = registry.search(task, 5);
+    let results = registry.search(task, 5, None, None);
 
     let mut text = format!("# Tools for: {task}\n\n");
 
@@ -162,14 +164,15 @@ fn find_tool_prompt(task: &str, registry: &ToolRegistry) -> GetPromptResult {
 fn backend_status_prompt(
     registry: &ToolRegistry,
     backend_manager: &BackendManager,
+    tracker: &CallTracker,
 ) -> GetPromptResult {
     let statuses = backend_manager.get_all_status();
 
     let mut text = format!(
         "# Gatemini Backend Status\n\n\
          **Total:** {} backends, {} tools\n\n\
-         | Backend | Status | Available | Tools |\n\
-         |---------|--------|-----------|-------|\n",
+         | Backend | Status | Available | Tools | p50 (ms) | p95 (ms) | Calls |\n\
+         |---------|--------|-----------|-------|----------|----------|-------|\n",
         statuses.len(),
         registry.tool_count(),
     );
@@ -177,9 +180,18 @@ fn backend_status_prompt(
     for status in &statuses {
         let tool_count = registry.get_by_backend(&status.name).len();
         let available = if status.available { "Yes" } else { "No" };
+        let (p50, p95, calls) = if let Some(stats) = tracker.latency_stats(&status.name) {
+            (
+                format!("{:.1}", stats.p50_ms),
+                format!("{:.1}", stats.p95_ms),
+                format!("{}", stats.sample_count),
+            )
+        } else {
+            ("-".to_string(), "-".to_string(), "0".to_string())
+        };
         text.push_str(&format!(
-            "| {} | {:?} | {} | {} |\n",
-            status.name, status.state, available, tool_count
+            "| {} | {:?} | {} | {} | {} | {} | {} |\n",
+            status.name, status.state, available, tool_count, p50, p95, calls
         ));
     }
 

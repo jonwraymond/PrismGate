@@ -176,6 +176,8 @@ mod tests {
                     retry: Default::default(),
                     prerequisite: None,
                     rate_limit: None,
+                    tags: Vec::new(),
+                    fallback_chain: Vec::new(),
                 },
             );
         }
@@ -457,7 +459,7 @@ mod tests {
             drain_timeout: Duration::from_secs(42),
             ..Default::default()
         };
-        let manager = BackendManager::new_with_config(&config);
+        let manager = BackendManager::new_with_config(&config, None);
         assert_eq!(manager.drain_timeout, Duration::from_secs(42));
     }
 

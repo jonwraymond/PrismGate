@@ -1,3 +1,4 @@
+pub mod composite;
 pub mod health;
 pub mod http;
 pub mod lenient_client;
@@ -54,6 +55,32 @@ pub(crate) fn map_call_tool_result(result: CallToolResult) -> Value {
     }
 }
 
+/// Check if an error is transient and suitable for fallback.
+/// Only network, timeout, and rate limit errors trigger fallback chains.
+pub(crate) fn is_transient_error(err: &anyhow::Error) -> bool {
+    let msg = err.to_string().to_lowercase();
+    // Rate limiting / overload
+    msg.contains("rate limit")
+        || msg.contains("too many requests")
+        // Timeouts
+        || msg.contains("timeout")
+        || msg.contains("timed out")
+        || msg.contains("deadline exceeded")
+        // Connection errors (specific patterns to avoid false positives)
+        || msg.contains("connection refused")
+        || msg.contains("connection reset")
+        || msg.contains("connection closed")
+        || msg.contains("connection aborted")
+        || msg.contains("failed to connect")
+        // Network errors
+        || msg.contains("network error")
+        || msg.contains("network is unreachable")
+        || msg.contains("broken pipe")
+        // Service availability
+        || msg.contains("service unavailable")
+        || msg.contains("temporarily unavailable")
+}
+
 /// Map rmcp Tool list to ToolEntry vec.
 pub(crate) fn map_tools_to_entries(
     tools: Vec<rmcp::model::Tool>,
@@ -70,6 +97,7 @@ pub(crate) fn map_tools_to_entries(
                 backend_name: backend_name.to_string(),
                 input_schema: serde_json::to_value(&t.input_schema)
                     .unwrap_or(Value::Object(Default::default())),
+                tags: Vec::new(),
             }
         })
         .collect()
@@ -190,6 +218,8 @@ pub struct BackendManager {
     drain_timeout: Duration,
     #[cfg(test)]
     pub drain_timeout: Duration,
+    /// Optional call tracker for usage stats, latency, and recent calls.
+    tracker: Option<Arc<crate::tracker::CallTracker>>,
 }
 
 impl BackendManager {
@@ -206,11 +236,15 @@ impl BackendManager {
             dynamic_backends: RwLock::new(HashSet::new()),
             prerequisite_pids: DashMap::new(),
             drain_timeout: Duration::from_secs(10),
+            tracker: None,
         })
     }
 
     /// Create a BackendManager with a custom drain timeout from health config.
-    pub fn new_with_config(health_config: &crate::config::HealthConfig) -> Arc<Self> {
+    pub fn new_with_config(
+        health_config: &crate::config::HealthConfig,
+        tracker: Option<Arc<crate::tracker::CallTracker>>,
+    ) -> Arc<Self> {
         Arc::new(Self {
             backends: DashMap::new(),
             configs: RwLock::new(std::collections::HashMap::new()),
@@ -223,6 +257,7 @@ impl BackendManager {
             dynamic_backends: RwLock::new(HashSet::new()),
             prerequisite_pids: DashMap::new(),
             drain_timeout: health_config.drain_timeout,
+            tracker,
         })
     }
 
@@ -307,8 +342,13 @@ impl BackendManager {
             }
         };
 
-        // Discover tools
-        let tools = backend.discover_tools().await?;
+        // Discover tools and propagate config tags
+        let mut tools = backend.discover_tools().await?;
+        if !config.tags.is_empty() {
+            for tool in &mut tools {
+                tool.tags.clone_from(&config.tags);
+            }
+        }
         let tool_count = tools.len();
 
         // Register in registry with namespace
@@ -529,7 +569,17 @@ impl BackendManager {
                     let state = b.state();
                     match state {
                         BackendState::Healthy => {
-                            return b.call_tool(tool_name, arguments).await;
+                            let start = std::time::Instant::now();
+                            let result = b.call_tool(tool_name, arguments).await;
+                            if let Some(ref tracker) = self.tracker {
+                                tracker.record(
+                                    tool_name,
+                                    backend_name,
+                                    start.elapsed(),
+                                    result.is_ok(),
+                                );
+                            }
+                            return result;
                         }
                         BackendState::Starting => {
                             debug!(
@@ -601,6 +651,94 @@ impl BackendManager {
                 )
             }
         }
+    }
+
+    /// Call a tool with fallback chain support.
+    ///
+    /// If the primary backend fails with a transient error (network, timeout, rate limit)
+    /// and has a fallback_chain configured, tries equivalent tools in fallback backends.
+    /// Fallback chains are non-recursive: a fallback backend's own chain is NOT followed.
+    pub async fn call_tool_with_fallback(
+        &self,
+        backend_name: &str,
+        tool_name: &str,
+        original_name: &str,
+        arguments: Option<Value>,
+        registry: &crate::registry::ToolRegistry,
+    ) -> Result<Value> {
+        let result = self
+            .call_tool(backend_name, tool_name, arguments.clone())
+            .await;
+        if result.is_ok() {
+            return result;
+        }
+        let err = result.unwrap_err();
+
+        // Only attempt fallback on transient errors
+        if !is_transient_error(&err) {
+            return Err(err);
+        }
+
+        // Get fallback chain from config
+        let chain = {
+            let configs = self.configs.read().await;
+            configs
+                .get(backend_name)
+                .map(|c| c.fallback_chain.clone())
+                .unwrap_or_default()
+        };
+
+        if chain.is_empty() {
+            return Err(err);
+        }
+
+        for fallback_name in &chain {
+            // Verify fallback backend has an equivalent tool before attempting call.
+            // find_equivalent_tool returns the namespaced registry key (for logging),
+            // but we dispatch with original_name (what the backend MCP server expects).
+            if let Some(registry_key) = registry.find_equivalent_tool(fallback_name, original_name)
+            {
+                debug!(
+                    primary = %backend_name,
+                    fallback = %fallback_name,
+                    registry_key = %registry_key,
+                    dispatch_name = %original_name,
+                    "trying fallback backend"
+                );
+                match self
+                    .call_tool(fallback_name, original_name, arguments.clone())
+                    .await
+                {
+                    Ok(result) => {
+                        info!(
+                            primary = %backend_name,
+                            fallback = %fallback_name,
+                            tool = %original_name,
+                            "fallback succeeded"
+                        );
+                        return Ok(result);
+                    }
+                    Err(fallback_err) => {
+                        debug!(
+                            fallback = %fallback_name,
+                            error = %fallback_err,
+                            "fallback failed, trying next"
+                        );
+                    }
+                }
+            }
+        }
+
+        // All fallbacks exhausted — return original error
+        Err(err)
+    }
+
+    /// Register a pre-built backend directly (e.g. CompositeBackend).
+    ///
+    /// Unlike `add_backend` / `start_backend`, this does NOT spawn a child process
+    /// or discover tools — the caller is responsible for tool registration.
+    pub fn register_virtual_backend(&self, name: &str, backend: Arc<dyn Backend>) {
+        self.backends.insert(name.to_string(), backend);
     }
 
     /// Check if a backend is ready to accept tool calls.

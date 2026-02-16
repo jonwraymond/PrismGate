@@ -33,6 +33,7 @@ mod tests {
         let server = GateminiServer::new(
             Arc::clone(&registry),
             manager,
+            Arc::new(crate::tracker::CallTracker::new()),
             std::path::PathBuf::from("/tmp/test-cache.json"),
             true,
             10,
@@ -80,6 +81,7 @@ mod tests {
         let server = GateminiServer::new(
             registry,
             manager,
+            Arc::new(crate::tracker::CallTracker::new()),
             std::path::PathBuf::from("/tmp/test-cache.json"),
             true,
             10,

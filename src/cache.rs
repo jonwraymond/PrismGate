@@ -1,8 +1,12 @@
 use crate::registry::{ToolEntry, ToolRegistry};
+use crate::tracker::CallTracker;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use tracing::{debug, info, warn};
+
+/// Current cache version. Bump when adding new persisted fields.
+const CACHE_VERSION: u32 = 4;
 
 #[derive(Serialize, Deserialize)]
 struct ToolCache {
@@ -11,6 +15,9 @@ struct ToolCache {
     /// Embedding vectors keyed by tool name. Only present in version 2+ caches.
     #[serde(default)]
     embeddings: Option<HashMap<String, Vec<f32>>>,
+    /// Per-tool usage counts. Only present in version 4+ caches.
+    #[serde(default)]
+    usage_stats: Option<HashMap<String, u64>>,
 }
 
 /// Default cache path: ~/.prismgate/cache.json
@@ -30,16 +37,21 @@ pub fn cache_path_from_config(config_path: &Path) -> PathBuf {
     dir.join(format!(".{stem}.cache.json"))
 }
 
-/// Load cached tools into the registry.
+/// Load cached tools into the registry and restore usage stats to tracker.
 /// Only loads backends that exist in the current config.
-pub async fn load(path: &Path, registry: &ToolRegistry, config_backend_names: &[String]) -> usize {
+pub async fn load(
+    path: &Path,
+    registry: &ToolRegistry,
+    config_backend_names: &[String],
+    tracker: Option<&CallTracker>,
+) -> usize {
     let data = match tokio::fs::read_to_string(path).await {
         Ok(d) => d,
         Err(_) => return 0, // no cache file yet
     };
 
     let mut cache: ToolCache = match serde_json::from_str::<ToolCache>(&data) {
-        Ok(c) if c.version >= 1 && c.version <= 3 => c,
+        Ok(c) if c.version >= 1 && c.version <= CACHE_VERSION => c,
         Ok(c) => {
             warn!(
                 version = c.version,
@@ -81,12 +93,21 @@ pub async fn load(path: &Path, registry: &ToolRegistry, config_backend_names: &[
         registry.load_embeddings(embeddings);
     }
 
+    // Restore usage stats (version 4+ caches)
+    if let Some(tracker) = tracker
+        && let Some(usage) = cache.usage_stats
+        && !usage.is_empty()
+    {
+        info!(count = usage.len(), "restoring cached usage stats");
+        tracker.load_usage(usage);
+    }
+
     info!(tools = total, path = %path.display(), "loaded tools from cache");
     total
 }
 
 /// Save the current registry to the cache file (atomic write via temp + rename).
-pub async fn save(path: &Path, registry: &ToolRegistry) {
+pub async fn save(path: &Path, registry: &ToolRegistry, tracker: Option<&CallTracker>) {
     let snapshot = registry.snapshot();
 
     #[cfg(feature = "semantic")]
@@ -94,10 +115,13 @@ pub async fn save(path: &Path, registry: &ToolRegistry) {
     #[cfg(not(feature = "semantic"))]
     let embeddings: Option<HashMap<String, Vec<f32>>> = None;
 
+    let usage_stats = tracker.map(|t| t.snapshot_usage());
+
     let cache = ToolCache {
-        version: 3,
+        version: CACHE_VERSION,
         backends: snapshot,
         embeddings,
+        usage_stats,
     };
 
     let json = match serde_json::to_string_pretty(&cache) {
@@ -134,6 +158,7 @@ mod tests {
             description: format!("{name} description"),
             backend_name: backend.to_string(),
             input_schema: json!({"type": "object"}),
+            tags: Vec::new(),
         }
     }
 
@@ -162,13 +187,13 @@ mod tests {
         registry.register_backend_tools("tavily", vec![make_entry("tavily_search", "tavily")]);
 
         // Save
-        save(&cache_path, &registry).await;
+        save(&cache_path, &registry, None).await;
         assert!(cache_path.exists());
 
         // Load into a fresh registry
         let registry2 = ToolRegistry::new();
         let config_names = vec!["exa".to_string(), "tavily".to_string()];
-        let loaded = load(&cache_path, &registry2, &config_names).await;
+        let loaded = load(&cache_path, &registry2, &config_names, None).await;
         // Snapshot saves all entries (bare + namespaced), loaded count matches what was saved
         assert!(loaded > 0);
         // Both bare and namespaced should resolve
@@ -188,12 +213,12 @@ mod tests {
             vec![make_entry("old_tool", "removed_backend")],
         );
 
-        save(&cache_path, &registry).await;
+        save(&cache_path, &registry, None).await;
 
         // Only load "exa" (removed_backend no longer in config)
         let registry2 = ToolRegistry::new();
         let config_names = vec!["exa".to_string()];
-        let loaded = load(&cache_path, &registry2, &config_names).await;
+        let loaded = load(&cache_path, &registry2, &config_names, None).await;
         assert!(loaded > 0);
         assert!(registry2.get_by_name("web_search").is_some());
         assert!(registry2.get_by_name("old_tool").is_none());
@@ -202,7 +227,7 @@ mod tests {
     #[tokio::test]
     async fn test_load_missing_file() {
         let registry = ToolRegistry::new();
-        let loaded = load(Path::new("/nonexistent/cache.json"), &registry, &[]).await;
+        let loaded = load(Path::new("/nonexistent/cache.json"), &registry, &[], None).await;
         assert_eq!(loaded, 0);
     }
 
@@ -213,7 +238,7 @@ mod tests {
         tokio::fs::write(&cache_path, "not json").await.unwrap();
 
         let registry = ToolRegistry::new();
-        let loaded = load(&cache_path, &registry, &[]).await;
+        let loaded = load(&cache_path, &registry, &[], None).await;
         assert_eq!(loaded, 0);
     }
 
@@ -227,7 +252,7 @@ mod tests {
             .unwrap();
 
         let registry = ToolRegistry::new();
-        let loaded = load(&cache_path, &registry, &[]).await;
+        let loaded = load(&cache_path, &registry, &[], None).await;
         assert_eq!(loaded, 0);
     }
 
@@ -249,11 +274,85 @@ mod tests {
             .unwrap();
 
         let registry = ToolRegistry::new();
-        let loaded = load(&cache_path, &registry, &["exa".to_string()]).await;
+        let loaded = load(&cache_path, &registry, &["exa".to_string()], None).await;
         assert_eq!(loaded, 1);
 
         // original_name should be populated from name during migration
         let entry = registry.get_by_name("web_search").unwrap();
         assert_eq!(entry.original_name, "web_search");
+    }
+
+    #[tokio::test]
+    async fn test_cache_v4_usage_stats_roundtrip() {
+        let dir = tempfile::tempdir().unwrap();
+        let cache_path = dir.path().join(".test.cache.json");
+
+        let registry = ToolRegistry::new();
+        registry.register_backend_tools("exa", vec![make_entry("web_search", "exa")]);
+
+        // Create tracker with some usage
+        let tracker = CallTracker::new();
+        tracker.record(
+            "exa.web_search",
+            "exa",
+            std::time::Duration::from_millis(10),
+            true,
+        );
+        tracker.record(
+            "exa.web_search",
+            "exa",
+            std::time::Duration::from_millis(20),
+            true,
+        );
+
+        // Save with tracker
+        save(&cache_path, &registry, Some(&tracker)).await;
+
+        // Load into fresh registry + tracker
+        let registry2 = ToolRegistry::new();
+        let tracker2 = CallTracker::new();
+        let loaded = load(
+            &cache_path,
+            &registry2,
+            &["exa".to_string()],
+            Some(&tracker2),
+        )
+        .await;
+        assert!(loaded > 0);
+
+        // Usage should be restored
+        assert_eq!(tracker2.usage_count("exa.web_search"), 2);
+    }
+
+    #[tokio::test]
+    async fn test_cache_v3_migration_to_v4() {
+        // v3 cache without usage_stats should load fine, defaulting to no usage
+        let dir = tempfile::tempdir().unwrap();
+        let cache_path = dir.path().join(".test.cache.json");
+        let v3_cache = json!({
+            "version": 3,
+            "backends": {
+                "exa": [
+                    {
+                        "name": "exa.web_search",
+                        "original_name": "web_search",
+                        "description": "Search",
+                        "backend_name": "exa",
+                        "input_schema": {"type": "object"}
+                    }
+                ]
+            }
+        });
+        tokio::fs::write(&cache_path, v3_cache.to_string())
+            .await
+            .unwrap();
+
+        let registry = ToolRegistry::new();
+        let tracker = CallTracker::new();
+        let loaded = load(&cache_path, &registry, &["exa".to_string()], Some(&tracker)).await;
+        assert_eq!(loaded, 1);
+
+        // No usage stats in v3 cache, so tracker should be empty
+        assert_eq!(tracker.usage_count("exa.web_search"), 0);
     }
 }

@@ -53,6 +53,7 @@ mod tests {
         let gw = InitializedGateway {
             registry,
             backend_manager: manager,
+            tracker: Arc::new(crate::tracker::CallTracker::new()),
             cache_path: PathBuf::from("/tmp/test-cache.json"),
             config,
             shutdown_notify: Arc::new(tokio::sync::Notify::new()),

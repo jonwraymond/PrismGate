@@ -5,6 +5,7 @@ use serde::Serialize;
 
 use crate::backend::BackendManager;
 use crate::registry::ToolRegistry;
+use crate::tracker::CallTracker;
 
 /// Return the static resources available for @-mention discovery.
 pub fn list_static_resources() -> Vec<Resource> {
@@ -56,6 +57,22 @@ pub fn list_static_resources() -> Vec<Resource> {
             },
             annotations: None,
         },
+        Resource {
+            raw: RawResource {
+                uri: "gatemini://recent".to_string(),
+                name: "recent".to_string(),
+                title: Some("Recent Tool Calls".to_string()),
+                description: Some(
+                    "Last 50 tool calls with tool name, backend, duration, and success/failure"
+                        .to_string(),
+                ),
+                mime_type: Some("application/json".to_string()),
+                size: None,
+                icons: None,
+                meta: None,
+            },
+            annotations: None,
+        },
     ]
 }
 
@@ -96,6 +113,20 @@ pub fn list_resource_templates() -> Vec<ResourceTemplate> {
                 title: Some("Backend Tools".to_string()),
                 description: Some(
                     "All tools for a specific backend with brief descriptions".to_string(),
+                ),
+                mime_type: Some("application/json".to_string()),
+                icons: None,
+            },
+            annotations: None,
+        },
+        ResourceTemplate {
+            raw: RawResourceTemplate {
+                uri_template: "gatemini://recent/{limit}".to_string(),
+                name: "recent-limited".to_string(),
+                title: Some("Recent Tool Calls (Custom Limit)".to_string()),
+                description: Some(
+                    "Last N tool calls (customizable limit) with tool name, backend, duration, success"
+                        .to_string(),
                 ),
                 mime_type: Some("application/json".to_string()),
                 icons: None,
@@ -152,6 +183,7 @@ pub async fn read_resource(
     uri: &str,
     registry: &Arc<ToolRegistry>,
     backend_manager: &Arc<BackendManager>,
+    tracker: &Arc<CallTracker>,
 ) -> Result<ReadResourceResult, McpError> {
     // Parse the URI
     let path = uri
@@ -178,6 +210,12 @@ pub async fn read_resource(
                 .map_err(|e| McpError::internal_error(e.to_string(), None))?;
             Ok(text_resource(uri, &json))
         }
+        "recent" => {
+            let calls = tracker.recent_calls(50);
+            let json = serde_json::to_string_pretty(&calls)
+                .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+            Ok(text_resource(uri, &json))
+        }
         "tools" => {
             let tools: Vec<CompactToolEntry> = registry
                 .get_all()
@@ -194,7 +232,19 @@ pub async fn read_resource(
         }
         _ => {
             // Try template matching
-            if let Some(tool_name) = path.strip_prefix("tool/") {
+            if let Some(limit_str) = path.strip_prefix("recent/") {
+                // gatemini://recent/{limit}
+                let limit: usize = limit_str.parse().map_err(|_| {
+                    McpError::invalid_params(
+                        format!("Invalid limit '{limit_str}': must be a positive integer"),
+                        None,
+                    )
+                })?;
+                let calls = tracker.recent_calls(limit);
+                let json = serde_json::to_string_pretty(&calls)
+                    .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+                Ok(text_resource(uri, &json))
+            } else if let Some(tool_name) = path.strip_prefix("tool/") {
                 // gatemini://tool/{tool_name}
                 let entry = registry.get_by_name(tool_name).ok_or_else(|| {
                     McpError::invalid_params(format!("Tool '{tool_name}' not found"), None)

@@ -55,6 +55,7 @@ pub async fn run(gw: InitializedGateway, custom_socket: Option<PathBuf>) -> Resu
     // Wrap shared state for cloning into client tasks.
     let registry = Arc::clone(&gw.registry);
     let backend_manager = Arc::clone(&gw.backend_manager);
+    let tracker = Arc::clone(&gw.tracker);
     let cache_path = gw.cache_path.clone();
     let allow_runtime_registration = gw.config.allow_runtime_registration;
     let max_dynamic_backends = gw.config.max_dynamic_backends;
@@ -103,6 +104,7 @@ pub async fn run(gw: InitializedGateway, custom_socket: Option<PathBuf>) -> Resu
                                 let server = GateminiServer::new(
                                     Arc::clone(&registry),
                                     Arc::clone(&backend_manager),
+                                    Arc::clone(&tracker),
                                     cache_path.clone(),
                                     allow_runtime_registration,
                                     max_dynamic_backends,

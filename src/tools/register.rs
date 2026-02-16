@@ -125,6 +125,8 @@ pub async fn handle_register(
         retry: Default::default(),
         prerequisite: None,
         rate_limit: None,
+        tags: Vec::new(),
+        fallback_chain: Vec::new(),
     };
 
     let tool_count = manager.add_backend(&name, config, registry).await?;

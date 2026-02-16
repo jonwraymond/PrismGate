@@ -65,6 +65,7 @@ impl MockBackend {
                     description: "Returns args as JSON".to_string(),
                     backend_name: name.to_string(),
                     input_schema: serde_json::json!({"type": "object", "properties": {}}),
+                    tags: Vec::new(),
                 },
                 ToolEntry {
                     name: "slow_tool".to_string(),
@@ -72,6 +73,7 @@ impl MockBackend {
                     description: "Sleeps call_delay then returns".to_string(),
                     backend_name: name.to_string(),
                     input_schema: serde_json::json!({"type": "object", "properties": {}}),
+                    tags: Vec::new(),
                 },
                 ToolEntry {
                     name: "error_tool".to_string(),
@@ -79,6 +81,7 @@ impl MockBackend {
                     description: "Always returns an error".to_string(),
                     backend_name: name.to_string(),
                     input_schema: serde_json::json!({"type": "object", "properties": {}}),
+                    tags: Vec::new(),
                 },
                 ToolEntry {
                     name: "counter_tool".to_string(),
@@ -86,6 +89,7 @@ impl MockBackend {
                     description: "Returns current concurrent call count".to_string(),
                     backend_name: name.to_string(),
                     input_schema: serde_json::json!({"type": "object", "properties": {}}),
+                    tags: Vec::new(),
                 },
             ],
         })
