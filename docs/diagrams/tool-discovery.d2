@@ -1,0 +1,266 @@
+# Tool Discovery Flow
+# 4-step progressive discovery with token savings comparison
+
+direction: down
+
+title: {
+  label: Progressive Tool Discovery
+  near: top-center
+  shape: text
+  style: {
+    font-size: 28
+    bold: true
+    font-color: "#1a1a2e"
+  }
+}
+
+# --- Progressive Steps ---
+flow: {
+  label: "4-Step Discovery Flow"
+  style: {
+    fill: "#f0f9ff"
+    stroke: "#3b82f6"
+    border-radius: 12
+    shadow: true
+    font-size: 18
+    bold: true
+  }
+
+  step1: {
+    label: |md
+      **Step 1: search_tools(brief=true)**
+      "What tools exist for web search?"
+
+      Returns: name, backend, first sentence, call example
+      **~60 tokens per result**
+    |
+    shape: rectangle
+    style: {
+      fill: "#dbeafe"
+      stroke: "#2563eb"
+      border-radius: 8
+      font-size: 13
+    }
+  }
+
+  result1: {
+    label: |md
+      ```json
+      {"name": "exa.web_search_exa",
+       "backend": "exa",
+       "description": "Search the web.",
+       "call": "call_tool_chain: await exa.web_search_exa({...})"}
+      ```
+    |
+    shape: page
+    style: {
+      fill: "#eff6ff"
+      stroke: "#93c5fd"
+      border-radius: 6
+      font-size: 11
+    }
+  }
+
+  step2: {
+    label: |md
+      **Step 2: tool_info(brief=true)**
+      "Tell me more about exa.web_search_exa"
+
+      Returns: name, backend, description, parameter names, call example
+      **~200 tokens**
+    |
+    shape: rectangle
+    style: {
+      fill: "#e0e7ff"
+      stroke: "#6366f1"
+      border-radius: 8
+      font-size: 13
+    }
+  }
+
+  result2: {
+    label: |md
+      ```json
+      {"name": "exa.web_search_exa",
+       "backend": "exa",
+       "description": "Search the web.",
+       "parameters": ["query", "num_results", "type"],
+       "call": "call_tool_chain: await exa.web_search_exa({...})"}
+      ```
+    |
+    shape: page
+    style: {
+      fill: "#eef2ff"
+      stroke: "#a5b4fc"
+      border-radius: 6
+      font-size: 11
+    }
+  }
+
+  step3: {
+    label: |md
+      **Step 3: tool_info(full=true)**
+      "Full schema please"
+
+      Returns: name, description, backend, complete JSON Schema
+      **200 - 10,700 tokens** (varies by schema complexity)
+    |
+    shape: rectangle
+    style: {
+      fill: "#ede9fe"
+      stroke: "#8b5cf6"
+      border-radius: 8
+      font-size: 13
+    }
+  }
+
+  step4: {
+    label: |md
+      **Step 4: call_tool_chain**
+      "Run it"
+
+      Execute the tool via sandbox or direct call
+    |
+    shape: rectangle
+    style: {
+      fill: "#d1fae5"
+      stroke: "#059669"
+      border-radius: 8
+      font-size: 13
+      bold: true
+    }
+  }
+
+  step1 -> result1: {
+    style: { stroke: "#93c5fd"; stroke-width: 1; stroke-dash: 3 }
+  }
+  result1 -> step2: "found it" {
+    style: { stroke: "#4b5563"; stroke-width: 2; font-size: 11 }
+  }
+  step2 -> result2: {
+    style: { stroke: "#a5b4fc"; stroke-width: 1; stroke-dash: 3 }
+  }
+  result2 -> step3: "need full schema" {
+    style: { stroke: "#4b5563"; stroke-width: 2; font-size: 11 }
+  }
+  step3 -> step4: "ready to call" {
+    style: { stroke: "#4b5563"; stroke-width: 2; font-size: 11 }
+  }
+
+  # Skip path
+  result2 -> step4: "enough info, call directly" {
+    style: {
+      stroke: "#10b981"
+      stroke-width: 2
+      stroke-dash: 5
+      font-size: 11
+    }
+  }
+}
+
+# --- Token Comparison ---
+comparison: {
+  label: "Token Usage Comparison"
+  style: {
+    fill: "#f8fafc"
+    stroke: "#64748b"
+    border-radius: 12
+    shadow: true
+    font-size: 16
+    bold: true
+  }
+
+  progressive: {
+    label: |md
+      **Progressive Discovery (typical)**
+      search_tools(brief) 10 results: ~600 tokens
+      tool_info(brief) 1 tool: ~200 tokens
+      tool_info(full) 1 tool: ~2,800 tokens (avg)
+      **Total: ~3,600 tokens**
+    |
+    shape: rectangle
+    style: {
+      fill: "#d1fae5"
+      stroke: "#059669"
+      border-radius: 8
+      font-size: 13
+    }
+  }
+
+  naive: {
+    label: |md
+      **Naive: Expose All Tools as MCP**
+      10 tools x ~2,000 tokens each
+      Full schemas sent on every tools/list
+      **Total: ~20,000 tokens**
+    |
+    shape: rectangle
+    style: {
+      fill: "#fecaca"
+      stroke: "#dc2626"
+      border-radius: 8
+      font-size: 13
+    }
+  }
+
+  savings: {
+    label: |md
+      **82% token savings**
+      3,600 vs 20,000 tokens
+    |
+    shape: rectangle
+    style: {
+      fill: "#fef3c7"
+      stroke: "#d97706"
+      border-radius: 8
+      font-size: 14
+      bold: true
+    }
+  }
+
+  progressive -> savings: {
+    style: { stroke: "#059669"; stroke-width: 2 }
+  }
+  naive -> savings: {
+    style: { stroke: "#dc2626"; stroke-width: 2 }
+  }
+}
+
+# --- Alternative: Resource Path ---
+alternative: {
+  label: "Alternative: MCP Resources"
+  style: {
+    fill: "#fff7ed"
+    stroke: "#ea580c"
+    border-radius: 12
+    shadow: true
+    font-size: 16
+    bold: true
+  }
+
+  resource: {
+    label: |md
+      **@gatemini://tools**
+      Load via @-mention in Claude Code
+      Returns ALL tools in compact format
+      **~3,000 tokens for entire catalog**
+
+      Also available:
+      - `@gatemini://overview` - system status
+      - `@gatemini://backends` - backend list
+      - `@gatemini://backend/{name}` - per-backend details
+    |
+    shape: rectangle
+    style: {
+      fill: "#fed7aa"
+      stroke: "#ea580c"
+      border-radius: 8
+      font-size: 13
+    }
+  }
+}
+
+# --- Layout connections ---
+flow -> comparison: {
+  style: { stroke: "#64748b"; stroke-width: 1; stroke-dash: 5 }
+}
