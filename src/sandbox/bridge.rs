@@ -141,6 +141,7 @@ mod tests {
             description: desc.to_string(),
             backend_name: backend.to_string(),
             input_schema: json!({"type": "object", "properties": {"query": {"type": "string"}}}),
+            tags: Vec::new(),
         }
     }
 

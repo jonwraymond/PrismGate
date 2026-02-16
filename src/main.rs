@@ -19,6 +19,7 @@ mod server;
 #[cfg(test)]
 mod testutil;
 mod tools;
+mod tracker;
 
 use anyhow::Result;
 use clap::Parser;
@@ -32,6 +33,7 @@ use tracing_subscriber::EnvFilter;
 pub struct InitializedGateway {
     pub registry: Arc<registry::ToolRegistry>,
     pub backend_manager: Arc<backend::BackendManager>,
+    pub tracker: Arc<tracker::CallTracker>,
     pub cache_path: PathBuf,
     pub config: config::Config,
     pub shutdown_notify: Arc<tokio::sync::Notify>,
@@ -115,7 +117,9 @@ pub async fn initialize(config_path: &Path) -> Result<InitializedGateway> {
             registry::ToolRegistry::new()
         }
     };
-    let backend_manager = backend::BackendManager::new_with_config(&config.health);
+    let tracker = Arc::new(tracker::CallTracker::new());
+    let backend_manager =
+        backend::BackendManager::new_with_config(&config.health, Some(Arc::clone(&tracker)));
 
     // Load tool cache for instant availability before backends connect
     let cache_path = config
@@ -123,9 +127,35 @@ pub async fn initialize(config_path: &Path) -> Result<InitializedGateway> {
         .clone()
         .unwrap_or_else(cache::default_cache_path);
     let config_backend_names: Vec<String> = config.backends.keys().cloned().collect();
-    let cached = cache::load(&cache_path, &registry, &config_backend_names).await;
+    let cached = cache::load(
+        &cache_path,
+        &registry,
+        &config_backend_names,
+        Some(&tracker),
+    )
+    .await;
     if cached > 0 {
         info!(tools = cached, "tools available from cache");
+    }
+
+    // Set up tool aliases from config
+    if !config.aliases.is_empty() {
+        info!(count = config.aliases.len(), "loading tool aliases");
+        registry.set_aliases(config.aliases.clone());
+    }
+
+    // Register composite tools (virtual backend — no child process)
+    if !config.composite_tools.is_empty() {
+        use backend::Backend as _;
+        let composite = backend::composite::CompositeBackend::new(config.composite_tools.clone());
+        let tools: Vec<registry::ToolEntry> = composite.discover_tools().await?;
+        let tool_count = tools.len();
+        registry.register_backend_tools_namespaced(
+            backend::composite::COMPOSITE_BACKEND_NAME,
+            backend::composite::COMPOSITE_BACKEND_NAME,
+            tools,
+        );
+        info!(tools = tool_count, "registered composite tools");
     }
 
     // Start all backends in the background
@@ -143,7 +173,7 @@ pub async fn initialize(config_path: &Path) -> Result<InitializedGateway> {
                 backends = reg.backend_count(),
                 "tool discovery complete"
             );
-            cache::save(&cp, &reg).await;
+            cache::save(&cp, &reg, None).await;
         });
     }
 
@@ -195,6 +225,7 @@ pub async fn initialize(config_path: &Path) -> Result<InitializedGateway> {
     Ok(InitializedGateway {
         registry,
         backend_manager,
+        tracker,
         cache_path,
         config,
         shutdown_notify,
@@ -209,6 +240,7 @@ async fn run_direct(gw: InitializedGateway) -> Result<()> {
     let server = server::GateminiServer::new(
         Arc::clone(&gw.registry),
         Arc::clone(&gw.backend_manager),
+        Arc::clone(&gw.tracker),
         gw.cache_path.clone(),
         gw.config.allow_runtime_registration,
         gw.config.max_dynamic_backends,

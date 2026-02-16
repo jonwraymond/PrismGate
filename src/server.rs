@@ -41,6 +41,9 @@ pub struct SearchToolsParams {
     /// Return brief results (name, backend, first sentence). Default: true. Set false for full descriptions.
     #[serde(default = "default_true")]
     pub brief: bool,
+    /// Optional tag to filter results. Only tools with this tag are returned.
+    #[serde(default)]
+    pub tag: Option<String>,
 }
 
 fn default_limit() -> u32 {
@@ -99,6 +102,7 @@ pub struct CallToolChainParams {
 pub struct GateminiServer {
     pub registry: Arc<ToolRegistry>,
     pub backend_manager: Arc<BackendManager>,
+    pub tracker: Arc<crate::tracker::CallTracker>,
     pub cache_path: PathBuf,
     pub allow_runtime_registration: bool,
     pub max_dynamic_backends: usize,
@@ -111,6 +115,7 @@ impl GateminiServer {
     pub fn new(
         registry: Arc<ToolRegistry>,
         backend_manager: Arc<BackendManager>,
+        tracker: Arc<crate::tracker::CallTracker>,
         cache_path: PathBuf,
         allow_runtime_registration: bool,
         max_dynamic_backends: usize,
@@ -119,6 +124,7 @@ impl GateminiServer {
         Self {
             registry,
             backend_manager,
+            tracker,
             cache_path,
             allow_runtime_registration,
             max_dynamic_backends,
@@ -154,7 +160,7 @@ impl GateminiServer {
                 // Save cache after adding a backend
                 let reg = Arc::clone(&self.registry);
                 let cp = self.cache_path.clone();
-                tokio::spawn(async move { crate::cache::save(&cp, &reg).await });
+                tokio::spawn(async move { crate::cache::save(&cp, &reg, None).await });
                 Ok(CallToolResult::success(vec![Content::text(msg)]))
             }
             Err(e) => Ok(CallToolResult::error(vec![Content::text(e.to_string())])),
@@ -184,7 +190,7 @@ impl GateminiServer {
                 // Save cache after removing a backend
                 let reg = Arc::clone(&self.registry);
                 let cp = self.cache_path.clone();
-                tokio::spawn(async move { crate::cache::save(&cp, &reg).await });
+                tokio::spawn(async move { crate::cache::save(&cp, &reg, None).await });
                 Ok(CallToolResult::success(vec![Content::text(msg)]))
             }
             Err(e) => Ok(CallToolResult::error(vec![Content::text(e.to_string())])),
@@ -198,11 +204,17 @@ impl GateminiServer {
         &self,
         Parameters(params): Parameters<SearchToolsParams>,
     ) -> Result<CallToolResult, McpError> {
+        let filter_tags: Option<Vec<String>> = params.tag.map(|t| vec![t]);
+        let filter_ref = filter_tags.as_deref();
+        let tracker_ref = Some(self.tracker.as_ref());
+
         let json = if params.brief {
             let results = crate::tools::discovery::handle_search_brief(
                 &self.registry,
                 &params.task_description,
                 params.limit,
+                filter_ref,
+                tracker_ref,
             );
             serde_json::to_string_pretty(&results)
         } else {
@@ -210,6 +222,8 @@ impl GateminiServer {
                 &self.registry,
                 &params.task_description,
                 params.limit,
+                filter_ref,
+                tracker_ref,
             );
             serde_json::to_string_pretty(&results)
         }
@@ -407,7 +421,11 @@ impl ServerHandler for GateminiServer {
     ) -> impl std::future::Future<Output = Result<ReadResourceResult, McpError>> + Send + '_ {
         let registry = Arc::clone(&self.registry);
         let backend_manager = Arc::clone(&self.backend_manager);
-        async move { crate::resources::read_resource(&request.uri, &registry, &backend_manager).await }
+        let tracker = Arc::clone(&self.tracker);
+        async move {
+            crate::resources::read_resource(&request.uri, &registry, &backend_manager, &tracker)
+                .await
+        }
     }
 
     fn list_prompts(
@@ -429,12 +447,14 @@ impl ServerHandler for GateminiServer {
     ) -> impl std::future::Future<Output = Result<GetPromptResult, McpError>> + Send + '_ {
         let registry = Arc::clone(&self.registry);
         let backend_manager = Arc::clone(&self.backend_manager);
+        let tracker = Arc::clone(&self.tracker);
         async move {
             crate::prompts::get_prompt(
                 &request.name,
                 request.arguments,
                 &registry,
                 &backend_manager,
+                &tracker,
             )
             .await
         }

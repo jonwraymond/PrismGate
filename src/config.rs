@@ -77,6 +77,31 @@ pub struct Config {
     /// Maximum number of dynamically registered backends (via register_manual).
     #[serde(default = "default_max_dynamic_backends")]
     pub max_dynamic_backends: usize,
+
+    /// Global tool aliases: shortcut name -> target tool name.
+    /// Aliases resolve in get_by_name after direct lookup (one level, no chaining).
+    #[serde(default)]
+    pub aliases: HashMap<String, String>,
+
+    /// Composite tools: multi-step tool combinations defined as TypeScript.
+    /// These are registered under a virtual `__composite` backend.
+    #[serde(default)]
+    pub composite_tools: HashMap<String, CompositeToolConfig>,
+}
+
+/// Configuration for a composite tool — a multi-step TypeScript snippet
+/// that orchestrates calls across multiple backend tools.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct CompositeToolConfig {
+    /// Human-readable description of what this composite tool does.
+    pub description: String,
+    /// TypeScript code executed in the V8 sandbox. Has access to all backend
+    /// tools via `await backend.tool({params})`. The `params` variable
+    /// contains the caller's input arguments.
+    pub code: String,
+    /// Optional JSON Schema for the tool's input parameters.
+    #[serde(default)]
+    pub input_schema: Option<serde_json::Value>,
 }
 
 /// Secrets resolution configuration.
@@ -170,6 +195,16 @@ pub struct BackendConfig {
     /// Rate limit: max calls per time window. None = no rate limit.
     #[serde(default)]
     pub rate_limit: Option<RateLimitConfig>,
+
+    /// Tags applied to all tools from this backend. Used for search filtering.
+    #[serde(default)]
+    pub tags: Vec<String>,
+
+    /// Fallback backend names to try if this backend fails with a transient error.
+    /// Only triggered for: network errors, timeouts, rate limit exceeded.
+    /// NOT triggered for: invalid parameters, tool not found, authentication errors.
+    #[serde(default)]
+    pub fallback_chain: Vec<String>,
 }
 
 /// Per-backend retry configuration for transient failures (Starting state).
@@ -784,12 +819,21 @@ pub async fn watch_config(
                 let old_config = current_config.load();
                 let diff = old_config.diff_backends(&new_config);
 
-                let has_changes = !diff.added.is_empty()
+                let has_backend_changes = !diff.added.is_empty()
                     || !diff.removed.is_empty()
                     || !diff.changed.is_empty();
+                let has_alias_changes = new_config.aliases != old_config.aliases;
 
-                if !has_changes {
-                    info!("config reloaded, no backend changes detected");
+                if !has_backend_changes && !has_alias_changes {
+                    info!("config reloaded, no changes detected");
+                    current_config.store(Arc::new(new_config));
+                    continue;
+                }
+
+                if !has_backend_changes {
+                    // Only aliases changed — skip backend processing
+                    info!(count = new_config.aliases.len(), "updating tool aliases");
+                    registry.set_aliases(new_config.aliases.clone());
                     current_config.store(Arc::new(new_config));
                     continue;
                 }
@@ -827,11 +871,18 @@ pub async fn watch_config(
                     }
                 }
 
+                // Update tool aliases if changed
+                let old_aliases = &old_config.aliases;
+                if new_config.aliases != *old_aliases {
+                    info!(count = new_config.aliases.len(), "updating tool aliases");
+                    registry.set_aliases(new_config.aliases.clone());
+                }
+
                 // Store new config
                 current_config.store(Arc::new(new_config));
 
                 // Save updated tool cache
-                crate::cache::save(&cache_path, &registry).await;
+                crate::cache::save(&cache_path, &registry, None).await;
 
                 info!(
                     total_tools = registry.tool_count(),

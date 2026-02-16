@@ -39,13 +39,13 @@ mod tests {
         // Load cache for faster startup
         let cache_path = crate::cache::cache_path_from_config(&config_path);
         let config_names: Vec<String> = config.backends.keys().cloned().collect();
-        crate::cache::load(&cache_path, &registry, &config_names).await;
+        crate::cache::load(&cache_path, &registry, &config_names, None).await;
 
         // Start all backends
         manager.start_all(&config, &registry).await.unwrap();
 
         // Save cache
-        crate::cache::save(&cache_path, &registry).await;
+        crate::cache::save(&cache_path, &registry, None).await;
 
         (registry, manager, config)
     }

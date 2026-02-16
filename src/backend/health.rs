@@ -299,7 +299,7 @@ pub async fn run_health_checker(
                                     let reg = Arc::clone(&registry);
                                     let cp = cache_path.clone();
                                     tokio::spawn(async move {
-                                        crate::cache::save(&cp, &reg).await;
+                                        crate::cache::save(&cp, &reg, None).await;
                                     });
                                 }
                                 Ok(Err(e)) => {
@@ -430,7 +430,7 @@ pub async fn run_health_checker(
                     let reg = Arc::clone(&registry);
                     let cp = cache_path.clone();
                     tokio::spawn(async move {
-                        crate::cache::save(&cp, &reg).await;
+                        crate::cache::save(&cp, &reg, None).await;
                     });
                 }
                 Ok(Err(e)) => {

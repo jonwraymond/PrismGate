@@ -75,20 +75,32 @@ fn extract_param_names(schema: &Value) -> Vec<String> {
 }
 
 /// Search the registry, using hybrid BM25+semantic when the semantic feature is active.
-fn search_tools(registry: &ToolRegistry, query: &str, limit: u32) -> Vec<ToolEntry> {
+fn search_tools(
+    registry: &ToolRegistry,
+    query: &str,
+    limit: u32,
+    filter_tags: Option<&[String]>,
+    tracker: Option<&crate::tracker::CallTracker>,
+) -> Vec<ToolEntry> {
     #[cfg(feature = "semantic")]
     {
-        registry.search_hybrid(query, limit)
+        registry.search_hybrid(query, limit, filter_tags, tracker)
     }
     #[cfg(not(feature = "semantic"))]
     {
-        registry.search(query, limit)
+        registry.search(query, limit, filter_tags, tracker)
     }
 }
 
 /// Handle search_tools: BM25 (or hybrid) search across names and descriptions.
-pub fn handle_search(registry: &ToolRegistry, query: &str, limit: u32) -> Vec<SearchResult> {
-    search_tools(registry, query, limit)
+pub fn handle_search(
+    registry: &ToolRegistry,
+    query: &str,
+    limit: u32,
+    filter_tags: Option<&[String]>,
+    tracker: Option<&crate::tracker::CallTracker>,
+) -> Vec<SearchResult> {
+    search_tools(registry, query, limit, filter_tags, tracker)
         .into_iter()
         .map(|e| SearchResult {
             name: e.name,
@@ -103,8 +115,10 @@ pub fn handle_search_brief(
     registry: &ToolRegistry,
     query: &str,
     limit: u32,
+    filter_tags: Option<&[String]>,
+    tracker: Option<&crate::tracker::CallTracker>,
 ) -> Vec<BriefSearchResult> {
-    search_tools(registry, query, limit)
+    search_tools(registry, query, limit, filter_tags, tracker)
         .into_iter()
         .map(|e| {
             let orig = if e.original_name.is_empty() {
