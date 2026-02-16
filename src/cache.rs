@@ -13,8 +13,14 @@ struct ToolCache {
     embeddings: Option<HashMap<String, Vec<f32>>>,
 }
 
-/// Derive cache path from config path.
+/// Default cache path: ~/.prismgate/cache.json
+pub fn default_cache_path() -> PathBuf {
+    crate::cli::prismgate_home().join("cache.json")
+}
+
+/// Derive cache path from config path (legacy, kept for backward compatibility).
 /// e.g. config/gatemini.yaml -> config/.gatemini.cache.json
+#[cfg(test)]
 pub fn cache_path_from_config(config_path: &Path) -> PathBuf {
     let dir = config_path.parent().unwrap_or(Path::new("."));
     let stem = config_path

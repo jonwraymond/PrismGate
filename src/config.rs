@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Once};
 use std::time::Duration;
 
@@ -64,6 +64,10 @@ pub struct Config {
 
     #[serde(default)]
     pub daemon: DaemonConfig,
+
+    /// Custom cache file location. Default: ~/.prismgate/cache.json
+    #[serde(default)]
+    pub cache_path: Option<PathBuf>,
 
     /// Allow register_manual / deregister_manual at runtime.
     /// Set to false to lock down the gateway to only config-file backends.
@@ -337,6 +341,10 @@ pub struct SemanticConfig {
     /// HuggingFace Hub model ID or local path to a model2vec model.
     #[serde(default = "default_semantic_model")]
     pub model_path: String,
+
+    /// Directory for cached embedding models. Default: ~/.prismgate/models/
+    #[serde(default)]
+    pub cache_dir: Option<PathBuf>,
 }
 
 fn default_semantic_model() -> String {
