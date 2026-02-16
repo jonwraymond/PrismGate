@@ -145,8 +145,9 @@ fn run_sandbox(
                         Ok(value) => Ok(value),
                         Err(e) => {
                             // Check if this is a stopped backend error (using the custom error type)
-                            let is_stopped = e.downcast_ref::<BackendError>()
-                                .map(|be: &BackendError| be.is_stopped_backend())
+                            let is_stopped = e
+                                .downcast_ref::<BackendError>()
+                                .map(|be| be.is_stopped_backend())
                                 .unwrap_or(false);
 
                             if is_stopped {

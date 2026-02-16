@@ -173,11 +173,13 @@ async fn call_tool_by_dotted_name(
                             )
                         })?
                 } else {
+                    // Not a stopped backend error, return as-is
                     return Err(e).with_context(|| {
                         format!("tool '{}' on backend '{}'", tool_name, entry.backend_name)
                     });
                 }
             } else {
+                // Not a BackendError, return as-is
                 return Err(e).with_context(|| {
                     format!("tool '{}' on backend '{}'", tool_name, entry.backend_name)
                 });
