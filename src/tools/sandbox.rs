@@ -161,8 +161,15 @@ async fn call_tool_by_dotted_name(
         &entry.original_name
     };
 
+    // Use call_tool_with_fallback to enable automatic failover on transient errors
     let result = manager
-        .call_tool(&entry.backend_name, call_name, arguments.clone())
+        .call_tool_with_fallback(
+            &entry.backend_name,
+            call_name,
+            &entry.original_name,
+            arguments.clone(),
+            registry,
+        )
         .await;
 
     let value = match result {

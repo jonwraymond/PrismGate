@@ -823,6 +823,14 @@ pub async fn watch_config(
                     || !diff.removed.is_empty()
                     || !diff.changed.is_empty();
                 let has_alias_changes = new_config.aliases != old_config.aliases;
+                let has_composite_changes = new_config.composite_tools != old_config.composite_tools;
+
+                if has_composite_changes {
+                    warn!(
+                        "composite_tools changed in config but hot-reload is not supported. \
+                         Restart the daemon for composite tool changes to take effect."
+                    );
+                }
 
                 if !has_backend_changes && !has_alias_changes {
                     info!("config reloaded, no changes detected");

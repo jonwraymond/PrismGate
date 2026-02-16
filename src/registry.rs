@@ -1249,6 +1249,10 @@ mod tests {
         assert!(!is_transient_error(&anyhow::anyhow!(
             "authentication failed"
         )));
+        // Should NOT match generic "connection" substring (false positive fix)
+        assert!(!is_transient_error(&anyhow::anyhow!(
+            "invalid connection string"
+        )));
     }
 
     #[test]

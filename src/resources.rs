@@ -234,7 +234,12 @@ pub async fn read_resource(
             // Try template matching
             if let Some(limit_str) = path.strip_prefix("recent/") {
                 // gatemini://recent/{limit}
-                let limit: usize = limit_str.parse().unwrap_or(50);
+                let limit: usize = limit_str.parse().map_err(|_| {
+                    McpError::invalid_params(
+                        format!("Invalid limit '{limit_str}': must be a positive integer"),
+                        None,
+                    )
+                })?;
                 let calls = tracker.recent_calls(limit);
                 let json = serde_json::to_string_pretty(&calls)
                     .map_err(|e| McpError::internal_error(e.to_string(), None))?;

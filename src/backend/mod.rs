@@ -59,14 +59,26 @@ pub(crate) fn map_call_tool_result(result: CallToolResult) -> Value {
 /// Only network, timeout, and rate limit errors trigger fallback chains.
 pub(crate) fn is_transient_error(err: &anyhow::Error) -> bool {
     let msg = err.to_string().to_lowercase();
+    // Rate limiting / overload
     msg.contains("rate limit")
+        || msg.contains("too many requests")
+        // Timeouts
         || msg.contains("timeout")
         || msg.contains("timed out")
-        || msg.contains("connection")
-        || msg.contains("unavailable")
-        || msg.contains("not available")
-        || msg.contains("network")
+        || msg.contains("deadline exceeded")
+        // Connection errors (specific patterns to avoid false positives)
+        || msg.contains("connection refused")
+        || msg.contains("connection reset")
+        || msg.contains("connection closed")
+        || msg.contains("connection aborted")
+        || msg.contains("failed to connect")
+        // Network errors
+        || msg.contains("network error")
+        || msg.contains("network is unreachable")
         || msg.contains("broken pipe")
+        // Service availability
+        || msg.contains("service unavailable")
+        || msg.contains("temporarily unavailable")
 }
 
 /// Map rmcp Tool list to ToolEntry vec.
@@ -719,6 +731,14 @@ impl BackendManager {
 
         // All fallbacks exhausted — return original error
         Err(err)
+    }
+
+    /// Register a pre-built backend directly (e.g. CompositeBackend).
+    ///
+    /// Unlike `add_backend` / `start_backend`, this does NOT spawn a child process
+    /// or discover tools — the caller is responsible for tool registration.
+    pub fn register_virtual_backend(&self, name: &str, backend: Arc<dyn Backend>) {
+        self.backends.insert(name.to_string(), backend);
     }
 
     /// Check if a backend is ready to accept tool calls.

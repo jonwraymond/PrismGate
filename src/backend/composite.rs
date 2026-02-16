@@ -52,18 +52,19 @@ impl Backend for CompositeBackend {
         Ok(())
     }
 
-    async fn call_tool(&self, tool_name: &str, _arguments: Option<Value>) -> Result<Value> {
-        // Composite tools are NOT executed here — they're executed via
-        // call_tool_chain which has access to the sandbox and all backends.
-        // If someone calls a composite tool directly, return the code so
-        // the caller knows to use call_tool_chain instead.
-        if self.tools.contains_key(tool_name) {
-            anyhow::bail!(
-                "Composite tool '{}' must be executed via call_tool_chain, not direct call. \
-                 Use: call_tool_chain(\"const r = await __composite.{}({{...}}); return r;\")",
-                tool_name,
-                tool_name
-            );
+    async fn call_tool(&self, tool_name: &str, arguments: Option<Value>) -> Result<Value> {
+        // Composite tools execute their TypeScript code body — but this requires
+        // the sandbox + access to all backends, which this Backend doesn't have.
+        // For now, return the code so the sandbox layer can execute it.
+        if let Some(config) = self.tools.get(tool_name) {
+            // Return the composite tool's code and arguments as JSON so the
+            // caller (sandbox) can execute the TypeScript with the right params.
+            return Ok(serde_json::json!({
+                "__composite": true,
+                "tool": tool_name,
+                "code": config.code,
+                "arguments": arguments,
+            }));
         }
         anyhow::bail!("composite tool '{}' not found", tool_name)
     }

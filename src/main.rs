@@ -155,6 +155,11 @@ pub async fn initialize(config_path: &Path) -> Result<InitializedGateway> {
             backend::composite::COMPOSITE_BACKEND_NAME,
             tools,
         );
+        // Also register in BackendManager so call_tool("__composite", ...) can dispatch
+        backend_manager.register_virtual_backend(
+            backend::composite::COMPOSITE_BACKEND_NAME,
+            Arc::new(composite),
+        );
         info!(tools = tool_count, "registered composite tools");
     }
 
