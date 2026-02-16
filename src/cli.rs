@@ -1,6 +1,14 @@
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
+/// Standard prismgate home directory (~/.prismgate).
+/// Falls back to `.prismgate` in the current directory if home cannot be resolved.
+pub fn prismgate_home() -> PathBuf {
+    dirs::home_dir()
+        .map(|h| h.join(".prismgate"))
+        .unwrap_or_else(|| PathBuf::from(".prismgate"))
+}
+
 #[derive(Parser)]
 #[command(
     name = "gatemini",
@@ -9,7 +17,7 @@ use std::path::PathBuf;
 )]
 pub struct Cli {
     /// Path to the configuration file.
-    #[arg(short, long, default_value = "config/gatemini.yaml")]
+    #[arg(short, long, default_value_os_t = prismgate_home().join("config.yaml"))]
     pub config: PathBuf,
 
     /// Run in legacy direct stdio mode (1:1, no daemon).

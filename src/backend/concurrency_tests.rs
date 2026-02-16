@@ -162,6 +162,7 @@ mod tests {
                 "restart-test".to_string(),
                 crate::config::BackendConfig {
                     transport: crate::config::Transport::Stdio,
+                    namespace: None,
                     command: Some("echo".to_string()),
                     args: Vec::new(),
                     env: Default::default(),
@@ -172,7 +173,9 @@ mod tests {
                     max_concurrent_calls: None,
                     semaphore_timeout: Duration::from_secs(60),
                     required_keys: Vec::new(),
+                    retry: Default::default(),
                     prerequisite: None,
+                    rate_limit: None,
                 },
             );
         }
@@ -335,6 +338,127 @@ mod tests {
             )
             .await;
         assert!(result.is_ok());
+    }
+
+    /// Rate limiter with max_calls=2: 3rd call should fail.
+    #[tokio::test]
+    async fn test_rate_limit_enforcement() {
+        let manager = BackendManager::new();
+        let registry = ToolRegistry::new();
+        let mock = MockBackend::new("rate-test", Duration::ZERO);
+
+        insert_mock_with_config(&manager, &registry, &mock, Some(0), Duration::from_secs(60)).await;
+
+        // Set up rate limiter: 2 calls per window
+        let sem = Arc::new(tokio::sync::Semaphore::new(2));
+        manager
+            .rate_limiters
+            .insert("rate-test".to_string(), Arc::clone(&sem));
+
+        // First two calls should succeed
+        let r1 = manager
+            .call_tool("rate-test", "echo_tool", Some(serde_json::json!({"n": 1})))
+            .await;
+        assert!(r1.is_ok(), "call 1 should succeed");
+
+        let r2 = manager
+            .call_tool("rate-test", "echo_tool", Some(serde_json::json!({"n": 2})))
+            .await;
+        assert!(r2.is_ok(), "call 2 should succeed");
+
+        // Third call should fail — rate limit exceeded
+        let r3 = manager
+            .call_tool("rate-test", "echo_tool", Some(serde_json::json!({"n": 3})))
+            .await;
+        assert!(r3.is_err(), "call 3 should be rate limited");
+        let err = r3.unwrap_err().to_string();
+        assert!(
+            err.contains("rate limit exceeded"),
+            "expected rate limit error, got: {err}"
+        );
+    }
+
+    /// Rate limiter replenishment: after window, permits are restored.
+    #[tokio::test]
+    async fn test_rate_limit_replenishment() {
+        let manager = BackendManager::new();
+        let registry = ToolRegistry::new();
+        let mock = MockBackend::new("replenish-test", Duration::ZERO);
+
+        insert_mock_with_config(&manager, &registry, &mock, Some(0), Duration::from_secs(60)).await;
+
+        // Set up rate limiter: 2 calls per 200ms window
+        let sem = Arc::new(tokio::sync::Semaphore::new(2));
+        manager
+            .rate_limiters
+            .insert("replenish-test".to_string(), Arc::clone(&sem));
+
+        // Spawn replenishment task
+        let replenish_sem = Arc::clone(&sem);
+        let handle = tokio::spawn(async move {
+            let mut interval = tokio::time::interval(Duration::from_millis(200));
+            interval.tick().await; // first tick is immediate
+            loop {
+                interval.tick().await;
+                let to_add = 2usize.saturating_sub(replenish_sem.available_permits());
+                if to_add > 0 {
+                    replenish_sem.add_permits(to_add);
+                }
+            }
+        });
+        manager
+            .rate_limiter_handles
+            .insert("replenish-test".to_string(), handle);
+
+        // Exhaust all permits
+        let _ = manager
+            .call_tool(
+                "replenish-test",
+                "echo_tool",
+                Some(serde_json::json!({"n": 1})),
+            )
+            .await;
+        let _ = manager
+            .call_tool(
+                "replenish-test",
+                "echo_tool",
+                Some(serde_json::json!({"n": 2})),
+            )
+            .await;
+
+        // Should be rate limited now
+        let r = manager
+            .call_tool(
+                "replenish-test",
+                "echo_tool",
+                Some(serde_json::json!({"n": 3})),
+            )
+            .await;
+        assert!(r.is_err(), "should be rate limited before replenishment");
+
+        // Wait for replenishment window
+        tokio::time::sleep(Duration::from_millis(300)).await;
+
+        // Should succeed now
+        let r = manager
+            .call_tool(
+                "replenish-test",
+                "echo_tool",
+                Some(serde_json::json!({"n": 4})),
+            )
+            .await;
+        assert!(r.is_ok(), "should succeed after replenishment");
+    }
+
+    /// BackendManager::new_with_config uses custom drain_timeout.
+    #[tokio::test]
+    async fn test_drain_timeout_configurable() {
+        let config = crate::config::HealthConfig {
+            drain_timeout: Duration::from_secs(42),
+            ..Default::default()
+        };
+        let manager = BackendManager::new_with_config(&config);
+        assert_eq!(manager.drain_timeout, Duration::from_secs(42));
     }
 
     /// 10 concurrent discover_tools calls on same backend — all return identical lists.

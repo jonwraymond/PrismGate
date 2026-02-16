@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use serde_json::Value;
 use std::sync::Arc;
 use tokio::sync::Semaphore;
-use tracing::{debug, warn};
+use tracing::debug;
 
 use crate::backend::BackendManager;
 use crate::registry::ToolRegistry;
@@ -125,66 +125,68 @@ async fn try_direct_tool_call(
 }
 
 /// Call a tool using "backend.tool_name" dotted notation, or just "tool_name".
+///
+/// After namespacing, tools may exist under both `backend.tool_name` and bare `tool_name`
+/// (if no collision). This function resolves both forms and always passes the
+/// `original_name` to the backend MCP server (which doesn't know about namespacing).
 async fn call_tool_by_dotted_name(
     registry: &Arc<ToolRegistry>,
     manager: &Arc<BackendManager>,
     dotted_name: &str,
     arguments: Option<Value>,
 ) -> Result<String> {
-    // Resolve the tool name and backend
-    let (backend_name, tool_name) = if let Some(dot_pos) = dotted_name.find('.') {
+    // Resolve: try looking up the full dotted name first (handles both namespaced and bare)
+    let entry = if let Some(e) = registry.get_by_name(dotted_name) {
+        e
+    } else if let Some(dot_pos) = dotted_name.find('.') {
+        // Try interpreting as backend.tool — look up the namespaced key
         let bn = &dotted_name[..dot_pos];
         let tn = &dotted_name[dot_pos + 1..];
-        (bn.to_string(), tn.to_string())
+        // Fall back: the tool might be registered under the bare name with this backend
+        registry
+            .get_by_name(&format!("{}.{}", bn, tn))
+            .or_else(|| {
+                // Maybe the bare name resolves and belongs to this backend
+                registry.get_by_name(tn).filter(|e| e.backend_name == bn)
+            })
+            .ok_or_else(|| anyhow::anyhow!("tool '{}' not found in registry", dotted_name))?
     } else {
-        // Just a tool name — look up the backend from registry
-        let entry = registry
-            .get_by_name(dotted_name)
-            .ok_or_else(|| anyhow::anyhow!("tool '{}' not found", dotted_name))?;
-        (entry.backend_name.clone(), dotted_name.to_string())
+        return Err(anyhow::anyhow!("tool '{}' not found", dotted_name));
     };
 
-    // Look up tool in registry to verify it exists
-    let entry = registry
-        .get_by_name(&tool_name)
-        .ok_or_else(|| anyhow::anyhow!("tool '{}' not found in registry", tool_name))?;
-
-    // Use the actual backend from the registry entry (it's authoritative)
-    if entry.backend_name != backend_name {
-        warn!(
-            expected_backend = %backend_name,
-            actual_backend = %entry.backend_name,
-            tool = %tool_name,
-            "backend mismatch in dotted name, using actual backend"
-        );
-    }
+    // CRITICAL: pass original_name to backend, not the namespaced registry key
+    let call_name = if entry.original_name.is_empty() {
+        &entry.name
+    } else {
+        &entry.original_name
+    };
 
     let result = manager
-        .call_tool(&entry.backend_name, &tool_name, arguments.clone())
+        .call_tool(&entry.backend_name, call_name, arguments.clone())
         .await;
 
     let value = match result {
         Ok(v) => v,
         Err(e) if e.to_string().contains("not available") && e.to_string().contains("Stopped") => {
             // Attempt on-demand restart and retry once
-            debug!(backend = %entry.backend_name, tool = %tool_name, "attempting on-demand restart for stopped backend");
+            debug!(backend = %entry.backend_name, tool = %call_name, "attempting on-demand restart for stopped backend");
             manager
                 .restart_backend(&entry.backend_name, registry)
                 .await
                 .with_context(|| format!("on-demand restart of '{}' failed", entry.backend_name))?;
             manager
-                .call_tool(&entry.backend_name, &tool_name, arguments)
+                .call_tool(&entry.backend_name, call_name, arguments)
                 .await
                 .with_context(|| {
                     format!(
                         "retry after restart: tool '{}' on '{}'",
-                        tool_name, entry.backend_name
+                        call_name, entry.backend_name
                     )
                 })?
         }
         Err(e) => {
             return Err(e).with_context(|| {
-                format!("tool '{}' on backend '{}'", tool_name, entry.backend_name)
+                format!("tool '{}' on backend '{}'", call_name, entry.backend_name)
             });
         }
     };
