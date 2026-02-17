@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.3](https://github.com/jonwraymond/PrismGate/compare/v0.4.2...v0.4.3) (2026-02-17)
+
+
+### Bug Fixes
+
+* move futures/futures-util to general deps and nix to unix-only ([1d4b9a4](https://github.com/jonwraymond/PrismGate/commit/1d4b9a4d3f1a0684aba79245bd6bf1ee47ae82a5))
+
 ## [0.4.2](https://github.com/jonwraymond/PrismGate/compare/v0.4.1...v0.4.2) (2026-02-17)
 
 
