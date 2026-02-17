@@ -1,6 +1,6 @@
 # Architecture
 
-PrismGate uses a shared daemon model to multiplex backend MCP servers across multiple AI agent sessions. A single daemon process manages all backends, while lightweight proxy processes bridge each Claude Code session's stdio to the daemon via Unix domain sockets.
+Gatemini uses a shared daemon model to multiplex backend MCP servers across multiple AI agent sessions. A single daemon process manages all backends, while lightweight proxy processes bridge each Claude Code session's stdio to the daemon via Unix domain sockets.
 
 ## Process Model
 
@@ -15,12 +15,12 @@ Claude Code ──stdio──▸ gatemini (proxy) ──┘ /tmp/gatemini-{UID}.
                                       ├── backend MCP server #1 (stdio child)
                                       ├── backend MCP server #2 (stdio child)
                                       ├── backend MCP server #3 (HTTP)
-                                      └── ... (30+ backends, shared)
+                                      └── ... (for example, 30+ backends, shared)
 ```
 
 This architecture delivers three key benefits:
 
-1. **Resource sharing** -- 30+ backend processes run once, shared across all Claude Code sessions
+1. **Resource sharing** -- backend processes run once, shared across all Claude Code sessions
 2. **Instant startup** -- proxy connects to existing daemon in ~2s; no backend initialization per session
 3. **Independent lifecycle** -- daemon survives client disconnects; auto-shuts down after 5 minutes idle
 
@@ -54,7 +54,7 @@ The proxy is a zero-initialization byte pipe. It performs no config loading, no 
 
 ### Flock + Double-Check Pattern
 
-When multiple Claude Code sessions start simultaneously, only one proxy should spawn the daemon. PrismGate uses a file lock with double-checking:
+When multiple Claude Code sessions start simultaneously, only one proxy should spawn the daemon. Gatemini uses a file lock with double-checking:
 
 1. **First check**: `try_connect()` -- most common path, daemon already running
 2. **Acquire exclusive flock** on `{socket_path}.lock` -- non-blocking, fails if held
@@ -194,7 +194,7 @@ Each stdio backend spawns with `process_group(0)`, creating a new process group:
 cmd.process_group(0)  // setsid-like: child gets its own PGID = PID
 ```
 
-On termination, PrismGate sends SIGTERM to the entire process group:
+On termination, Gatemini sends SIGTERM to the entire process group:
 
 ```rust
 libc::kill(-(pid as i32), libc::SIGTERM)  // negative PID = process group
@@ -212,7 +212,7 @@ This ensures the backend and all its children (subprocesses, scripts) are termin
 
 ## Transport Performance
 
-PrismGate chose Unix domain sockets over TCP for proxy-daemon IPC:
+Gatemini chose Unix domain sockets over TCP for proxy-daemon IPC:
 
 | Metric | Unix Socket | TCP Localhost |
 |--------|-------------|---------------|
@@ -220,7 +220,7 @@ PrismGate chose Unix domain sockets over TCP for proxy-daemon IPC:
 | Throughput (100B msg) | 130k msg/s | 70k msg/s |
 | Overhead | Kernel bypass | Full TCP/IP stack |
 
-Benchmarks from [Baeldung IPC comparison](https://www.baeldung.com/linux/ipc-performance-comparison). UDS avoids TCP checksum, congestion control, and routing overhead. The tradeoff is local-machine only -- which is exactly PrismGate's deployment model.
+Benchmarks from [Baeldung IPC comparison](https://www.baeldung.com/linux/ipc-performance-comparison). UDS avoids TCP checksum, congestion control, and routing overhead. The tradeoff is local-machine only -- which is exactly Gatemini's deployment model.
 
 ## Three Operating Modes
 

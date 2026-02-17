@@ -1,10 +1,12 @@
 # Tool Discovery
 
-PrismGate implements progressive disclosure to prevent tool definition bloat from consuming the AI agent's context window. Instead of exposing 258+ backend tools directly, it exposes 7 meta-tools that let the agent discover, inspect, and execute backend tools on demand.
+Gatemini implements progressive disclosure to prevent tool definition bloat from consuming the AI agent's context window. Instead of exposing the full backend toolset directly, it exposes 7 meta-tools that let the agent discover, inspect, and execute backend tools on demand.
+
+Note: the 258+ tool example below is from a typical production snapshot and will vary by deployment.
 
 ## The Problem
 
-With 30+ backends, each exposing 5-20 tools, PrismGate manages 258+ tools. Naive approaches fail at this scale:
+With larger backend sets (for example, 30+ backends, each exposing 5-20 tools), Gatemini commonly manages 258+ tools. Naive approaches fail at this scale:
 
 | Approach | Token Cost | Impact |
 |----------|-----------|--------|
@@ -12,7 +14,7 @@ With 30+ backends, each exposing 5-20 tools, PrismGate manages 258+ tools. Naive
 | Single tool `tool_info` response | ~10,700 tokens | Largest tool (auggie's codebase-retrieval) |
 | 10 full search results | ~5,000 tokens | Half a turn of context for one search |
 
-Research confirms this is an industry-wide problem. Performance degrades after ~40 tools ([Demiliani, 2025](https://demiliani.com/2025/09/04/model-context-protocol-and-the-too-many-tools-problem/)), and 5-7 tools is the practical accuracy limit ([Jenova AI](https://www.jenova.ai/en/resources/mcp-tool-scalability-problem)). PrismGate exposes exactly 7 meta-tools, hitting the optimal range.
+Research confirms this is an industry-wide problem. Performance degrades after ~40 tools ([Demiliani, 2025](https://demiliani.com/2025/09/04/model-context-protocol-and-the-too-many-tools-problem/)), and 5-7 tools is the practical accuracy limit ([Jenova AI](https://www.jenova.ai/en/resources/mcp-tool-scalability-problem)). Gatemini exposes exactly 7 meta-tools, hitting the optimal range.
 
 ## The Solution: 4-Step Progressive Disclosure
 
@@ -43,7 +45,7 @@ Each step reveals progressively more detail, and the agent can stop at any step.
 
 **Source**: [`src/registry.rs`](../src/registry.rs)
 
-PrismGate implements BM25 (Okapi BM25) for keyword-based tool search with standard IR parameters:
+Gatemini implements BM25 (Okapi BM25) for keyword-based tool search with standard IR parameters:
 
 | Parameter | Value | Purpose |
 |-----------|-------|---------|
@@ -91,7 +93,7 @@ Results are sorted by score descending, then by name for stable ordering.
 
 **Source**: [`src/embeddings.rs`](../src/embeddings.rs) (feature-gated: `semantic`)
 
-When compiled with the `semantic` feature, PrismGate adds vector-based search using model2vec:
+When compiled with the `semantic` feature, Gatemini adds vector-based search using model2vec:
 
 | Property | Value |
 |----------|-------|
@@ -110,7 +112,7 @@ Each tool is embedded as the concatenation of its name and description:
 
 ### Search
 
-Brute-force cosine similarity over all vectors. At 258 tools, this takes ~5 microseconds -- fast enough that approximate nearest neighbor (ANN) indices like HNSW are unnecessary until ~10,000+ tools.
+Brute-force cosine similarity over all vectors. At a representative size of 258 tools, this takes ~5 microseconds -- fast enough that approximate nearest neighbor (ANN) indices like HNSW are unnecessary until ~10,000+ tools.
 
 ### When Semantic Helps
 
@@ -126,7 +128,7 @@ BM25 excels at exact term matching but fails on conceptual queries:
 
 **Source**: [`src/registry.rs`](../src/registry.rs) -- `search_hybrid()`
 
-When both BM25 and semantic search are available, PrismGate combines them using Reciprocal Rank Fusion (RRF):
+When both BM25 and semantic search are available, Gatemini combines them using Reciprocal Rank Fusion (RRF):
 
 ```
 RRF_score(tool) = sum(1 / (K + rank_i)) for each retriever i
@@ -201,7 +203,7 @@ This reduces a typical tool schema from ~500 tokens to ~20 tokens (just the para
 
 **Source**: [`src/resources.rs`](../src/resources.rs)
 
-PrismGate also exposes tool information as MCP resources (loaded via `@` mentions in Claude Code):
+Gatemini also exposes tool information as MCP resources (loaded via `@` mentions in Claude Code):
 
 | Resource | Tokens | Purpose |
 |----------|--------|---------|
@@ -223,7 +225,7 @@ Resources use an even more aggressive 120-character truncation (vs 200 in discov
 
 ## Server Instructions
 
-PrismGate embeds discovery instructions directly in its MCP `get_info()` response. This teaches AI agents the progressive disclosure workflow before they make their first tool call, without requiring external documentation.
+Gatemini embeds discovery instructions directly in its MCP `get_info()` response. This teaches AI agents the progressive disclosure workflow before they make their first tool call, without requiring external documentation.
 
 ## Sources
 

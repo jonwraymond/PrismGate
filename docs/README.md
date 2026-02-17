@@ -1,6 +1,7 @@
-# PrismGate Documentation
+# Gatemini Documentation
 
-PrismGate (gatemini) is a Rust MCP gateway that connects to 30+ backend MCP servers and exposes 7 meta-tools to AI agents via a shared daemon architecture.
+Gatemini (gatemini) is a Rust MCP gateway that connects to backend MCP servers and exposes 7 meta-tools to AI agents via a shared daemon architecture.
+The exact number of configured backends and catalog size is deployment-specific and should be treated as an example, not a fixed requirement.
 
 ## Quick Links
 

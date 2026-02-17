@@ -1,6 +1,6 @@
 # Backend Management
 
-PrismGate manages 30+ backend MCP servers through a concurrent lifecycle system with health monitoring, circuit breaking, and automatic recovery.
+Gatemini manages many backend MCP servers through a concurrent lifecycle system with health monitoring, circuit breaking, and automatic recovery.
 
 ![Backend Health & Circuit Breaker](diagrams/backend-lifecycle.svg)
 
@@ -22,7 +22,7 @@ struct BackendManager {
 
 ### Why DashMap?
 
-`DashMap` provides lock-free concurrent reads through internal sharding (one shard per CPU core, each with an independent `RwLock`). Multiple backends can register tools simultaneously at startup without contention. This is critical during initialization when 30+ backends connect and discover tools concurrently.
+`DashMap` provides lock-free concurrent reads through internal sharding (one shard per CPU core, each with an independent `RwLock`). Multiple backends can register tools simultaneously at startup without contention. This is critical during initialization when larger deployments connect and discover tools concurrently.
 
 ## Backend Trait
 
@@ -104,7 +104,7 @@ gatemini daemon ──HTTP──▸ remote MCP server
 
 **Source**: [`src/backend/lenient_client.rs`](../src/backend/lenient_client.rs)
 
-Some MCP servers (notably z.ai) omit the `Content-Type` header in responses. PrismGate wraps the reqwest client to tolerate this, treating missing Content-Type as `application/json`.
+Some MCP servers (notably z.ai) omit the `Content-Type` header in responses. Gatemini wraps the reqwest client to tolerate this, treating missing Content-Type as `application/json`.
 
 ### Header Forwarding
 
@@ -161,13 +161,13 @@ After 3 attempts, the call fails with an error. Backends in `Unhealthy` or `Stop
 
 **Source**: [`src/backend/health.rs`](../src/backend/health.rs)
 
-The health checker runs on a configurable interval (default 5s) and manages backend health through three phases:
+The health checker runs on a configurable interval (default 30s) and manages backend health through three phases:
 
 ### Phase 1: Ping Healthy Backends
 
 - Concurrent MCP ping requests to all `Healthy` backends
 - Staggered across 80% of the interval to avoid thundering herd
-- Configurable timeout per ping (default 10s)
+- Configurable timeout per ping (default 5s)
 
 ### Phase 2: Handle Failed Backends
 
@@ -191,8 +191,8 @@ Backends that failed initial handshake (config exists but never entered DashMap)
 | Parameter | Default | Purpose |
 |-----------|---------|---------|
 | `failure_threshold` | 3 | Consecutive failures before circuit opens |
-| `max_restarts` | 3 | Maximum restarts per window |
-| `restart_window` | 5 min | Window for counting restarts |
+| `max_restarts` | 5 | Maximum restarts per window |
+| `restart_window` | 1 min | Window for counting restarts |
 
 States:
 
@@ -217,7 +217,7 @@ Restart delay doubles with each attempt:
 | 4 | 16s |
 | 5+ | 30s (capped) |
 
-The restart window resets after `restart_window` (5 min) expires, allowing fresh restart attempts for transient failures.
+The restart window resets after `restart_window` (default 1 min) expires, allowing fresh restart attempts for transient failures.
 
 ## Prerequisite Processes
 
@@ -240,7 +240,7 @@ backends:
 
 ### Deduplication
 
-Before spawning, PrismGate checks if the prerequisite is already running:
+Before spawning, Gatemini checks if the prerequisite is already running:
 
 ```bash
 pgrep -f "http.server 8080"
@@ -250,8 +250,8 @@ If found, the spawn is skipped (idempotent). This prevents duplicate processes w
 
 ### Lifecycle
 
-- `managed: true` -- PrismGate sends SIGTERM to the process group on daemon shutdown
-- `managed: false` -- PrismGate leaves the process running (external management)
+- `managed: true` -- Gatemini sends SIGTERM to the process group on daemon shutdown
+- `managed: false` -- Gatemini leaves the process running (external management)
 
 ## Runtime Registration
 

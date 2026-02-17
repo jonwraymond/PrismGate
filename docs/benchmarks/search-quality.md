@@ -1,10 +1,10 @@
 # Search Quality Benchmarks
 
-PrismGate's tool discovery uses BM25 keyword search and optional semantic search, combined via Reciprocal Rank Fusion (RRF). This document analyzes search quality, scaling behavior, and validation methodology.
+Gatemini's tool discovery uses BM25 keyword search and optional semantic search, combined via Reciprocal Rank Fusion (RRF). This document analyzes search quality, scaling behavior, and validation methodology.
 
 ## BM25 Parameters
 
-PrismGate uses standard Okapi BM25 parameters validated by decades of IR research:
+Gatemini uses standard Okapi BM25 parameters validated by decades of IR research:
 
 | Parameter | Value | Rationale |
 |-----------|-------|-----------|
@@ -20,7 +20,7 @@ Tool descriptions are short (10-200 words) and relatively uniform in length. Thi
 - **b=0.75**: Provides moderate length normalization. Tools with longer descriptions aren't penalized too heavily, but very short descriptions get a slight boost.
 - **2x name boost**: The most important signal for tool search is the tool name itself. `web_search` should rank above a tool that merely mentions "search" in its description.
 
-For collections of very short, uniform documents, [Elasticsearch recommends](https://www.elastic.co/blog/practical-bm25-part-3-considerations-for-picking-b-and-k1-in-elasticsearch) potentially lowering b to 0.5-0.6, since length variation is minimal. This could be explored for PrismGate.
+For collections of very short, uniform documents, [Elasticsearch recommends](https://www.elastic.co/blog/practical-bm25-part-3-considerations-for-picking-b-and-k1-in-elasticsearch) potentially lowering b to 0.5-0.6, since length variation is minimal. This could be explored for Gatemini.
 
 ## Semantic Search Quality
 
@@ -83,7 +83,7 @@ K=60 produces a gradual decay, giving weight to results ranked deep in each list
 
 ### Candidate Pool
 
-PrismGate fetches at least 30 candidates from each retriever before fusion:
+Gatemini fetches at least 30 candidates from each retriever before fusion:
 
 ```rust
 let fetch_limit = limit.max(30);
@@ -95,11 +95,11 @@ This ensures the RRF has enough candidates from both retrievers to produce high-
 
 ### Brute-Force Cosine at Scale
 
-At 258 tools, brute-force cosine similarity takes ~5 microseconds. How does this scale?
+At a representative size of 258 tools, brute-force cosine similarity takes ~5 microseconds. How does this scale?
 
 | Tool Count | Estimated Time | Approach |
 |------------|---------------|----------|
-| 258 | ~5 us | Brute-force (current) |
+| 258 | ~5 us | Brute-force (representative snapshot) |
 | 1,000 | ~20 us | Brute-force (sufficient) |
 | 5,000 | ~100 us | Brute-force (still fast) |
 | 10,000 | ~200 us | Consider HNSW index |
@@ -107,11 +107,11 @@ At 258 tools, brute-force cosine similarity takes ~5 microseconds. How does this
 
 With 256-dimensional vectors and modern CPUs utilizing SIMD, brute-force remains practical up to ~10,000 tools. Beyond that, approximate nearest neighbor (ANN) indices like HNSW become worthwhile.
 
-PrismGate's current tool count (258) is well within the brute-force regime. Even scaling to 1,000 tools would add negligible latency.
+For a representative catalog size of 258 tools, Gatemini is well within the brute-force regime. Even scaling to 1,000 tools would add negligible latency.
 
 ### BM25 Scaling
 
-BM25 scoring is O(n * q) where n = number of tools and q = number of query terms. With short queries (2-5 terms) and 258 tools, this is ~1,000 operations -- trivially fast. At 10,000 tools, it would be ~50,000 operations, still sub-millisecond.
+BM25 scoring is O(n * q) where n = number of tools and q = number of query terms. With short queries (2-5 terms) and 258 tools in a representative registry, this is ~1,000 operations -- trivially fast. At 10,000 tools, it would be ~50,000 operations, still sub-millisecond.
 
 For very large registries (100,000+ tools), an inverted index (as in [Tantivy](https://github.com/quickwit-oss/tantivy)) would be needed to avoid scanning all documents for each query.
 
@@ -125,7 +125,7 @@ For very large registries (100,000+ tools), an inverted index (as in [Tantivy](h
 | **nDCG@5** | Normalized Discounted Cumulative Gain at rank 5 | Comparing retrieval quality |
 | **Recall@5** | Fraction of relevant tools in top 5 results | Ensuring relevant tools aren't missed |
 
-MRR is the most appropriate primary metric for PrismGate because agents typically act on the first relevant tool found ([Galileo MRR guide](https://galileo.ai/blog/mrr-metric-ai-evaluation)).
+MRR is the most appropriate primary metric for Gatemini because agents typically act on the first relevant tool found ([Galileo MRR guide](https://galileo.ai/blog/mrr-metric-ai-evaluation)).
 
 ### Proposed Test Harness
 
@@ -172,7 +172,7 @@ For registry_size in [100, 258, 500, 1000, 5000]:
 
 ## Academic Context
 
-PrismGate's search architecture is validated by recent academic work:
+Gatemini's search architecture is validated by recent academic work:
 
 | Paper | Key Finding | Relevance |
 |-------|-------------|-----------|

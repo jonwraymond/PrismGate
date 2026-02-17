@@ -1,6 +1,6 @@
 # Gatemini
 
-Rust MCP gateway that connects to 30+ backend MCP servers and exposes 7 meta-tools to Claude Code via a shared daemon architecture.
+Rust MCP gateway that connects to multiple backend MCP servers and exposes 7 meta-tools to Claude Code via a shared daemon architecture. The active backend set and deployment size vary.
 
 ## Architecture
 
@@ -14,7 +14,7 @@ Claude Code ──stdio──▸ gatemini (proxy) ──┘ /tmp/gatemini-{UID}.
                                     gatemini daemon (1 process)
                                       ├── backend MCP server #1
                                       ├── backend MCP server #2
-                                      └── ... (20-30+ backends, shared)
+                                      └── ... (for example, 20-30+ backends, shared)
 ```
 
 - **Proxy mode** (default): thin byte pipe bridging stdio ↔ Unix socket, auto-spawns daemon on first use
@@ -48,7 +48,7 @@ Claude Code ──stdio──▸ gatemini (proxy) ──┘ /tmp/gatemini-{UID}.
 | `src/resources.rs` | MCP resources for @-mention discovery (`gatemini://overview`, tools, backends) |
 | `src/prompts.rs` | MCP prompts for guided discovery (`discover`, `find_tool`, `backend_status`) |
 | **Tools** | |
-| `src/tools/discovery.rs` | search_tools, list_tools_meta, tool_info, get_required_keys — with brief/full modes |
+| `src/tools/discovery.rs` | search_tools, list_tools_meta, tool_info, get_required_keys_for_tool — with brief/full modes |
 | `src/tools/register.rs` | register_manual, deregister_manual — runtime backend management |
 | `src/tools/sandbox.rs` | call_tool_chain — fast-path JSON/direct call detection, V8 sandbox fallback |
 | **Other** | |
@@ -72,5 +72,5 @@ Claude Code ──stdio──▸ gatemini (proxy) ──┘ /tmp/gatemini-{UID}.
 ```bash
 cargo build                    # debug build
 cargo build --release          # release build
-cargo test                     # 184 unit tests
+cargo test                     # run unit tests
 ```

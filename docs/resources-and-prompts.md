@@ -1,10 +1,11 @@
 # Resources & Prompts
 
-PrismGate uses all three MCP primitives -- tools, resources, and prompts -- to provide multiple discovery pathways for AI agents.
+Gatemini uses all three MCP primitives -- tools, resources, and prompts -- to provide multiple discovery pathways for AI agents.
+Tool counts in this document use a representative registry snapshot and vary by deployment.
 
 ## MCP Primitive Roles
 
-| Primitive | Control | PrismGate Use |
+| Primitive | Control | Gatemini Use |
 |-----------|---------|---------------|
 | **Tools** | Model-controlled (AI decides when to call) | 7 meta-tools for search, inspect, execute |
 | **Resources** | Application-controlled (client loads via @-mention) | Compact indices, on-demand schemas |
@@ -24,7 +25,7 @@ This separation follows the [MCP specification](https://modelcontextprotocol.io/
 | `gatemini://backends` | Variable | JSON list of all backends with status and tool counts |
 | `gatemini://tools` | ~3,000 | Compact index of ALL tools (name, backend, first sentence) |
 
-The `gatemini://tools` resource is the flagship optimization: loading it provides awareness of all 258+ tools for ~3,000 tokens versus ~40,000 tokens for full schemas -- a **92.5% reduction**.
+The `gatemini://tools` resource is the flagship optimization: loading it provides awareness of all 258+ tools in a representative catalog for ~3,000 tokens versus ~40,000 tokens for full schemas -- a **92.5% reduction**.
 
 ### Resource Templates
 
@@ -34,7 +35,7 @@ The `gatemini://tools` resource is the flagship optimization: loading it provide
 | `gatemini://backend/{backend_name}` | Backend details, status, tool count | ~200 tokens |
 | `gatemini://backend/{backend_name}/tools` | Brief tool list for one backend | Variable |
 
-Templates enable targeted lookups: instead of loading all 258 tool schemas, an agent can load the compact index and then request full schemas only for tools it intends to use.
+Templates enable targeted lookups: instead of loading all tool schemas at once, an agent can load the compact index and then request full schemas only for tools it intends to use.
 
 ### First Sentence Truncation
 
@@ -50,7 +51,7 @@ fn first_sentence(text: &str) -> String { ... }
 
 ### Resource Completions
 
-PrismGate provides autocomplete for resource URI parameters:
+Gatemini provides autocomplete for resource URI parameters:
 
 ```
 gatemini://tool/web_     → ["web_search_exa", "web_search_tavily", ...]
@@ -113,7 +114,7 @@ Generates a health dashboard showing all backends:
 
 **Source**: [`src/server.rs`](../src/server.rs)
 
-PrismGate embeds discovery instructions directly in its MCP `get_info()` response. These instructions are delivered to the AI agent before it makes any tool calls:
+Gatemini embeds discovery instructions directly in its MCP `get_info()` response. These instructions are delivered to the AI agent before it makes any tool calls:
 
 ```
 gatemini is an MCP gateway that aggregates tools from multiple backend MCP servers.

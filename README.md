@@ -6,16 +6,18 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/jonwraymond/prismgate/actions/workflows/ci.yml"><img src="https://github.com/jonwraymond/prismgate/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/jonwraymond/gatemini/actions/workflows/ci.yml"><img src="https://github.com/jonwraymond/gatemini/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue.svg" alt="License"></a>
-  <a href="https://github.com/jonwraymond/prismgate/releases"><img src="https://img.shields.io/github/v/release/jonwraymond/prismgate" alt="Release"></a>
+  <a href="https://github.com/jonwraymond/gatemini/releases"><img src="https://img.shields.io/github/v/release/jonwraymond/gatemini" alt="Release"></a>
 </p>
 
 ---
 
 ## Why Gatemini?
 
-AI coding agents connect to [MCP](https://modelcontextprotocol.io/) (Model Context Protocol) servers for capabilities like web search, file analysis, and code generation. Each server runs as a separate process. With 30+ backends, every session spawns its own copy:
+Note: backend counts and catalog size in this documentation are examples; the actual toolset and backend mix can vary by deployment and configuration.
+
+AI coding agents connect to [MCP](https://modelcontextprotocol.io/) (Model Context Protocol) servers for capabilities like web search, file analysis, and code generation. Each server runs as a separate process. In deployments with larger backend sets, every session can quickly multiply process count:
 
 ```
 Session 1 -> 30 backend processes
@@ -58,26 +60,26 @@ Gatemini runs a single daemon that manages all backend connections. Multiple ses
 
 ### Install from Release
 
-Download the latest binary from [GitHub Releases](https://github.com/jonwraymond/prismgate/releases):
+Download the latest binary from [GitHub Releases](https://github.com/jonwraymond/gatemini/releases):
 
 ```bash
 # Replace with tag you want:
-#   - main release: main
+#   - release tag: main
 #   - versioned release: v0.3.0, v1.0.0, etc.
 export RELEASE_TAG=main
 
 # macOS (Apple Silicon)
-curl -L "https://github.com/jonwraymond/prismgate/releases/download/${RELEASE_TAG}/gatemini-${RELEASE_TAG}-darwin-arm64.tar.gz" \
+curl -L "https://github.com/jonwraymond/gatemini/releases/download/${RELEASE_TAG}/gatemini-${RELEASE_TAG}-darwin-arm64.tar.gz" \
   | tar -xz -C /tmp
 install -m 755 /tmp/gatemini ~/.local/bin/
 
 # macOS (Intel)
-curl -L "https://github.com/jonwraymond/prismgate/releases/download/${RELEASE_TAG}/gatemini-${RELEASE_TAG}-darwin-x86_64.tar.gz" \
+curl -L "https://github.com/jonwraymond/gatemini/releases/download/${RELEASE_TAG}/gatemini-${RELEASE_TAG}-darwin-x86_64.tar.gz" \
   | tar -xz -C /tmp
 install -m 755 /tmp/gatemini ~/.local/bin/
 
 # Linux (tar.gz)
-curl -L "https://github.com/jonwraymond/prismgate/releases/download/${RELEASE_TAG}/gatemini-${RELEASE_TAG}-linux-x86_64.tar.gz" \
+curl -L "https://github.com/jonwraymond/gatemini/releases/download/${RELEASE_TAG}/gatemini-${RELEASE_TAG}-linux-x86_64.tar.gz" \
   | tar -xz -C /tmp
 install -m 755 /tmp/gatemini ~/.local/bin/
 
@@ -101,7 +103,7 @@ $out = "$env:TEMP\gatemini-${RELEASE_TAG}-windows-x86_64.zip"
 $dest = "$env:USERPROFILE\bin"
 
 Invoke-WebRequest `
-  -Uri "https://github.com/jonwraymond/prismgate/releases/download/$RELEASE_TAG/gatemini-$RELEASE_TAG-windows-x86_64.zip" `
+  -Uri "https://github.com/jonwraymond/gatemini/releases/download/$RELEASE_TAG/gatemini-$RELEASE_TAG-windows-x86_64.zip" `
   -OutFile $out
 Expand-Archive -Path $out -DestinationPath $dest -Force
 ```
@@ -109,8 +111,8 @@ Expand-Archive -Path $out -DestinationPath $dest -Force
 ### Install from Source
 
 ```bash
-git clone https://github.com/jonwraymond/prismgate.git
-cd prismgate
+git clone https://github.com/jonwraymond/gatemini.git
+cd gatemini
 cargo install --path .
 # or: make install  (installs to ~/.local/bin/)
 ```
@@ -201,7 +203,7 @@ Backends are monitored with periodic MCP pings. Failed backends enter a circuit 
 
 ## Progressive Tool Discovery
 
-With 258+ tools across 30+ backends, sending all tool schemas would consume ~67,000 tokens (33% of a 200K context window). Gatemini solves this with **progressive disclosure**:
+With a representative catalog (example: 258+ tools across 30+ backends), sending all tool schemas would consume ~67,000 tokens (33% of a 200K context window). Gatemini solves this with **progressive disclosure**:
 
 <p align="center">
   <img src="docs/diagrams/tool-discovery.svg" alt="Tool Discovery Flow" width="700">
@@ -216,7 +218,7 @@ Instead of exposing hundreds of individual tools, Gatemini provides 7 meta-tools
 | `search_tools` | BM25 + semantic search across all backends | ~60/result (brief) |
 | `list_tools_meta` | Paginated index of all available tools | ~3/name |
 | `tool_info` | Schema for a specific tool (brief or full) | ~200 (brief) |
-| `get_required_keys` | List env vars needed by a backend | Minimal |
+| `get_required_keys_for_tool` | List env vars needed by a backend | Minimal |
 | `call_tool_chain` | Execute tools (JSON, TypeScript, or direct) | N/A |
 | `register_manual` | Add a backend at runtime | N/A |
 | `deregister_manual` | Remove a dynamic backend | N/A |
@@ -344,12 +346,13 @@ secrets:
 ### Health Tuning
 
 ```yaml
+# Values below match current defaults; tune for your deployment.
 health:
-  interval: 5          # Check every 5 seconds
-  timeout: 10          # Ping timeout
+  interval: 30         # Check every 30 seconds
+  timeout: 5           # Ping timeout in seconds
   failure_threshold: 3 # Failures before circuit opens
   max_restarts: 5      # Max restarts per window
-  restart_window: 300  # Window in seconds (5 min)
+  restart_window: 60   # Window in seconds (1 min)
 ```
 
 ## Building
@@ -360,7 +363,7 @@ health:
 cargo build                        # Debug build
 cargo build --release              # Release with all features
 cargo build --no-default-features  # Minimal (no V8, no semantic, no admin)
-cargo test                         # Run 184+ tests
+cargo test                         # Run unit tests
 cargo clippy -- -D warnings        # Lint check
 ```
 
@@ -375,7 +378,7 @@ The CI/CD pipeline builds for all major platforms:
 | Linux x86_64 | `x86_64-unknown-linux-gnu` | `.tar.gz`, `.deb`, `.rpm` |
 | Windows x86_64 | `x86_64-pc-windows-msvc` | `.zip` |
 
-Release artifacts and SHA-256 checksums are published to [GitHub Releases](https://github.com/jonwraymond/prismgate/releases) on every tag.
+Release artifacts and SHA-256 checksums are published to [GitHub Releases](https://github.com/jonwraymond/gatemini/releases) on every tag.
 
 ### Makefile
 
