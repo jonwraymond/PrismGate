@@ -53,18 +53,26 @@ pub fn load_dotenv(config_path: Option<&Path>) {
 
         for env_file in &unique {
             if let Ok(contents) = std::fs::read_to_string(env_file) {
-                eprintln!("loaded .env: {}", env_file.display());
                 for line in contents.lines() {
                     let line = line.trim();
                     if line.is_empty() || line.starts_with('#') {
                         continue;
                     }
                     if let Some((key, value)) = line.split_once('=') {
+                        let value = value.trim();
+                        // Strip surrounding quotes: KEY="value" or KEY='value'
+                        let value = if (value.starts_with('"') && value.ends_with('"'))
+                            || (value.starts_with('\'') && value.ends_with('\''))
+                        {
+                            &value[1..value.len() - 1]
+                        } else {
+                            value
+                        };
                         // SAFETY: The tokio multi-thread runtime has worker threads
                         // running, but no user tasks have been spawned yet and no
                         // concurrent env var reads occur at this point. `Once` ensures
                         // this runs at most once.
-                        unsafe { std::env::set_var(key.trim(), value.trim()) };
+                        unsafe { std::env::set_var(key.trim(), value) };
                     }
                 }
             }
@@ -687,6 +695,10 @@ impl Config {
                 .with_context(|| format!("backend '{name}' headers"))?;
 
             if let Some(prereq) = &mut backend.prerequisite {
+                prereq.command = resolver
+                    .resolve_value(&prereq.command)
+                    .with_context(|| format!("backend '{name}' prerequisite command"))?;
+
                 resolver
                     .resolve_slice(&mut prereq.args)
                     .with_context(|| format!("backend '{name}' prerequisite args"))?;
