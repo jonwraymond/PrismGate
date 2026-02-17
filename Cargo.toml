@@ -67,8 +67,9 @@ thiserror = "2"
 # CLI
 clap = { version = "4", features = ["derive"] }
 
-# Unix IPC (socket path, PID checks)
-nix = { version = "0.29", features = ["signal", "user", "fs"] }
+# Futures utilities
+futures = "0.3"
+futures-util = "0.3"
 
 # Env var expansion in config
 shellexpand = "3"
@@ -81,13 +82,10 @@ arc-swap = "1"
 # Async trait
 async-trait = "0.1"
 
-# Process group management (unix-only)
+# Process group management and Unix IPC (unix-only)
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
-
-# Futures utilities
-futures = "0.3"
-futures-util = "0.3"
+nix = { version = "0.29", features = ["signal", "user", "fs"] }
 
 [dev-dependencies]
 tempfile = "3"
