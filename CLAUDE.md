@@ -53,14 +53,14 @@ Claude Code ──stdio──▸ gatemini (proxy) ──┘ /tmp/gatemini-{UID}.
 | `src/tools/sandbox.rs` | call_tool_chain — fast-path JSON/direct call detection, V8 sandbox fallback |
 | **Other** | |
 | `src/sandbox/` | rustyscript V8 sandbox for call_tool_chain TypeScript execution |
-| `src/secrets/` | BWS integration, SecretProvider trait, regex-based secretref resolution |
+| `src/secrets/` | BWS integration, EnvFallbackProvider, SecretProvider trait, regex-based secretref resolution |
 | `src/admin.rs` | Optional axum admin API (feature-gated: `admin`) |
 
 ## Key Patterns
 
 - Backends stored in `Arc<DashMap<String, RunningBackend>>` — concurrent access without mutex
 - rmcp crate for MCP protocol: `ServiceExt`, `RunningService<RoleClient>`, `ClientHandler`
-- Config pipeline: shellexpand → YAML parse → resolve_secrets_async → validate
+- Config pipeline: multi-location .env → shellexpand → YAML parse → resolve_secrets_async (BWS or env fallback) → validate_no_unresolved_secretrefs
 - Health checker runs on tokio interval, respects `max_restarts` and `restart_window`
 - Tool cache enables instant availability on daemon restart (loaded before backends connect)
 - Proxy auto-start uses flock + double-check pattern to prevent duplicate daemon spawning
@@ -72,5 +72,5 @@ Claude Code ──stdio──▸ gatemini (proxy) ──┘ /tmp/gatemini-{UID}.
 ```bash
 cargo build                    # debug build
 cargo build --release          # release build
-cargo test                     # 62 unit tests
+cargo test                     # 184 unit tests
 ```

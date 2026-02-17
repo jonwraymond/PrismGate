@@ -21,17 +21,15 @@ PrismGate's configuration pipeline transforms YAML config files through environm
 
 ### Stage 1: Environment Loading
 
-```rust
-static DOTENV_ONCE: std::sync::Once = std::sync::Once::new();
+`.env` files are loaded from up to three locations (later overrides earlier):
 
-pub fn load_dotenv() {
-    DOTENV_ONCE.call_once(|| {
-        dotenvy::dotenv().ok();
-    });
-}
-```
+1. `~/.env` (home directory)
+2. `prismgate_home()/.env` (e.g., `~/.config/gatemini/.env` on macOS/Linux)
+3. Sibling of the config file (e.g., `/path/to/config.yaml` -> `/path/to/.env`)
 
-The `Once` pattern ensures `~/.env` is loaded exactly once, even if multiple threads call `load_dotenv()` concurrently. This prevents UB from `std::env::set_var` in multi-threaded contexts.
+Paths are deduplicated via `canonicalize()` to avoid double-loading when the config dir and prismgate home are the same directory.
+
+The `Once` pattern ensures env files are loaded exactly once, even if multiple threads call `load_dotenv()` concurrently. This prevents UB from `std::env::set_var` in multi-threaded contexts. Hot-reload does **not** re-read `.env` files — they are startup-only.
 
 ### Stage 2: YAML Parsing
 
@@ -108,27 +106,69 @@ backends:
 
 **Source**: [`src/secrets/resolver.rs`](../src/secrets/resolver.rs)
 
-PrismGate resolves secrets at config load time using a `secretref:` pattern syntax:
+Gatemini supports three modes for providing secrets. No special configuration is required for modes 1 and 2.
+
+### Mode 1: Direct Environment Variables (simplest)
+
+Use `${VAR}` syntax to reference environment variables or `.env` file values directly:
+
+```yaml
+backends:
+  cerebras:
+    command: cerebras-mcp
+    env:
+      CEREBRAS_API_KEY: "${CEREBRAS_API_KEY}"
+```
+
+### Mode 2: secretref with Env Var Fallback (default)
+
+When BWS is disabled (the default), `secretref:bws:...` patterns automatically fall back to environment variable lookup. The **last path segment** is extracted as the env var name:
+
+```yaml
+backends:
+  github:
+    transport: streamable-http
+    url: "https://api.githubcopilot.com/mcp/"
+    headers:
+      Authorization: "Bearer secretref:bws:project/dotenv/key/GITHUB_PAT_TOKEN"
+      # BWS disabled → extracts "GITHUB_PAT_TOKEN" → resolves via std::env::var
+```
+
+This means configs written for BWS users work transparently for non-BWS users — just set the corresponding env vars.
+
+The `EnvFallbackProvider` (in `resolver.rs`) registers with name `"bws"` so it handles existing patterns without config changes. It is only registered when `secrets.providers.bws.enabled` is `false`.
+
+### Mode 3: Bitwarden Secrets Manager (BWS)
+
+For full secret management, enable BWS explicitly:
+
+```yaml
+secrets:
+  strict: true
+  providers:
+    bws:
+      enabled: true
+      access_token: "${BWS_ACCESS_TOKEN}"
+      organization_id: "${BWS_ORG_ID}"
+```
+
+### secretref Pattern Syntax
 
 ```
 secretref:<provider>:<reference>
 ```
 
-### Resolution Modes
-
-**Full value** -- entire string is a secretref:
+**Full value** — entire string is a secretref:
 ```yaml
 env:
   API_KEY: "secretref:bws:project/dotenv/key/EXA_API_KEY"
 ```
-Resolved directly: the secret value replaces the entire string.
 
-**Inline** -- secretref embedded in a larger string:
+**Inline** — secretref embedded in a larger string:
 ```yaml
 headers:
   Authorization: "Bearer secretref:bws:project/dotenv/key/MY_TOKEN"
 ```
-Resolved via regex replacement: only the `secretref:...` portion is replaced.
 
 ### Pattern Matching
 
@@ -141,28 +181,41 @@ secretref:([^:\s]+):([\w/.\-]+)
 
 ### Strict Mode
 
-Empty resolved values are treated as errors. This prevents backends from starting with blank API keys.
+When `secrets.strict: true`, empty resolved values and unresolved `secretref:` patterns are treated as errors. When `false` (default), unresolved patterns produce warnings with actionable hints.
+
+### Unresolved Pattern Validation
+
+After secret resolution, Gatemini scans all backend config fields for remaining `secretref:` literals. This catches typos, missing env vars, and misconfigured providers:
+
+- **strict mode**: startup fails with a list of all unresolved patterns
+- **non-strict mode**: logs warnings like `"secretref:bws:project/dotenv/key/MISSING_KEY — BWS is disabled and env var 'MISSING_KEY' not found"`
 
 ### Where Secrets Are Resolved
 
 Secrets are resolved in all backend config fields:
+- `command`
+- `args` array
 - `env` values
-- `headers` values
 - `url` strings
+- `headers` values
+- `prerequisite.args` and `prerequisite.env`
 
 ## Bitwarden Secrets Manager (BWS)
 
 **Source**: [`src/secrets/bws.rs`](../src/secrets/bws.rs)
 
-The BWS provider integrates with [Bitwarden Secrets Manager](https://bitwarden.com/help/secrets-manager-overview/) for centralized secret storage:
+The BWS provider integrates with [Bitwarden Secrets Manager](https://bitwarden.com/help/secrets-manager-overview/) for centralized secret storage.
 
 ### Configuration
 
 ```yaml
 secrets:
-  bws:
-    access_token: "${BWS_ACCESS_TOKEN}"  # or set env var directly
-    org_id: "${BWS_ORG_ID}"              # organization ID
+  strict: true
+  providers:
+    bws:
+      enabled: true
+      access_token: "${BWS_ACCESS_TOKEN}"
+      organization_id: "${BWS_ORG_ID}"
 ```
 
 ### Reference Format
@@ -179,16 +232,20 @@ BWS uses machine account access tokens scoped to specific secret sets. The acces
 
 ## Secret Provider Trait
 
-PrismGate's secret resolution is provider-agnostic through a trait:
+Gatemini's secret resolution is provider-agnostic through a trait:
 
 ```rust
-#[async_trait]
 pub trait SecretProvider: Send + Sync {
-    async fn resolve(&self, reference: &str) -> Result<String>;
+    fn name(&self) -> &str;
+    fn resolve(&self, reference: &str) -> Result<String>;
 }
 ```
 
-This enables adding new providers (e.g., HashiCorp Vault, 1Password, AWS Secrets Manager) without changing the resolution pipeline.
+Built-in providers:
+- **`BwsSdkProvider`** — Bitwarden Secrets Manager (when `bws.enabled: true`)
+- **`EnvFallbackProvider`** — Environment variable lookup (when BWS disabled, extracts last path segment as env var name)
+
+Custom providers (e.g., HashiCorp Vault, 1Password, AWS Secrets Manager) can be added by implementing this trait.
 
 ### Comparison with Other Tools
 
@@ -231,22 +288,61 @@ Existing references to the old config continue working until dropped. New refere
 
 ## Example Configuration
 
+### Minimal (no secrets)
+
 ```yaml
-log_level: info
+backends:
+  sequential-thinking:
+    command: mcp-server-sequential-thinking
+    timeout: 120s
 
-daemon:
-  idle_timeout: 300
+  deepwiki:
+    transport: streamable-http
+    url: "https://mcp.deepwiki.com/mcp"
+    timeout: 90s
+```
 
-health:
-  interval: 5
-  timeout: 10
-  failure_threshold: 3
-  max_restarts: 5
-  restart_window: 300
+### With env vars (Mode 1)
 
+```yaml
+backends:
+  exa:
+    command: npx
+    args: ["-y", "exa-mcp-server"]
+    env:
+      EXA_API_KEY: "${EXA_API_KEY}"   # Set in .env or shell
+```
+
+### With secretref + env fallback (Mode 2, default)
+
+```yaml
+# No secrets section needed — BWS disabled by default
+backends:
+  exa:
+    command: npx
+    args: ["-y", "exa-mcp-server"]
+    env:
+      EXA_API_KEY: "secretref:bws:project/dotenv/key/EXA_API_KEY"
+      # Extracts "EXA_API_KEY", resolves via env var when BWS is off
+
+  github:
+    transport: streamable-http
+    url: "https://api.githubcopilot.com/mcp/"
+    headers:
+      Authorization: "Bearer secretref:bws:project/dotenv/key/GITHUB_PAT_TOKEN"
+    timeout: 60s
+```
+
+### With BWS enabled (Mode 3)
+
+```yaml
 secrets:
-  bws:
-    access_token: "${BWS_ACCESS_TOKEN}"
+  strict: true
+  providers:
+    bws:
+      enabled: true
+      access_token: "${BWS_ACCESS_TOKEN}"
+      organization_id: "${BWS_ORG_ID}"
 
 backends:
   exa:
@@ -254,19 +350,6 @@ backends:
     args: ["-y", "exa-mcp-server"]
     env:
       EXA_API_KEY: "secretref:bws:project/dotenv/key/EXA_API_KEY"
-
-  tavily:
-    command: npx
-    args: ["-y", "tavily-mcp-server"]
-    env:
-      TAVILY_API_KEY: "secretref:bws:project/dotenv/key/TAVILY_API_KEY"
-
-  custom_http:
-    transport: http
-    url: "https://api.example.com/mcp"
-    headers:
-      Authorization: "Bearer secretref:bws:project/dotenv/key/CUSTOM_TOKEN"
-    timeout: 60
 ```
 
 ## Sources

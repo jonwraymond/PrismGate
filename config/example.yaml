@@ -1,42 +1,53 @@
-# PrismGate example configuration
-# Copy to gatemini.yaml and customize for your environment.
+# Gatemini example configuration
+# Copy to ~/.config/gatemini/config.yaml and customize.
+#
+# ── Secret Modes ──────────────────────────────────────────────────────
+#
+# Mode 1: Direct env vars (simplest)
+#   env:
+#     API_KEY: "${MY_API_KEY}"          # resolved at config load from env/`.env`
+#
+# Mode 2: secretref with env fallback (share configs between BWS and non-BWS users)
+#   env:
+#     API_KEY: "secretref:bws:project/dotenv/key/MY_API_KEY"
+#   When BWS is enabled  → resolved via Bitwarden Secrets Manager
+#   When BWS is disabled → extracts "MY_API_KEY" and resolves via env var
+#   Zero config change needed for non-BWS users — just set MY_API_KEY in .env
+#
+# Mode 3: BWS enabled (full Bitwarden Secrets Manager)
+#   Uncomment the secrets section below and set BWS_ACCESS_TOKEN + BWS_ORG_ID
+#
+# ── .env file locations (loaded in order, later overrides earlier) ────
+#   1. ~/.env
+#   2. ~/.config/gatemini/.env
+#   3. Sibling of this config file (e.g., same directory)
+# ──────────────────────────────────────────────────────────────────────
 
 log_level: info
 
-secrets:
-  strict: true
-  providers:
-    bws:
-      enabled: true
-      access_token: "${BWS_ACCESS_TOKEN}"
-      organization_id: "${BWS_ORG_ID}"
+# Uncomment to enable BWS (Mode 3):
+# secrets:
+#   strict: true
+#   providers:
+#     bws:
+#       enabled: true
+#       access_token: "${BWS_ACCESS_TOKEN}"
+#       organization_id: "${BWS_ORG_ID}"
 
 backends:
   # ── Stdio backends ─────────────────────────────────────────────────
 
-  # Basic stdio backend — runs a command as a child process
+  # No secrets needed
   sequential-thinking:
     command: mcp-server-sequential-thinking
     timeout: 120s
 
-  # Backend with environment variables using secretref
+  # Mode 1: direct env var (set CEREBRAS_API_KEY in .env or shell)
   cerebras:
     command: cerebras-mcp
     env:
-      CEREBRAS_API_KEY: "secretref:bws:project/dotenv/key/CEREBRAS_API_KEY"
+      CEREBRAS_API_KEY: "${CEREBRAS_API_KEY}"
     timeout: 120s
-
-  # Backend with a prerequisite process (auto-started if not running)
-  my-app:
-    command: npx
-    args: ["-y", "my-app-mcp@latest", "--mcp"]
-    timeout: 120s
-    prerequisite:
-      command: npx
-      args: ["-y", "my-app@latest"]
-      process_match: "my-app"
-      managed: false
-      startup_delay: 3s
 
   # Backend with npx (no local install required)
   playwright:
@@ -46,7 +57,8 @@ backends:
 
   # ── Streamable-HTTP backends ────────────────────────────────────────
 
-  # HTTP backend with bearer auth via secretref
+  # Mode 2: secretref with env fallback
+  # Works with BWS enabled OR with GITHUB_PAT_TOKEN env var
   github:
     transport: streamable-http
     url: "https://api.githubcopilot.com/mcp/"
@@ -54,7 +66,7 @@ backends:
       Authorization: "Bearer secretref:bws:project/dotenv/key/GITHUB_PAT_TOKEN"
     timeout: 60s
 
-  # HTTP backend with custom header auth
+  # Mode 2: secretref with env fallback
   context7:
     transport: streamable-http
     url: "https://mcp.context7.com/mcp"

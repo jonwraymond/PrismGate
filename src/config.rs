@@ -7,31 +7,65 @@ use std::time::Duration;
 
 static DOTENV_ONCE: Once = Once::new();
 
-/// Load `~/.env` into the process environment exactly once.
+/// Load `.env` files into the process environment exactly once.
+///
+/// Loads from up to three locations (later files override earlier):
+/// 1. `~/.env` (home directory)
+/// 2. `prismgate_home()/.env` (e.g., `~/.config/gatemini/.env`)
+/// 3. Sibling of the config file (e.g., `/path/to/config.yaml` → `/path/to/.env`)
+///
+/// Paths are deduplicated via canonicalize to avoid double-loading when
+/// prismgate_home coincides with the config directory.
 ///
 /// Must be called early in `main()` before spawning concurrent tasks.
 /// Uses `Once` to guarantee single execution — safe to call multiple times
 /// but only the first call has any effect. Subsequent calls (e.g., from
 /// hot-reload) are no-ops, preventing UB from `set_var` in multi-threaded context.
-pub fn load_dotenv() {
+pub fn load_dotenv(config_path: Option<&Path>) {
     DOTENV_ONCE.call_once(|| {
-        let env_path = dirs::home_dir()
-            .map(|h| h.join(".env"))
-            .filter(|p| p.is_file());
-        if let Some(env_file) = env_path
-            && let Ok(contents) = std::fs::read_to_string(&env_file)
+        let mut candidates: Vec<PathBuf> = Vec::new();
+
+        // 1. ~/.env
+        if let Some(home) = dirs::home_dir() {
+            candidates.push(home.join(".env"));
+        }
+
+        // 2. prismgate_home()/.env
+        candidates.push(crate::cli::prismgate_home().join(".env"));
+
+        // 3. Sibling of config file
+        if let Some(cfg) = config_path
+            && let Some(parent) = cfg.parent()
         {
-            for line in contents.lines() {
-                let line = line.trim();
-                if line.is_empty() || line.starts_with('#') {
-                    continue;
-                }
-                if let Some((key, value)) = line.split_once('=') {
-                    // SAFETY: The tokio multi-thread runtime has worker threads
-                    // running, but no user tasks have been spawned yet and no
-                    // concurrent env var reads occur at this point. `Once` ensures
-                    // this runs at most once.
-                    unsafe { std::env::set_var(key.trim(), value.trim()) };
+            candidates.push(parent.join(".env"));
+        }
+
+        // Deduplicate via canonicalize (resolve symlinks, normalize paths)
+        let mut seen = std::collections::HashSet::new();
+        let unique: Vec<PathBuf> = candidates
+            .into_iter()
+            .filter(|p| p.is_file())
+            .filter(|p| {
+                let canonical = p.canonicalize().unwrap_or_else(|_| p.clone());
+                seen.insert(canonical)
+            })
+            .collect();
+
+        for env_file in &unique {
+            if let Ok(contents) = std::fs::read_to_string(env_file) {
+                eprintln!("loaded .env: {}", env_file.display());
+                for line in contents.lines() {
+                    let line = line.trim();
+                    if line.is_empty() || line.starts_with('#') {
+                        continue;
+                    }
+                    if let Some((key, value)) = line.split_once('=') {
+                        // SAFETY: The tokio multi-thread runtime has worker threads
+                        // running, but no user tasks have been spawned yet and no
+                        // concurrent env var reads occur at this point. `Once` ensures
+                        // this runs at most once.
+                        unsafe { std::env::set_var(key.trim(), value.trim()) };
+                    }
                 }
             }
         }
@@ -589,33 +623,42 @@ impl Config {
     }
 
     /// Async counterpart: resolves secrets after the tokio runtime is available.
-    /// Call this after `Config::load()` when BWS is enabled.
+    /// Call this after `Config::load()`.
+    ///
+    /// When BWS is enabled, uses the real BWS SDK provider.
+    /// When BWS is disabled, registers an env-var fallback so `secretref:bws:...`
+    /// patterns resolve via environment variables (from `.env` files or shell).
     pub async fn resolve_secrets_async(&mut self) -> Result<()> {
-        if !self.secrets.providers.bws.enabled {
-            return Ok(());
+        let mut resolver = crate::secrets::resolver::SecretResolver::new(self.secrets.strict);
+
+        if self.secrets.providers.bws.enabled {
+            let bws_config = &self.secrets.providers.bws;
+
+            // Resolve access token: config → env var
+            let access_token = match &bws_config.access_token {
+                Some(t) if !t.is_empty() => t.clone(),
+                _ => std::env::var("BWS_ACCESS_TOKEN").context(
+                    "BWS enabled but access_token not in config and BWS_ACCESS_TOKEN env var not found",
+                )?,
+            };
+
+            let provider = crate::secrets::bws::BwsSdkProvider::new(
+                access_token,
+                bws_config.organization_id.clone(),
+            )
+            .await
+            .context("failed to initialize BWS provider")?;
+
+            resolver.register(Box::new(provider));
+        } else {
+            // Env var fallback for secretref:bws:... patterns
+            resolver.register(Box::new(
+                crate::secrets::resolver::EnvFallbackProvider,
+            ));
         }
 
-        let bws_config = &self.secrets.providers.bws;
-
-        // Resolve access token: config → env var
-        let access_token = match &bws_config.access_token {
-            Some(t) if !t.is_empty() => t.clone(),
-            _ => std::env::var("BWS_ACCESS_TOKEN").context(
-                "BWS enabled but access_token not in config and BWS_ACCESS_TOKEN env var not found",
-            )?,
-        };
-
-        let provider = crate::secrets::bws::BwsSdkProvider::new(
-            access_token,
-            bws_config.organization_id.clone(),
-        )
-        .await
-        .context("failed to initialize BWS provider")?;
-
-        let mut resolver = crate::secrets::resolver::SecretResolver::new(self.secrets.strict);
-        resolver.register(Box::new(provider));
-
         self.resolve_secrets(&resolver)?;
+        self.validate_no_unresolved_secretrefs()?;
         Ok(())
     }
 
@@ -657,6 +700,70 @@ impl Config {
         }
 
         Ok(())
+    }
+
+    /// Scan all backend config fields for leftover `secretref:` literals after resolution.
+    ///
+    /// - `secrets.strict: true` → error listing all unresolved patterns
+    /// - `secrets.strict: false` → warn with actionable hint, return Ok
+    fn validate_no_unresolved_secretrefs(&self) -> Result<()> {
+        let mut unresolved: Vec<(String, String, String)> = Vec::new(); // (backend, field, pattern)
+
+        for (name, backend) in &self.backends {
+            let mut check = |field: &str, value: &str| {
+                if value.contains("secretref:") {
+                    unresolved.push((name.clone(), field.to_string(), value.to_string()));
+                }
+            };
+
+            if let Some(cmd) = &backend.command {
+                check("command", cmd);
+            }
+            for arg in &backend.args {
+                check("args", arg);
+            }
+            for (k, v) in &backend.env {
+                check(&format!("env.{k}"), v);
+            }
+            if let Some(url) = &backend.url {
+                check("url", url);
+            }
+            for (k, v) in &backend.headers {
+                check(&format!("headers.{k}"), v);
+            }
+            if let Some(prereq) = &backend.prerequisite {
+                check("prerequisite.command", &prereq.command);
+                for arg in &prereq.args {
+                    check("prerequisite.args", arg);
+                }
+                for (k, v) in &prereq.env {
+                    check(&format!("prerequisite.env.{k}"), v);
+                }
+            }
+        }
+
+        if unresolved.is_empty() {
+            return Ok(());
+        }
+
+        let details: Vec<String> = unresolved
+            .iter()
+            .map(|(backend, field, pattern)| {
+                format!("  backend '{backend}' field '{field}': {pattern}")
+            })
+            .collect();
+        let msg = format!(
+            "unresolved secretref patterns found after secret resolution:\n{}\n\
+             Hint: Set the corresponding env vars in your .env file or shell, or enable BWS.",
+            details.join("\n")
+        );
+
+        if self.secrets.strict {
+            anyhow::bail!("{msg}");
+        } else {
+            tracing::warn!("{msg}");
+            Ok(())
+        }
     }
 
     /// Validate the configuration.
@@ -1316,5 +1423,107 @@ backends: {}
         assert_eq!(config.health.restart_timeout, Duration::from_secs(45));
         assert_eq!(config.health.recovery_multiplier, 5);
         assert_eq!(config.health.drain_timeout, Duration::from_secs(15));
+    }
+
+    // --- Env fallback + validate_no_unresolved tests ---
+
+    #[test]
+    fn test_resolve_secrets_bws_disabled_with_env() {
+        use crate::secrets::resolver::{EnvFallbackProvider, SecretResolver};
+
+        unsafe { std::env::set_var("GATEMINI_TEST_CFG_KEY", "resolved-from-env") };
+
+        let yaml = r#"
+backends:
+  test-backend:
+    transport: stdio
+    command: echo
+    env:
+      API_KEY: "secretref:bws:project/dotenv/key/GATEMINI_TEST_CFG_KEY"
+"#;
+        let mut config: Config = serde_yaml_ng::from_str(yaml).unwrap();
+
+        let mut resolver = SecretResolver::new(false);
+        resolver.register(Box::new(EnvFallbackProvider));
+        config.resolve_secrets(&resolver).unwrap();
+
+        let backend = config.backends.get("test-backend").unwrap();
+        assert_eq!(backend.env.get("API_KEY").unwrap(), "resolved-from-env");
+
+        unsafe { std::env::remove_var("GATEMINI_TEST_CFG_KEY") };
+    }
+
+    #[test]
+    fn test_resolve_secrets_bws_disabled_missing_env() {
+        use crate::secrets::resolver::{EnvFallbackProvider, SecretResolver};
+
+        unsafe { std::env::remove_var("GATEMINI_TEST_MISSING_KEY") };
+
+        let yaml = r#"
+backends:
+  test-backend:
+    transport: stdio
+    command: echo
+    env:
+      API_KEY: "secretref:bws:project/dotenv/key/GATEMINI_TEST_MISSING_KEY"
+"#;
+        let mut config: Config = serde_yaml_ng::from_str(yaml).unwrap();
+
+        let mut resolver = SecretResolver::new(false);
+        resolver.register(Box::new(EnvFallbackProvider));
+        let result = config.resolve_secrets(&resolver);
+        assert!(result.is_err());
+        // The error chain: backend context wraps the provider error
+        let err = format!("{:#}", result.unwrap_err());
+        assert!(err.contains("GATEMINI_TEST_MISSING_KEY"), "error should mention key: {err}");
+    }
+
+    #[test]
+    fn test_validate_no_unresolved_clean() {
+        let yaml = r#"
+backends:
+  test:
+    transport: stdio
+    command: echo
+    env:
+      KEY: "plain-value"
+"#;
+        let config: Config = serde_yaml_ng::from_str(yaml).unwrap();
+        config.validate_no_unresolved_secretrefs().unwrap();
+    }
+
+    #[test]
+    fn test_validate_no_unresolved_strict_errors() {
+        let yaml = r#"
+secrets:
+  strict: true
+backends:
+  test:
+    transport: stdio
+    command: echo
+    env:
+      KEY: "secretref:bws:project/dotenv/key/LEAKED"
+"#;
+        let config: Config = serde_yaml_ng::from_str(yaml).unwrap();
+        let result = config.validate_no_unresolved_secretrefs();
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("unresolved secretref"), "error: {err}");
+        assert!(err.contains("LEAKED"), "error should mention the pattern: {err}");
+    }
+
+    #[test]
+    fn test_validate_no_unresolved_lenient_warns() {
+        let yaml = r#"
+backends:
+  test:
+    transport: stdio
+    command: echo
+    env:
+      KEY: "secretref:bws:project/dotenv/key/LEAKED"
+"#;
+        let config: Config = serde_yaml_ng::from_str(yaml).unwrap();
+        // strict is false by default → should warn but return Ok
+        assert!(config.validate_no_unresolved_secretrefs().is_ok());
     }
 }

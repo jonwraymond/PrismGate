@@ -202,7 +202,7 @@ cargo test registry::tests
 cargo test -- --nocapture
 ```
 
-Current test count: 172+ unit tests covering registry, config, cache, daemon, backend concurrency, embeddings, MCP compliance, and more.
+Current test count: 184+ unit tests covering registry, config, cache, daemon, backend concurrency, embeddings, secrets, MCP compliance, and more.
 
 ## Code Style
 
