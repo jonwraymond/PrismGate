@@ -652,9 +652,7 @@ impl Config {
             resolver.register(Box::new(provider));
         } else {
             // Env var fallback for secretref:bws:... patterns
-            resolver.register(Box::new(
-                crate::secrets::resolver::EnvFallbackProvider,
-            ));
+            resolver.register(Box::new(crate::secrets::resolver::EnvFallbackProvider));
         }
 
         self.resolve_secrets(&resolver)?;
@@ -1475,7 +1473,10 @@ backends:
         assert!(result.is_err());
         // The error chain: backend context wraps the provider error
         let err = format!("{:#}", result.unwrap_err());
-        assert!(err.contains("GATEMINI_TEST_MISSING_KEY"), "error should mention key: {err}");
+        assert!(
+            err.contains("GATEMINI_TEST_MISSING_KEY"),
+            "error should mention key: {err}"
+        );
     }
 
     #[test]
@@ -1509,7 +1510,10 @@ backends:
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
         assert!(err.contains("unresolved secretref"), "error: {err}");
-        assert!(err.contains("LEAKED"), "error should mention the pattern: {err}");
+        assert!(
+            err.contains("LEAKED"),
+            "error should mention the pattern: {err}"
+        );
     }
 
     #[test]

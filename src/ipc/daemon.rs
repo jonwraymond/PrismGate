@@ -131,7 +131,8 @@ pub async fn run(gw: InitializedGateway, bound: BoundSocket) -> Result<()> {
 
     // Accept loop with signal handling and idle shutdown.
     let accept_result: Result<(), anyhow::Error> = {
-        let mut sigterm = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
+        let mut sigterm =
+            tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
         let mut sigint = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())?;
 
         // Idle timer — reset whenever session count changes.

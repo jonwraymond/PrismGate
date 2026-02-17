@@ -312,8 +312,14 @@ mod tests {
         let result = provider.resolve("project/dotenv/key/GATEMINI_TEST_NONEXISTENT");
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
-        assert!(err.contains("GATEMINI_TEST_NONEXISTENT"), "error should mention the key name: {err}");
-        assert!(err.contains("BWS is disabled"), "error should mention BWS is disabled: {err}");
+        assert!(
+            err.contains("GATEMINI_TEST_NONEXISTENT"),
+            "error should mention the key name: {err}"
+        );
+        assert!(
+            err.contains("BWS is disabled"),
+            "error should mention BWS is disabled: {err}"
+        );
     }
 
     #[test]

@@ -50,6 +50,8 @@ pub fn run() -> Result<()> {
 
 #[cfg(not(unix))]
 pub fn run() -> anyhow::Result<()> {
-    println!("`gatemini stop` is not supported on Windows because the daemon mode uses Unix sockets.");
+    println!(
+        "`gatemini stop` is not supported on Windows because the daemon mode uses Unix sockets."
+    );
     Ok(())
 }
