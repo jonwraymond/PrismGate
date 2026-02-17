@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.2](https://github.com/jonwraymond/PrismGate/compare/v0.4.1...v0.4.2) (2026-02-17)
+
+
+### Bug Fixes
+
+* use GitHub App token for release-please to trigger release builds ([#11](https://github.com/jonwraymond/PrismGate/issues/11)) ([f9cdd09](https://github.com/jonwraymond/PrismGate/commit/f9cdd0943578055e810b8e1a52aa513df2452515))
+
 ## [0.4.1](https://github.com/jonwraymond/PrismGate/compare/v0.4.0...v0.4.1) (2026-02-17)
 
 
