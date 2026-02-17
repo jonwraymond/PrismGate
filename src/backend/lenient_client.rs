@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use futures_util::{stream::BoxStream, StreamExt};
+use futures_util::{StreamExt, stream::BoxStream};
 use http::header::WWW_AUTHENTICATE;
 use reqwest::header::ACCEPT;
 use rmcp::{
