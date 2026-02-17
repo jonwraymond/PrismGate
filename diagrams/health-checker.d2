@@ -1,0 +1,371 @@
+# Health Checker & Circuit Breaker
+# Periodic health monitoring with 3 phases, circuit breaker states, and auto-restart
+
+direction: down
+
+title: {
+  label: Health Checker & Circuit Breaker
+  near: top-center
+  shape: text
+  style: {
+    font-size: 28
+    bold: true
+    font-color: "#1a1a2e"
+  }
+}
+
+# --- Check Interval Loop ---
+loop: {
+  label: "Health Check Loop (runs every interval)"
+  style: {
+    fill: "#f0f9ff"
+    stroke: "#3b82f6"
+    border-radius: 12
+    shadow: true
+    font-size: 18
+    bold: true
+  }
+
+  start: {
+    label: |md
+      **tokio::select!**
+      sleep(interval) OR shutdown.notified()
+    |
+    shape: rectangle
+    style: {
+      fill: "#dbeafe"
+      stroke: "#2563eb"
+      border-radius: 8
+      font-size: 13
+    }
+  }
+
+  # Phase 1
+  phase1: {
+    label: "Phase 1: Ping Healthy Backends"
+    style: {
+      fill: "#ecfdf5"
+      stroke: "#10b981"
+      border-radius: 10
+      shadow: true
+      font-size: 15
+      bold: true
+    }
+
+    desc: {
+      label: |md
+        **Concurrent pings** (staggered across 80% of interval)
+        - Timeout per ping (configurable)
+        - On success: record_success(), reset failures
+        - On failure: record_failure(), increment counter
+        - If failures >= threshold: trip circuit breaker
+      |
+      shape: rectangle
+      style: {
+        fill: "#d1fae5"
+        stroke: "#059669"
+        border-radius: 8
+        font-size: 12
+      }
+    }
+  }
+
+  # Phase 2
+  phase2: {
+    label: "Phase 2: Handle Stopped/Unhealthy"
+    style: {
+      fill: "#fff7ed"
+      stroke: "#ea580c"
+      border-radius: 10
+      shadow: true
+      font-size: 15
+      bold: true
+    }
+
+    circuit_check: {
+      label: "Circuit open?"
+      shape: diamond
+      style: {
+        fill: "#fef3c7"
+        stroke: "#d97706"
+        border-radius: 4
+        font-size: 13
+        bold: true
+      }
+    }
+
+    half_open: {
+      label: |md
+        **Half-open probe**
+        Recovery window elapsed?
+        (interval x recovery_multiplier)
+        Ping to test recovery
+      |
+      shape: rectangle
+      style: {
+        fill: "#fed7aa"
+        stroke: "#ea580c"
+        border-radius: 8
+        font-size: 12
+      }
+    }
+
+    restart: {
+      label: |md
+        **Auto-restart**
+        Check should_restart()
+        Check backoff elapsed
+        Ensure prerequisite running
+        manager.restart_backend()
+      |
+      shape: rectangle
+      style: {
+        fill: "#fed7aa"
+        stroke: "#ea580c"
+        border-radius: 8
+        font-size: 12
+      }
+    }
+
+    circuit_check -> half_open: "yes, check recovery" {
+      style: { stroke: "#d97706"; stroke-width: 2; font-size: 11 }
+    }
+    circuit_check -> restart: "no, try restart" {
+      style: { stroke: "#ea580c"; stroke-width: 2; font-size: 11 }
+    }
+  }
+
+  # Phase 3
+  phase3: {
+    label: "Phase 3: Retry Pending Backends"
+    style: {
+      fill: "#ede9fe"
+      stroke: "#7c3aed"
+      border-radius: 10
+      shadow: true
+      font-size: 15
+      bold: true
+    }
+
+    desc: {
+      label: |md
+        **Pending backends** = configured but never entered DashMap
+        (failed initial MCP handshake)
+        - Respect same backoff/max_restarts limits
+        - try_start_from_config() on success
+        - Persist updated tool cache
+      |
+      shape: rectangle
+      style: {
+        fill: "#e9d5ff"
+        stroke: "#8b5cf6"
+        border-radius: 8
+        font-size: 12
+      }
+    }
+  }
+
+  start -> phase1: {
+    style: { stroke: "#4b5563"; stroke-width: 2 }
+  }
+  phase1 -> phase2: {
+    style: { stroke: "#4b5563"; stroke-width: 2 }
+  }
+  phase2 -> phase3: {
+    style: { stroke: "#4b5563"; stroke-width: 2 }
+  }
+}
+
+# --- Circuit Breaker State Machine ---
+circuit: {
+  label: "Circuit Breaker States"
+  style: {
+    fill: "#f8fafc"
+    stroke: "#64748b"
+    border-radius: 12
+    shadow: true
+    font-size: 18
+    bold: true
+  }
+
+  closed: {
+    label: |md
+      **Closed**
+      (Healthy)
+      consecutive_failures = 0
+      All pings succeeding
+    |
+    shape: rectangle
+    style: {
+      fill: "#d1fae5"
+      stroke: "#059669"
+      border-radius: 10
+      font-size: 13
+      bold: true
+    }
+  }
+
+  open: {
+    label: |md
+      **Open**
+      (Unhealthy)
+      circuit_open_since = now
+      Requests blocked
+    |
+    shape: rectangle
+    style: {
+      fill: "#fecaca"
+      stroke: "#dc2626"
+      border-radius: 10
+      font-size: 13
+      bold: true
+    }
+  }
+
+  half_open: {
+    label: |md
+      **Half-Open**
+      (Probing)
+      Recovery window elapsed
+      Single probe ping sent
+    |
+    shape: rectangle
+    style: {
+      fill: "#fef3c7"
+      stroke: "#d97706"
+      border-radius: 10
+      font-size: 13
+      bold: true
+    }
+  }
+
+  closed -> open: |md
+    failures >= failure_threshold (3)
+  | {
+    style: {
+      stroke: "#dc2626"
+      stroke-width: 3
+      font-size: 12
+    }
+  }
+
+  open -> half_open: |md
+    recovery_window elapsed
+    (interval x 3 multiplier)
+  | {
+    style: {
+      stroke: "#d97706"
+      stroke-width: 3
+      font-size: 12
+    }
+  }
+
+  half_open -> closed: "probe succeeds" {
+    style: {
+      stroke: "#059669"
+      stroke-width: 3
+      font-size: 12
+    }
+  }
+
+  half_open -> open: "probe fails" {
+    style: {
+      stroke: "#dc2626"
+      stroke-width: 3
+      font-size: 12
+    }
+  }
+}
+
+# --- Exponential Backoff ---
+backoff: {
+  label: "Exponential Restart Backoff"
+  style: {
+    fill: "#fef2f2"
+    stroke: "#ef4444"
+    border-radius: 12
+    shadow: true
+    font-size: 16
+    bold: true
+  }
+
+  timeline: {
+    label: ""
+    style: { fill: transparent; stroke: transparent }
+
+    b0: {
+      label: "Restart 0\n1s"
+      shape: rectangle
+      style: { fill: "#fee2e2"; stroke: "#ef4444"; border-radius: 6; font-size: 12 }
+    }
+    b1: {
+      label: "Restart 1\n2s"
+      shape: rectangle
+      style: { fill: "#fecaca"; stroke: "#ef4444"; border-radius: 6; font-size: 12 }
+    }
+    b2: {
+      label: "Restart 2\n4s"
+      shape: rectangle
+      style: { fill: "#fca5a5"; stroke: "#ef4444"; border-radius: 6; font-size: 12 }
+    }
+    b3: {
+      label: "Restart 3\n8s"
+      shape: rectangle
+      style: { fill: "#f87171"; stroke: "#dc2626"; border-radius: 6; font-size: 12; font-color: white }
+    }
+    b4: {
+      label: "Restart 4\n16s"
+      shape: rectangle
+      style: { fill: "#ef4444"; stroke: "#dc2626"; border-radius: 6; font-size: 12; font-color: white }
+    }
+    b5: {
+      label: "Restart 5+\n30s (cap)"
+      shape: rectangle
+      style: { fill: "#dc2626"; stroke: "#991b1b"; border-radius: 6; font-size: 12; font-color: white; bold: true }
+    }
+
+    b0 -> b1 -> b2 -> b3 -> b4 -> b5: {
+      style: { stroke: "#ef4444"; stroke-width: 2 }
+    }
+  }
+
+  formula: {
+    label: |md
+      **Formula:** `initial_backoff * 2^restart_count`
+      **Cap:** restart_max_backoff (default 30s)
+      **Window:** max_restarts (5) per restart_window (5 min)
+      Window resets when expired -- allows fresh restart attempts
+    |
+    shape: rectangle
+    style: {
+      fill: "#fef2f2"
+      stroke: "#f87171"
+      border-radius: 8
+      font-size: 12
+    }
+  }
+}
+
+# --- Config Reference ---
+config: {
+  label: "Default Configuration"
+  style: {
+    fill: "#f0f9ff"
+    stroke: "#3b82f6"
+    border-radius: 12
+    shadow: true
+    font-size: 16
+    bold: true
+  }
+
+  values: {
+    label: "interval: 30s\ntimeout: 10s\nfailure_threshold: 3\nmax_restarts: 5\nrestart_window: 5 min\nrestart_initial_backoff: 1s\nrestart_max_backoff: 30s\nrecovery_multiplier: 3\nrestart_timeout: 60s"
+    shape: rectangle
+    style: {
+      fill: "#dbeafe"
+      stroke: "#2563eb"
+      border-radius: 8
+      font-size: 12
+    }
+  }
+}

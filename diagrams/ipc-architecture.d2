@@ -1,0 +1,372 @@
+# Gatemini IPC Architecture
+# Shared daemon model: multiple Claude Code sessions share one daemon process
+
+direction: right
+
+title: {
+  label: Gatemini IPC Architecture
+  near: top-center
+  shape: text
+  style: {
+    font-size: 28
+    bold: true
+    font-color: "#1a1a2e"
+  }
+}
+
+# --- Client Layer ---
+clients: {
+  label: Claude Code Sessions
+  style: {
+    fill: "#e8f4fd"
+    stroke: "#3b82f6"
+    border-radius: 12
+    shadow: true
+    font-size: 18
+    bold: true
+  }
+
+  cc1: {
+    label: "Claude Code #1"
+    shape: rectangle
+    style: {
+      fill: "#dbeafe"
+      stroke: "#2563eb"
+      border-radius: 8
+      font-size: 14
+    }
+  }
+  cc2: {
+    label: "Claude Code #2"
+    shape: rectangle
+    style: {
+      fill: "#dbeafe"
+      stroke: "#2563eb"
+      border-radius: 8
+      font-size: 14
+    }
+  }
+  cc3: {
+    label: "Claude Code #3"
+    shape: rectangle
+    style: {
+      fill: "#dbeafe"
+      stroke: "#2563eb"
+      border-radius: 8
+      font-size: 14
+    }
+  }
+}
+
+# --- Proxy Layer ---
+proxies: {
+  label: Proxy Processes (lightweight byte pipes)
+  style: {
+    fill: "#eff6ff"
+    stroke: "#60a5fa"
+    border-radius: 12
+    shadow: true
+    font-size: 16
+    bold: true
+  }
+
+  p1: {
+    label: "gatemini\n(proxy)"
+    shape: rectangle
+    style: {
+      fill: "#bfdbfe"
+      stroke: "#3b82f6"
+      border-radius: 8
+      font-size: 13
+    }
+  }
+  p2: {
+    label: "gatemini\n(proxy)"
+    shape: rectangle
+    style: {
+      fill: "#bfdbfe"
+      stroke: "#3b82f6"
+      border-radius: 8
+      font-size: 13
+    }
+  }
+  p3: {
+    label: "gatemini\n(proxy)"
+    shape: rectangle
+    style: {
+      fill: "#bfdbfe"
+      stroke: "#3b82f6"
+      border-radius: 8
+      font-size: 13
+    }
+  }
+}
+
+# --- Unix Socket ---
+socket: {
+  label: |md
+    **Unix Socket**
+    `/tmp/gatemini-{UID}.sock`
+  |
+  shape: queue
+  style: {
+    fill: "#fef3c7"
+    stroke: "#d97706"
+    border-radius: 8
+    font-size: 14
+    shadow: true
+  }
+}
+
+# --- Daemon ---
+daemon: {
+  label: "gatemini daemon (single shared process)"
+  style: {
+    fill: "#ecfdf5"
+    stroke: "#10b981"
+    border-radius: 12
+    shadow: true
+    font-size: 18
+    bold: true
+  }
+
+  core: {
+    label: Daemon Core
+    style: {
+      fill: "#d1fae5"
+      stroke: "#059669"
+      border-radius: 8
+      font-size: 14
+    }
+
+    registry: {
+      label: "ToolRegistry\n(BM25 + semantic)"
+      shape: cylinder
+      style: {
+        fill: "#a7f3d0"
+        stroke: "#047857"
+        font-size: 12
+      }
+    }
+    manager: {
+      label: "BackendManager\n(DashMap)"
+      shape: hexagon
+      style: {
+        fill: "#a7f3d0"
+        stroke: "#047857"
+        font-size: 12
+      }
+    }
+    health: {
+      label: "HealthChecker\n(circuit breaker)"
+      shape: hexagon
+      style: {
+        fill: "#a7f3d0"
+        stroke: "#047857"
+        font-size: 12
+      }
+    }
+  }
+
+  # --- Backend Layer ---
+  backends: {
+    label: "Backend MCP Servers (20-30+)"
+    style: {
+      fill: "#fff7ed"
+      stroke: "#ea580c"
+      border-radius: 12
+      shadow: true
+      font-size: 16
+      bold: true
+    }
+
+    stdio_group: {
+      label: "stdio backends (child processes)"
+      style: {
+        fill: "#fed7aa"
+        stroke: "#ea580c"
+        border-radius: 8
+        font-size: 13
+      }
+
+      b1: {
+        label: "filesystem\n(stdio)"
+        shape: rectangle
+        style: {
+          fill: "#ffedd5"
+          stroke: "#f97316"
+          border-radius: 6
+          font-size: 11
+        }
+      }
+      b2: {
+        label: "github\n(stdio)"
+        shape: rectangle
+        style: {
+          fill: "#ffedd5"
+          stroke: "#f97316"
+          border-radius: 6
+          font-size: 11
+        }
+      }
+      b3: {
+        label: "exa\n(stdio)"
+        shape: rectangle
+        style: {
+          fill: "#ffedd5"
+          stroke: "#f97316"
+          border-radius: 6
+          font-size: 11
+        }
+      }
+      b4: {
+        label: "...\n(20+ more)"
+        shape: rectangle
+        style: {
+          fill: "#ffedd5"
+          stroke: "#f97316"
+          border-radius: 6
+          font-size: 11
+        }
+      }
+    }
+
+    http_group: {
+      label: "HTTP backends (remote)"
+      style: {
+        fill: "#fed7aa"
+        stroke: "#ea580c"
+        border-radius: 8
+        font-size: 13
+      }
+
+      h1: {
+        label: "z.ai\n(HTTP)"
+        shape: rectangle
+        style: {
+          fill: "#ffedd5"
+          stroke: "#f97316"
+          border-radius: 6
+          font-size: 11
+        }
+      }
+      h2: {
+        label: "remote-api\n(HTTP)"
+        shape: rectangle
+        style: {
+          fill: "#ffedd5"
+          stroke: "#f97316"
+          border-radius: 6
+          font-size: 11
+        }
+      }
+    }
+  }
+}
+
+# --- Connections ---
+clients.cc1 -> proxies.p1: stdio {
+  style: {
+    stroke: "#3b82f6"
+    stroke-width: 2
+    font-size: 12
+  }
+}
+clients.cc2 -> proxies.p2: stdio {
+  style: {
+    stroke: "#3b82f6"
+    stroke-width: 2
+    font-size: 12
+  }
+}
+clients.cc3 -> proxies.p3: stdio {
+  style: {
+    stroke: "#3b82f6"
+    stroke-width: 2
+    font-size: 12
+  }
+}
+
+proxies.p1 -> socket: {
+  style: {
+    stroke: "#d97706"
+    stroke-width: 2
+  }
+}
+proxies.p2 -> socket: {
+  style: {
+    stroke: "#d97706"
+    stroke-width: 2
+  }
+}
+proxies.p3 -> socket: {
+  style: {
+    stroke: "#d97706"
+    stroke-width: 2
+  }
+}
+
+socket -> daemon.core.manager: MCP JSON-RPC {
+  style: {
+    stroke: "#10b981"
+    stroke-width: 3
+    font-size: 12
+  }
+}
+
+daemon.core.manager -> daemon.backends.stdio_group: "spawn / stdin+stdout" {
+  style: {
+    stroke: "#ea580c"
+    stroke-width: 2
+    font-size: 11
+  }
+}
+daemon.core.manager -> daemon.backends.http_group: "HTTP/SSE" {
+  style: {
+    stroke: "#ea580c"
+    stroke-width: 2
+    font-size: 11
+  }
+}
+daemon.core.health -> daemon.core.manager: "ping / restart" {
+  style: {
+    stroke: "#059669"
+    stroke-width: 1
+    stroke-dash: 5
+    font-size: 11
+  }
+}
+
+# --- Notes ---
+note_proxy: {
+  label: |md
+    **Proxy process**
+    - Pure byte pipe (no config, no tracing)
+    - Auto-spawns daemon on first use
+    - Exits when Claude Code disconnects
+  |
+  shape: page
+  style: {
+    fill: "#f0f9ff"
+    stroke: "#93c5fd"
+    border-radius: 8
+    font-size: 12
+  }
+}
+
+note_daemon: {
+  label: |md
+    **Daemon process**
+    - Single instance per user (UID)
+    - Idle shutdown after 5 min (configurable)
+    - Graceful shutdown on SIGTERM/SIGINT
+    - Hot-reload on config file change
+  |
+  shape: page
+  style: {
+    fill: "#f0fdf4"
+    stroke: "#86efac"
+    border-radius: 8
+    font-size: 12
+  }
+}
