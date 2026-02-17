@@ -2,8 +2,6 @@ name: Release
 
 on:
   push:
-    branches:
-      - main
     tags:
       - 'v*'
 
@@ -132,9 +130,6 @@ jobs:
           fi
 
           VERSION="${GITHUB_REF_NAME#v}"
-          if [[ "$VERSION" == "main" ]]; then
-            VERSION="0.0.0.${GITHUB_SHA::8}"
-          fi
 
           LINUX_BINARY="target/x86_64-unknown-linux-gnu/release/gatemini"
           if [ ! -x "$LINUX_BINARY" ]; then
@@ -176,9 +171,7 @@ jobs:
   publish-release:
     name: Publish GitHub Release
     runs-on: ubuntu-latest
-    if: |
-      !cancelled() &&
-      (startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main')
+    if: "!cancelled()"
     needs:
       - build-macos-intel
       - build-macos-silicon
@@ -194,27 +187,16 @@ jobs:
           merge-multiple: true
       - name: Set release metadata
         id: release
-        shell: bash
         run: |
-          if [[ "${GITHUB_REF}" == "refs/heads/main" ]]; then
-            echo "tag=main-${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
-            echo "name=Main Release (${GITHUB_SHA::8})" >> "$GITHUB_OUTPUT"
-            echo "prerelease=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
-            echo "name=Release ${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
-            echo "prerelease=false" >> "$GITHUB_OUTPUT"
-          fi
+          echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          echo "name=Release ${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
       - name: Create checksums
         run: |
           cd artifacts
           sha256sum * > checksums.txt
-      - name: Create release and upload artifacts
+      - name: Upload release artifacts
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.release.outputs.tag }}
-          name: ${{ steps.release.outputs.name }}
-          prerelease: ${{ steps.release.outputs.prerelease == 'true' }}
           files: artifacts/*
-          generate_release_notes: true
           fail_on_unmatched_files: true

@@ -2,9 +2,9 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 #[cfg(unix)]
-use std::fs;
-#[cfg(unix)]
 use nix::unistd::getuid;
+#[cfg(unix)]
+use std::fs;
 
 /// Resolve the default Unix socket path for this platform and user.
 ///

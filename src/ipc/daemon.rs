@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use anyhow::{bail, Result};
+use anyhow::Result;
 #[cfg(unix)]
 use tokio::net::UnixListener;
 use tracing::{error, info, warn};
@@ -131,7 +131,8 @@ pub async fn run(gw: InitializedGateway, bound: BoundSocket) -> Result<()> {
 
     // Accept loop with signal handling and idle shutdown.
     let accept_result: Result<(), anyhow::Error> = {
-        let mut sigterm = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
+        let mut sigterm =
+            tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
         let mut sigint = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())?;
 
         // Idle timer — reset whenever session count changes.
@@ -240,5 +241,5 @@ pub async fn run(gw: InitializedGateway, bound: BoundSocket) -> Result<()> {
 /// Non-Unix platforms do not support Unix socket daemon mode.
 #[cfg(not(unix))]
 pub async fn run(_gw: InitializedGateway, _bound: BoundSocket) -> Result<()> {
-    bail!("daemon mode is not supported on this platform. Run with --direct.");
+    anyhow::bail!("daemon mode is not supported on this platform. Run with --direct.");
 }
