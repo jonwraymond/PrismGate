@@ -1,6 +1,6 @@
 # Token Savings Benchmarks
 
-Real measurements from PrismGate's production tool registry with 258 tools across 33 backends.
+Real measurements from a representative Gatemini production registry snapshot (258 tools across 33 backends).
 
 ## Measurement Methodology
 
@@ -10,7 +10,7 @@ Token counts are estimated from JSON output sizes. For structured data (JSON sch
 
 ### Test Configuration
 
-- 258 registered tools across 33 backends
+- 258 registered tools across 33 backends (representative sample; counts vary by deployment)
 - Tool schemas ranging from simple (2 parameters) to complex (20+ parameters with nested objects)
 - Largest tool: auggie's `codebase-retrieval` (~10,700 tokens full schema)
 - Smallest tools: ~200 tokens full schema
@@ -95,11 +95,11 @@ Total discovery cost                                       → ~3,200 tokens
 | Meta-tool definitions (7 tools) | ~1,500 | Fixed cost per session |
 | Server instructions | ~500 | Teaches discovery workflow |
 | Typical discovery (1-3 tools) | ~1,300-3,200 | Variable |
-| **Total session overhead** | ~3,300-5,200 | vs ~67,000+ without PrismGate |
+| **Total session overhead** | ~3,300-5,200 | vs ~67,000+ without Gatemini |
 
 ## Before/After Comparison Table
 
-| Scenario | Without PrismGate | With PrismGate | Savings |
+| Scenario | Without Gatemini | With Gatemini | Savings |
 |----------|-------------------|----------------|---------|
 | Tool definitions in context | 67,000 tokens (258 tools) | 1,500 tokens (7 meta-tools) | **97.8%** |
 | Find one tool by search | 5,000 (full search) | 300 (brief search) | **94%** |
@@ -111,24 +111,24 @@ Total discovery cost                                       → ~3,200 tokens
 
 | System | Approach | Reported Savings | Method |
 |--------|----------|-----------------|--------|
-| **PrismGate** | 7 meta-tools + brief/full | 82-98% | Measured from production registry |
+| **Gatemini** | 7 meta-tools + brief/full | 82-98% | Measured from representative production registry snapshot |
 | [Speakeasy Dynamic Toolsets V2](https://www.speakeasy.com/blog/how-we-reduced-token-usage-by-100x-dynamic-toolsets-v2) | Dynamic tool loading | 96% input tokens | Benchmark across 40-400 tools |
 | [Anthropic Tool Search](https://www.anthropic.com/engineering/advanced-tool-use) | defer_loading + search | 85% tool token reduction | Measured on Claude API |
 | [RAG-MCP](https://arxiv.org/abs/2505.03275) | Retrieval-first injection | 50%+ prompt tokens | Academic benchmark |
 | [ProDisco](https://github.com/harche/ProDisco) | Progressive K8s discovery | Prevents 30-50k overhead | Estimated from K8s tools |
 | [Huawei SEP-1576](https://github.com/modelcontextprotocol/modelcontextprotocol/issues/1576) | JSON $ref deduplication | 30-60% schema tokens | Analyzed GitHub MCP server |
 
-PrismGate's results are consistent with or better than industry benchmarks. The key insight from [Speakeasy's research](https://www.speakeasy.com/blog/100x-token-reduction-dynamic-toolsets): token usage remains constant regardless of total tool count. PrismGate exhibits the same behavior.
+Gatemini's results are consistent with or better than industry benchmarks. The key insight from [Speakeasy's research](https://www.speakeasy.com/blog/100x-token-reduction-dynamic-toolsets): token usage remains constant regardless of total tool count. Gatemini exhibits the same behavior.
 
 ## Savings at Scale
 
 One of progressive disclosure's strongest properties is that savings increase with tool count:
 
-| Total Tools | Full List Cost | PrismGate Cost | Savings |
+| Total Tools | Full List Cost | Gatemini Cost | Savings |
 |-------------|---------------|----------------|---------|
 | 50 | ~13,000 tokens | ~1,500 + ~1,300 | **78%** |
 | 100 | ~26,000 tokens | ~1,500 + ~1,300 | **89%** |
-| 258 (current) | ~67,000 tokens | ~1,500 + ~1,300 | **96%** |
+| 258 (representative) | ~67,000 tokens | ~1,500 + ~1,300 | **96%** |
 | 500 | ~130,000 tokens | ~1,500 + ~1,300 | **98%** |
 | 1,000 | ~260,000 tokens | ~1,500 + ~1,300 | **99%** |
 
@@ -136,7 +136,7 @@ The meta-tool and discovery costs are fixed regardless of backend count. This is
 
 ## Ongoing Monitoring
 
-To continuously validate these measurements, PrismGate should track:
+To continuously validate these measurements, Gatemini should track:
 
 1. **Response size per meta-tool call** -- Add `response_bytes` to tracing spans
 2. **Brief/full mode ratio** -- Track `discovery.mode` attribute per call

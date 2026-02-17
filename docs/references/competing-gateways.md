@@ -1,12 +1,13 @@
 # Competing MCP Gateways
 
-Comparison of PrismGate with other MCP and AI gateways, based on research via deepwiki queries and web search.
+Comparison of Gatemini with other MCP and AI gateways, based on research via deepwiki queries and web search.
+Feature availability and behavior in this document are ecosystem snapshots and may change across versions and deployments.
 
 ## Overview
 
 | Gateway | Architecture | Transport | Tool Discovery | Sandbox | Open Source |
 |---------|-------------|-----------|----------------|---------|-------------|
-| **PrismGate** | Unix daemon + proxies | Stdio + HTTP | BM25 + semantic hybrid | V8 TypeScript | Yes |
+| **Gatemini** | Unix daemon + proxies | Stdio + HTTP | BM25 + semantic hybrid | V8 TypeScript | Yes |
 | **Kong AI** | Plugin-based proxy | HTTP | N/A (plugin routing) | No | Partial |
 | **Envoy AI** | Sidecar proxy | HTTP | N/A (session routing) | No | Yes |
 | **Microsoft** | K8s dual-plane | HTTP | Tool Gateway Router | No | Yes |
@@ -15,7 +16,7 @@ Comparison of PrismGate with other MCP and AI gateways, based on research via de
 
 ## Detailed Comparison
 
-### PrismGate (gatemini)
+### Gatemini (gatemini)
 
 **Architecture**: Shared daemon process managing all backends via Unix domain sockets. Multiple Claude Code sessions connect through lightweight proxy processes.
 
@@ -31,7 +32,7 @@ Comparison of PrismGate with other MCP and AI gateways, based on research via de
 - Single-machine scaling (no horizontal distribution)
 - Designed for developer workstation use with Claude Code
 
-**Source**: [GitHub](https://github.com/jonwraymond/PrismGate)
+**Source**: [GitHub](https://github.com/jonwraymond/gatemini)
 
 ---
 
@@ -164,7 +165,7 @@ Comparison of PrismGate with other MCP and AI gateways, based on research via de
 
 ## Feature Comparison Matrix
 
-| Feature | PrismGate | Kong | Envoy | Microsoft | Lasso | IBM |
+| Feature | Gatemini | Kong | Envoy | Microsoft | Lasso | IBM |
 |---------|-----------|------|-------|-----------|-------|-----|
 | Progressive disclosure | **Yes** | No | No | No | No | No |
 | Token optimization | **82-98%** | No | No | No | No | No |
@@ -188,7 +189,7 @@ Comparison of PrismGate with other MCP and AI gateways, based on research via de
 
 | Gateway | Approach | Statefulness |
 |---------|----------|-------------|
-| PrismGate | Per-client daemon connection | Stateful (daemon manages sessions) |
+| Gatemini | Per-client daemon connection | Stateful (daemon manages sessions) |
 | Kong | Plugin-based | Stateless (plugin per-request) |
 | Envoy | Token-encoded session ID | Stateless (session in client ID) |
 | Microsoft | StatefulSet pods | Stateful (K8s affinity) |
@@ -199,18 +200,18 @@ Comparison of PrismGate with other MCP and AI gateways, based on research via de
 
 | Gateway | Target Environment | Scaling |
 |---------|-------------------|---------|
-| PrismGate | Developer workstation | Single-machine, shared daemon |
+| Gatemini | Developer workstation | Single-machine, shared daemon |
 | Kong | Cloud/on-prem API gateway | Horizontal (Kong clustering) |
 | Envoy | Cloud-native sidecar | Horizontal (Envoy mesh) |
 | Microsoft | Kubernetes cluster | Horizontal (K8s scaling) |
 | Lasso | Cloud security layer | Single instance |
 | IBM | Multi-cluster enterprise | Horizontal (Redis federation) |
 
-## Where PrismGate Fits
+## Where Gatemini Fits
 
-PrismGate occupies a unique niche: **local-machine MCP gateway optimized for AI agent context efficiency**. While other gateways focus on cloud deployment, authentication, or security, PrismGate focuses on the developer experience problem of managing 30+ MCP tools without overwhelming the AI agent's context window.
+Gatemini occupies a unique niche: **local-machine MCP gateway optimized for AI agent context efficiency**. While other gateways focus on cloud deployment, authentication, or security, Gatemini focuses on the developer experience problem of managing larger MCP tool catalogs without overwhelming the AI agent's context window.
 
-The progressive disclosure system, hybrid search, and V8 sandbox are capabilities no other gateway provides. However, PrismGate is intentionally local-only -- it's not designed for cloud deployment, multi-tenant access, or horizontal scaling. For those needs, Kong (enterprise), Envoy (cloud-native), or IBM (federated) are better choices.
+The progressive disclosure system, hybrid search, and V8 sandbox are capabilities no other gateway provides. However, Gatemini is intentionally local-only -- it's not designed for cloud deployment, multi-tenant access, or horizontal scaling. For those needs, Kong (enterprise), Envoy (cloud-native), or IBM (federated) are better choices.
 
 ## Sources
 

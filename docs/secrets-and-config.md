@@ -1,6 +1,6 @@
 # Secrets & Configuration
 
-PrismGate's configuration pipeline transforms YAML config files through environment expansion, secret resolution, and validation into a running daemon with hot-reload support.
+Gatemini's configuration pipeline transforms YAML config files through environment expansion, secret resolution, and validation into a running daemon with hot-reload support.
 
 ## Configuration Pipeline
 
@@ -24,10 +24,10 @@ PrismGate's configuration pipeline transforms YAML config files through environm
 `.env` files are loaded from up to three locations (later overrides earlier):
 
 1. `~/.env` (home directory)
-2. `prismgate_home()/.env` (e.g., `~/.config/gatemini/.env` on macOS/Linux)
+2. `prismgate_home()/.env` (legacy internal helper name; e.g., `~/.config/gatemini/.env` on macOS/Linux)
 3. Sibling of the config file (e.g., `/path/to/config.yaml` -> `/path/to/.env`)
 
-Paths are deduplicated via `canonicalize()` to avoid double-loading when the config dir and prismgate home are the same directory.
+Paths are deduplicated via `canonicalize()` to avoid double-loading when the config dir and `prismgate_home()` resolve to the same directory.
 
 The `Once` pattern ensures env files are loaded exactly once, even if multiple threads call `load_dotenv()` concurrently. This prevents UB from `std::env::set_var` in multi-threaded contexts. Hot-reload does **not** re-read `.env` files — they are startup-only.
 
@@ -64,11 +64,11 @@ log_level: "info"            # tracing log level
 daemon:
   idle_timeout: 300          # seconds, 0 = disabled
 health:
-  interval: 5                # seconds between health checks
-  timeout: 10                # seconds per ping
+  interval: 30               # seconds between health checks
+  timeout: 5                 # seconds per ping
   failure_threshold: 3       # consecutive failures for circuit break
   max_restarts: 5            # per restart_window
-  restart_window: 300        # seconds
+  restart_window: 60         # seconds
 allow_runtime_registration: true
 max_dynamic_backends: 10
 semantic:
@@ -93,11 +93,11 @@ backends:
 | `log_level` | `"info"` |
 | `transport` | `Stdio` |
 | `timeout` | 30s |
-| `health.interval` | 5s |
-| `health.timeout` | 10s |
+| `health.interval` | 30s |
+| `health.timeout` | 5s |
 | `health.failure_threshold` | 3 |
 | `health.max_restarts` | 5 |
-| `health.restart_window` | 5 min |
+| `health.restart_window` | 1 min |
 | `daemon.idle_timeout` | 5 min |
 | `allow_runtime_registration` | `true` |
 | `max_dynamic_backends` | 10 |
@@ -251,18 +251,18 @@ Custom providers (e.g., HashiCorp Vault, 1Password, AWS Secrets Manager) can be 
 
 | Tool | Pattern | Example |
 |------|---------|---------|
-| **PrismGate** | `secretref:provider:path` | `secretref:bws:project/dotenv/key/API_KEY` |
+| **Gatemini** | `secretref:provider:path` | `secretref:bws:project/dotenv/key/API_KEY` |
 | [1Password CLI](https://developer.1password.com/docs/cli/secret-references/) | `op://vault/item/field` | `op://dev/server/api_key` |
 | [Vault Agent](https://developer.hashicorp.com/vault/docs/agent-and-proxy/agent/template) | `{{ .Data.data.key }}` | `{{ .Data.data.api_key }}` |
 | [K8s External Secrets](https://external-secrets.io/latest/introduction/overview/) | `SecretStore` + `ExternalSecret` | YAML resources |
 
-PrismGate's approach most closely resembles 1Password's URI-based references: config files with secret references can be safely committed to Git, and values are resolved at runtime.
+Gatemini's approach most closely resembles 1Password's URI-based references: config files with secret references can be safely committed to Git, and values are resolved at runtime.
 
 ## Hot-Reload
 
 **Source**: [`src/config.rs`](../src/config.rs) -- `watch_config()`
 
-PrismGate watches the config file for changes using the `notify` crate (macOS: kqueue, Linux: inotify):
+Gatemini watches the config file for changes using the `notify` crate (macOS: kqueue, Linux: inotify):
 
 ```
 Config file change detected

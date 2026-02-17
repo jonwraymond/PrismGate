@@ -1,12 +1,12 @@
 # Token Efficiency
 
-PrismGate's progressive disclosure system delivers 82-98% token savings compared to exposing tool definitions directly. This document presents measured data from the production tool registry.
+Gatemini's progressive disclosure system delivers 82-98% token savings compared to exposing tool definitions directly. This document presents measured data from a representative production tool registry.
 
 ![Token Usage Comparison](diagrams/token-comparison.svg)
 
 ## Summary
 
-| Feature | Without PrismGate | With PrismGate | Savings |
+| Feature | Without Gatemini | With Gatemini | Savings |
 |---------|-------------------|----------------|---------|
 | `search_tools` (10 results) | ~5,000 tokens | ~600 tokens | **88%** |
 | `tool_info` (single tool) | ~10,700 tokens | ~200 tokens | **98%** |
@@ -31,10 +31,10 @@ Most tools are smaller (200-2,000 tokens for full schemas), making the average r
 
 ### Full Registry Cost
 
-With 258 registered tools across 33 backends:
+In a representative production snapshot (258 registered tools across 33 backends):
 - Full tool definitions (all schemas): ~67,000 tokens
 - This represents **33.5%** of Claude's 200k context window
-- With PrismGate's 7 meta-tools: ~1,500 tokens (**2.2% reduction from 33.5%**)
+- With Gatemini's 7 meta-tools: ~1,500 tokens (**2.2% reduction from 33.5%**)
 
 ## Typical Discovery Flow
 
@@ -61,7 +61,7 @@ Step 4: call_tool_chain("exa.web_search_exa({query: '...'})")
 
 ### Why 82% for "Typical Flow"
 
-The 82% figure accounts for the overhead of PrismGate's meta-tool definitions (~1,500 tokens) being present in every session, plus the multi-step discovery process. For sessions that discover more tools, the savings percentage increases.
+The 82% figure accounts for the overhead of Gatemini's meta-tool definitions (~1,500 tokens) being present in every session, plus the multi-step discovery process. For sessions that discover more tools, the savings percentage increases.
 
 ## Brief vs Full Mode Comparison
 
@@ -83,34 +83,34 @@ The 82% figure accounts for the overhead of PrismGate's meta-tool definitions (~
 
 | Resource | Tokens | Equivalent |
 |----------|--------|------------|
-| `gatemini://tools` | ~3,000 | Compact index of all 258 tools |
+| `gatemini://tools` | ~3,000 | Compact index of all tools in the representative catalog |
 | Full `tools/list` | ~40,000 | All tool definitions |
 | Single `gatemini://tool/{name}` | 200-10,000 | On-demand full schema |
 
 ## Industry Comparison
 
-PrismGate's approach is validated by multiple independent sources:
+Gatemini's approach is validated by multiple independent sources:
 
 | Source | Approach | Claimed Savings |
 |--------|----------|----------------|
-| **PrismGate** | 7 meta-tools + brief/full modes | 82-98% |
+| **Gatemini** | 7 meta-tools + brief/full modes | 82-98% |
 | [Speakeasy Dynamic Toolsets V2](https://www.speakeasy.com/blog/how-we-reduced-token-usage-by-100x-dynamic-toolsets-v2) | Dynamic tool loading via search | 96% input, 90% total |
 | [Anthropic Tool Search Tool](https://www.anthropic.com/engineering/advanced-tool-use) | `defer_loading: true` + search | 85% reduction |
 | [RAG-MCP (arXiv)](https://arxiv.org/abs/2505.03275) | Retrieval-first schema injection | 50%+ prompt tokens |
 | [ProDisco](https://github.com/harche/ProDisco) | Progressive disclosure for K8s tools | Prevents 30,000-50,000 token overhead |
 | [Huawei SEP-1576](https://github.com/modelcontextprotocol/modelcontextprotocol/issues/1576) | Schema deduplication via JSON $ref | 30-60% |
 
-PrismGate's savings are consistent with industry benchmarks, particularly Speakeasy's measurements which use a similar progressive search approach.
+Gatemini's savings are consistent with industry benchmarks, particularly Speakeasy's measurements which use a similar progressive search approach.
 
 ### Token Savings Remain Constant at Scale
 
-A key finding from [Speakeasy's research](https://www.speakeasy.com/blog/100x-token-reduction-dynamic-toolsets): progressive search uses 1,600-2,500 tokens regardless of whether the toolset has 40 or 400 tools. PrismGate exhibits the same behavior -- the `search_tools` response size depends on the `limit` parameter, not the total tool count.
+A key finding from [Speakeasy's research](https://www.speakeasy.com/blog/100x-token-reduction-dynamic-toolsets): progressive search uses 1,600-2,500 tokens regardless of whether the toolset has 40 or 400 tools. Gatemini exhibits the same behavior -- the `search_tools` response size depends on the `limit` parameter, not the total tool count.
 
 ## Cache System
 
 **Source**: [`src/cache.rs`](../src/cache.rs)
 
-PrismGate's tool cache provides instant tool availability on daemon restart:
+Gatemini's tool cache provides instant tool availability on daemon restart:
 
 | Aspect | Impact |
 |--------|--------|

@@ -26,8 +26,8 @@ cargo build --no-default-features
 
 ```bash
 # Clone the repo
-git clone https://github.com/jonwraymond/prismgate.git
-cd prismgate
+git clone https://github.com/jonwraymond/gatemini.git
+cd gatemini
 
 # Build (debug)
 cargo build
