@@ -1,0 +1,332 @@
+# Daemon Lifecycle
+# From startup through accept loop to graceful shutdown
+
+direction: down
+
+title: {
+  label: Daemon Lifecycle
+  near: top-center
+  shape: text
+  style: {
+    font-size: 28
+    bold: true
+    font-color: "#1a1a2e"
+  }
+}
+
+# --- Phase 1: Early Binding ---
+phase1: {
+  label: "Phase 1: Early Binding"
+  style: {
+    fill: "#ede9fe"
+    stroke: "#7c3aed"
+    border-radius: 12
+    shadow: true
+    font-size: 16
+    bold: true
+  }
+
+  bind: {
+    label: |md
+      **bind_early()**
+      1. Check for existing daemon (connect test)
+      2. Remove stale socket if nobody listening
+      3. Bind Unix socket listener
+      4. Write PID file
+    |
+    shape: rectangle
+    style: {
+      fill: "#e9d5ff"
+      stroke: "#8b5cf6"
+      border-radius: 8
+      font-size: 13
+    }
+  }
+
+  note: {
+    label: |md
+      Proxies can connect NOW.
+      MCP bytes queue in kernel
+      socket buffer until accept().
+    |
+    shape: page
+    style: {
+      fill: "#f5f3ff"
+      stroke: "#a78bfa"
+      border-radius: 6
+      font-size: 11
+    }
+  }
+}
+
+# --- Phase 2: Initialize ---
+phase2: {
+  label: "Phase 2: Heavy Initialization"
+  style: {
+    fill: "#e0f2fe"
+    stroke: "#0284c7"
+    border-radius: 12
+    shadow: true
+    font-size: 16
+    bold: true
+  }
+
+  init_sequence: {
+    label: ""
+    style: {
+      fill: transparent
+      stroke: transparent
+    }
+
+    s1: {
+      label: "load_dotenv()\nLoad ~/.env"
+      shape: rectangle
+      style: { fill: "#bae6fd"; stroke: "#0284c7"; border-radius: 6; font-size: 12 }
+    }
+    s2: {
+      label: "Config::load()\nYAML parse + shellexpand"
+      shape: rectangle
+      style: { fill: "#bae6fd"; stroke: "#0284c7"; border-radius: 6; font-size: 12 }
+    }
+    s3: {
+      label: "resolve_secrets_async()\nBWS SDK / env vars"
+      shape: rectangle
+      style: { fill: "#bae6fd"; stroke: "#0284c7"; border-radius: 6; font-size: 12 }
+    }
+    s4: {
+      label: "EmbeddingIndex::new()\nLoad model2vec (semantic)"
+      shape: rectangle
+      style: { fill: "#bae6fd"; stroke: "#0284c7"; border-radius: 6; font-size: 12 }
+    }
+    s5: {
+      label: "cache::load()\nInstant tool availability"
+      shape: rectangle
+      style: { fill: "#bae6fd"; stroke: "#0284c7"; border-radius: 6; font-size: 12 }
+    }
+
+    s1 -> s2 -> s3 -> s4 -> s5: {
+      style: { stroke: "#0284c7"; stroke-width: 1 }
+    }
+  }
+}
+
+# --- Phase 3: Start Backends ---
+phase3: {
+  label: "Phase 3: Backend Startup (background)"
+  style: {
+    fill: "#fff7ed"
+    stroke: "#ea580c"
+    border-radius: 12
+    shadow: true
+    font-size: 16
+    bold: true
+  }
+
+  start_all: {
+    label: |md
+      **start_all()** (tokio::spawn)
+      - Spawn stdio child processes
+      - Connect HTTP backends
+      - MCP handshake via rmcp
+      - Register tools in ToolRegistry
+      - Save updated cache
+    |
+    shape: rectangle
+    style: {
+      fill: "#fed7aa"
+      stroke: "#ea580c"
+      border-radius: 8
+      font-size: 13
+    }
+  }
+
+  health_start: {
+    label: "Start HealthChecker\n(tokio::spawn)"
+    shape: rectangle
+    style: {
+      fill: "#fed7aa"
+      stroke: "#ea580c"
+      border-radius: 8
+      font-size: 12
+    }
+  }
+
+  watcher: {
+    label: "Start config watcher\n(tokio::spawn)"
+    shape: rectangle
+    style: {
+      fill: "#fed7aa"
+      stroke: "#ea580c"
+      border-radius: 8
+      font-size: 12
+    }
+  }
+}
+
+# --- Phase 4: Accept Loop ---
+phase4: {
+  label: "Phase 4: Accept Loop"
+  style: {
+    fill: "#ecfdf5"
+    stroke: "#10b981"
+    border-radius: 12
+    shadow: true
+    font-size: 16
+    bold: true
+  }
+
+  select: {
+    label: |md
+      **tokio::select!**
+    |
+    shape: rectangle
+    style: {
+      fill: "#a7f3d0"
+      stroke: "#059669"
+      border-radius: 8
+      font-size: 14
+      bold: true
+    }
+  }
+
+  accept: {
+    label: |md
+      **listener.accept()**
+      New client connects:
+      - Increment active_sessions
+      - Create GateminiServer
+      - Spawn client task (rmcp)
+      - Push idle timer forward
+    |
+    shape: rectangle
+    style: {
+      fill: "#d1fae5"
+      stroke: "#10b981"
+      border-radius: 8
+      font-size: 12
+    }
+  }
+
+  disconnect: {
+    label: |md
+      **session_change.notified()**
+      Client disconnects:
+      - Decrement active_sessions
+      - Re-arm idle timer if count == 0
+    |
+    shape: rectangle
+    style: {
+      fill: "#d1fae5"
+      stroke: "#10b981"
+      border-radius: 8
+      font-size: 12
+    }
+  }
+
+  idle: {
+    label: |md
+      **idle_sleep fires**
+      Condition: active_sessions == 0
+      Default timeout: 5 minutes
+    |
+    shape: rectangle
+    style: {
+      fill: "#fef3c7"
+      stroke: "#d97706"
+      border-radius: 8
+      font-size: 12
+    }
+  }
+
+  signal: {
+    label: |md
+      **SIGTERM / SIGINT**
+      Graceful shutdown signal
+    |
+    shape: rectangle
+    style: {
+      fill: "#fecaca"
+      stroke: "#dc2626"
+      border-radius: 8
+      font-size: 12
+    }
+  }
+
+  select -> accept: {
+    style: { stroke: "#10b981"; stroke-width: 2 }
+  }
+  select -> disconnect: {
+    style: { stroke: "#10b981"; stroke-width: 2 }
+  }
+  select -> idle: {
+    style: { stroke: "#d97706"; stroke-width: 2 }
+  }
+  select -> signal: {
+    style: { stroke: "#dc2626"; stroke-width: 2 }
+  }
+}
+
+# --- Phase 5: Graceful Shutdown ---
+phase5: {
+  label: "Phase 5: Graceful Shutdown"
+  style: {
+    fill: "#fef2f2"
+    stroke: "#ef4444"
+    border-radius: 12
+    shadow: true
+    font-size: 16
+    bold: true
+  }
+
+  shutdown_sequence: {
+    label: ""
+    style: { fill: transparent; stroke: transparent }
+
+    s1: {
+      label: "client_tracker.close()\nStop accepting new tasks"
+      shape: rectangle
+      style: { fill: "#fecaca"; stroke: "#ef4444"; border-radius: 6; font-size: 12 }
+    }
+    s2: {
+      label: "client_tracker.wait()\nWait for active clients to finish"
+      shape: rectangle
+      style: { fill: "#fecaca"; stroke: "#ef4444"; border-radius: 6; font-size: 12 }
+    }
+    s3: {
+      label: "shutdown_notify.notify_waiters()\nSignal health checker + watcher"
+      shape: rectangle
+      style: { fill: "#fecaca"; stroke: "#ef4444"; border-radius: 6; font-size: 12 }
+    }
+    s4: {
+      label: "backend_manager.stop_all()\nTerminate all backend processes"
+      shape: rectangle
+      style: { fill: "#fecaca"; stroke: "#ef4444"; border-radius: 6; font-size: 12 }
+    }
+    s5: {
+      label: "socket::cleanup_files()\nRemove .sock + .pid files"
+      shape: rectangle
+      style: { fill: "#fecaca"; stroke: "#ef4444"; border-radius: 6; font-size: 12 }
+    }
+
+    s1 -> s2 -> s3 -> s4 -> s5: {
+      style: { stroke: "#ef4444"; stroke-width: 1 }
+    }
+  }
+}
+
+# --- Main flow ---
+phase1 -> phase2: "socket bound, proxies can connect" {
+  style: { stroke: "#4b5563"; stroke-width: 2; font-size: 11 }
+}
+phase2 -> phase3: "config loaded, secrets resolved" {
+  style: { stroke: "#4b5563"; stroke-width: 2; font-size: 11 }
+}
+phase3 -> phase4: "backends launching in background" {
+  style: { stroke: "#4b5563"; stroke-width: 2; font-size: 11 }
+}
+phase4.idle -> phase5: "break" {
+  style: { stroke: "#ef4444"; stroke-width: 2; font-size: 12 }
+}
+phase4.signal -> phase5: "break" {
+  style: { stroke: "#ef4444"; stroke-width: 2; font-size: 12 }
+}

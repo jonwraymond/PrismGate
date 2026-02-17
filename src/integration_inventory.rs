@@ -21,9 +21,8 @@ mod tests {
         std::sync::Arc<BackendManager>,
         crate::config::Config,
     ) {
-        crate::config::load_dotenv();
-
         let config_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("config/gatemini.yaml");
+        crate::config::load_dotenv(Some(&config_path));
         assert!(
             config_path.exists(),
             "config file not found: {}",

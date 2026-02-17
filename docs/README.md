@@ -7,7 +7,7 @@ PrismGate (gatemini) is a Rust MCP gateway that connects to 30+ backend MCP serv
 - **Discovering tools**: [Tool Discovery](tool-discovery.md) -- progressive disclosure workflow
 - **Adding backends**: [Backend Management](backend-management.md) -- stdio/HTTP lifecycle
 - **Understanding token savings**: [Token Efficiency](token-efficiency.md) -- measured 82-98% reduction
-- **Configuration**: [Secrets & Config](secrets-and-config.md) -- YAML pipeline, hot-reload, BWS
+- **Configuration**: [Secrets & Config](secrets-and-config.md) -- env vars, .env files, BWS, hot-reload
 
 ## Documentation Index
 
@@ -25,7 +25,7 @@ PrismGate (gatemini) is a Rust MCP gateway that connects to 30+ backend MCP serv
 | Document | Description |
 |----------|-------------|
 | [Backend Management](backend-management.md) | Health checks, circuit breaker, auto-restart, stdio/HTTP backends |
-| [Secrets & Config](secrets-and-config.md) | Secret resolution pipeline, config hot-reload, Bitwarden integration |
+| [Secrets & Config](secrets-and-config.md) | Three secret modes (env vars, secretref+fallback, BWS), multi-location .env, hot-reload |
 | [Resources & Prompts](resources-and-prompts.md) | MCP resources for @-mention discovery, guided workflow prompts |
 | [Telemetry Strategy](telemetry-strategy.md) | OpenTelemetry integration plan with GenAI semantic conventions |
 

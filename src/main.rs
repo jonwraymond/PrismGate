@@ -44,8 +44,8 @@ pub struct InitializedGateway {
 /// This is extracted from the original monolithic main() so both direct mode and daemon mode
 /// can reuse it without duplication.
 pub async fn initialize(config_path: &Path) -> Result<InitializedGateway> {
-    // Load ~/.env into process environment (once, before any concurrent work).
-    config::load_dotenv();
+    // Load .env files into process environment (once, before any concurrent work).
+    config::load_dotenv(Some(config_path));
 
     // Ensure config directory exists
     let prismgate_home = cli::prismgate_home();

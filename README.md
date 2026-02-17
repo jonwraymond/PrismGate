@@ -49,7 +49,7 @@ Gatemini runs a single daemon that manages all backend connections. Multiple ses
 | **Health monitoring** | Periodic pings, circuit breaker, auto-restart with exponential backoff |
 | **Tool cache** | Instant tool availability on daemon restart before backends reconnect |
 | **BM25 + semantic search** | Hybrid keyword and embedding-based tool discovery |
-| **Secret resolution** | `secretref:bws:...` patterns resolved via Bitwarden Secrets Manager |
+| **Flexible secrets** | Env vars, `.env` files, hardcoded YAML, or BWS — with automatic fallback |
 | **Dual transport** | Stdio child processes and streamable-HTTP backends in one config |
 | **Hot-reload** | Config changes apply without daemon restart (backends, aliases, tags) |
 | **Fallback chains** | Automatic failover to alternative backends on transient errors |
@@ -295,18 +295,40 @@ backends:
 
 ### Secret Resolution
 
-Secrets can be resolved from Bitwarden Secrets Manager at startup:
+Gatemini supports three modes for providing secrets — no BWS required:
 
+**Mode 1: Environment variables** (simplest — no config needed)
 ```yaml
-secrets:
-  bws:
-    access_token: "${BWS_ACCESS_TOKEN}"
-
 backends:
   my-backend:
     env:
-      API_KEY: "secretref:bws:project/collection/key/API_KEY"
+      API_KEY: "${MY_API_KEY}"   # Direct env var or .env file
 ```
+
+**Mode 2: secretref with env fallback** (default when BWS is disabled)
+```yaml
+backends:
+  my-backend:
+    env:
+      API_KEY: "secretref:bws:project/dotenv/key/MY_API_KEY"
+      # When BWS disabled, extracts "MY_API_KEY" and resolves via env var
+```
+
+**Mode 3: Bitwarden Secrets Manager** (full secret management)
+```yaml
+secrets:
+  strict: true
+  providers:
+    bws:
+      enabled: true
+      access_token: "${BWS_ACCESS_TOKEN}"
+      organization_id: "${BWS_ORG_ID}"
+```
+
+`.env` files are loaded from three locations (later overrides earlier):
+1. `~/.env`
+2. `~/.config/gatemini/.env` (platform config dir)
+3. Sibling of the config file
 
 ### Hot-Reloadable Settings
 
@@ -338,7 +360,7 @@ health:
 cargo build                        # Debug build
 cargo build --release              # Release with all features
 cargo build --no-default-features  # Minimal (no V8, no semantic, no admin)
-cargo test                         # Run 172+ tests
+cargo test                         # Run 184+ tests
 cargo clippy -- -D warnings        # Lint check
 ```
 

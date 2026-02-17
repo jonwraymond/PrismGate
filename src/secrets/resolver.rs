@@ -11,6 +11,36 @@ pub trait SecretProvider: Send + Sync {
     fn resolve(&self, reference: &str) -> Result<String>;
 }
 
+/// Fallback provider for `secretref:bws:...` patterns when BWS is disabled.
+///
+/// Extracts the last path segment (the key name) from the reference and
+/// resolves it via `std::env::var`. This lets configs written for BWS work
+/// transparently when users set the same key names as environment variables
+/// or in `.env` files.
+///
+/// Registered with name `"bws"` so it transparently handles existing
+/// `secretref:bws:...` patterns. Only registered when BWS is disabled.
+pub struct EnvFallbackProvider;
+
+impl SecretProvider for EnvFallbackProvider {
+    fn name(&self) -> &str {
+        "bws"
+    }
+
+    fn resolve(&self, reference: &str) -> Result<String> {
+        let key = reference
+            .rsplit('/')
+            .next()
+            .context("cannot extract key name from secretref reference")?;
+        std::env::var(key).with_context(|| {
+            format!(
+                "secretref:bws:{reference} — BWS is disabled and env var '{key}' not found. \
+                 Set {key} in your .env file or shell environment."
+            )
+        })
+    }
+}
+
 /// Resolves `secretref:<provider>:<reference>` patterns in config values.
 pub struct SecretResolver {
     providers: HashMap<String, Box<dyn SecretProvider>>,
@@ -255,5 +285,70 @@ mod tests {
         resolver.resolve_map(&mut map).unwrap();
         assert_eq!(map["key1"], "sk-12345");
         assert_eq!(map["key2"], "literal");
+    }
+
+    // --- EnvFallbackProvider tests ---
+
+    #[test]
+    fn test_env_fallback_provider_resolve() {
+        // SAFETY: test runs single-threaded
+        unsafe { std::env::set_var("GATEMINI_TEST_SECRET_1", "my-secret-value") };
+
+        let provider = EnvFallbackProvider;
+        let result = provider
+            .resolve("project/dotenv/key/GATEMINI_TEST_SECRET_1")
+            .unwrap();
+        assert_eq!(result, "my-secret-value");
+
+        unsafe { std::env::remove_var("GATEMINI_TEST_SECRET_1") };
+    }
+
+    #[test]
+    fn test_env_fallback_provider_missing() {
+        // Ensure the var doesn't exist
+        unsafe { std::env::remove_var("GATEMINI_TEST_NONEXISTENT") };
+
+        let provider = EnvFallbackProvider;
+        let result = provider.resolve("project/dotenv/key/GATEMINI_TEST_NONEXISTENT");
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("GATEMINI_TEST_NONEXISTENT"),
+            "error should mention the key name: {err}"
+        );
+        assert!(
+            err.contains("BWS is disabled"),
+            "error should mention BWS is disabled: {err}"
+        );
+    }
+
+    #[test]
+    fn test_env_fallback_inline_resolution() {
+        unsafe { std::env::set_var("GATEMINI_TEST_TOKEN_2", "tok-inline-test") };
+
+        let mut resolver = SecretResolver::new(false);
+        resolver.register(Box::new(EnvFallbackProvider));
+
+        let result = resolver
+            .resolve_value("Bearer secretref:bws:project/dotenv/key/GATEMINI_TEST_TOKEN_2")
+            .unwrap();
+        assert_eq!(result, "Bearer tok-inline-test");
+
+        unsafe { std::env::remove_var("GATEMINI_TEST_TOKEN_2") };
+    }
+
+    #[test]
+    fn test_env_fallback_full_value_resolution() {
+        unsafe { std::env::set_var("GATEMINI_TEST_FULL_3", "full-value-result") };
+
+        let mut resolver = SecretResolver::new(false);
+        resolver.register(Box::new(EnvFallbackProvider));
+
+        let result = resolver
+            .resolve_value("secretref:bws:project/dotenv/key/GATEMINI_TEST_FULL_3")
+            .unwrap();
+        assert_eq!(result, "full-value-result");
+
+        unsafe { std::env::remove_var("GATEMINI_TEST_FULL_3") };
     }
 }

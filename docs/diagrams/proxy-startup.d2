@@ -1,0 +1,253 @@
+# Proxy Startup Sequence
+# Shows the flock + double-check pattern to prevent duplicate daemon spawning
+
+direction: down
+
+title: {
+  label: Proxy Startup Sequence
+  near: top-center
+  shape: text
+  style: {
+    font-size: 28
+    bold: true
+    font-color: "#1a1a2e"
+  }
+}
+
+# --- Entry ---
+start: {
+  label: "gatemini (proxy mode)\nClaude Code connects via stdio"
+  shape: rectangle
+  style: {
+    fill: "#dbeafe"
+    stroke: "#2563eb"
+    border-radius: 10
+    shadow: true
+    font-size: 14
+    bold: true
+  }
+}
+
+# --- Step 1: Cleanup ---
+step1: {
+  label: "1. cleanup_stale_socket()\nRemove stale .sock + .pid if PID dead\nKeep .lock file for flock coordination"
+  shape: rectangle
+  style: {
+    fill: "#e0e7ff"
+    stroke: "#6366f1"
+    border-radius: 8
+    font-size: 13
+  }
+}
+
+# --- Step 2: Fast path ---
+step2: {
+  label: "2. try_connect()\nConnect to Unix socket (2s timeout)"
+  shape: rectangle
+  style: {
+    fill: "#e0e7ff"
+    stroke: "#6366f1"
+    border-radius: 8
+    font-size: 13
+  }
+}
+
+daemon_running: {
+  label: "Daemon already running?"
+  shape: diamond
+  style: {
+    fill: "#fef3c7"
+    stroke: "#d97706"
+    border-radius: 4
+    font-size: 13
+    bold: true
+  }
+}
+
+# --- Fast path success ---
+bridge_fast: {
+  label: "bridge_stdio()\nstdin <-> socket bidirectional copy"
+  shape: rectangle
+  style: {
+    fill: "#d1fae5"
+    stroke: "#059669"
+    border-radius: 8
+    font-size: 13
+  }
+}
+
+# --- Step 3: Lock ---
+step3: {
+  label: "3. try_acquire_lock()\nExclusive flock on .lock file\n(non-blocking: LOCK_EX + LOCK_NB)"
+  shape: rectangle
+  style: {
+    fill: "#e0e7ff"
+    stroke: "#6366f1"
+    border-radius: 8
+    font-size: 13
+  }
+}
+
+got_lock: {
+  label: "Got lock?"
+  shape: diamond
+  style: {
+    fill: "#fef3c7"
+    stroke: "#d97706"
+    border-radius: 4
+    font-size: 13
+    bold: true
+  }
+}
+
+# --- Lock acquired branch ---
+double_check: {
+  label: "Double-check: try_connect()\nAnother proxy may have spawned\nbetween our try and lock acquisition"
+  shape: rectangle
+  style: {
+    fill: "#fce7f3"
+    stroke: "#db2777"
+    border-radius: 8
+    font-size: 13
+  }
+}
+
+daemon_appeared: {
+  label: "Daemon appeared\nduring race?"
+  shape: diamond
+  style: {
+    fill: "#fef3c7"
+    stroke: "#d97706"
+    border-radius: 4
+    font-size: 13
+    bold: true
+  }
+}
+
+bridge_race: {
+  label: "bridge_stdio()\nDrop lock, bridge to new daemon"
+  shape: rectangle
+  style: {
+    fill: "#d1fae5"
+    stroke: "#059669"
+    border-radius: 8
+    font-size: 13
+  }
+}
+
+# --- Step 4: Spawn ---
+step4: {
+  label: "4. spawn_daemon()\ngatemini -c config.yaml serve\nstdin/stdout = /dev/null\nstderr inherited (tracing logs)"
+  shape: rectangle
+  style: {
+    fill: "#ede9fe"
+    stroke: "#7c3aed"
+    border-radius: 8
+    font-size: 13
+  }
+}
+
+# --- Step 5: Wait ---
+step5: {
+  label: "5. wait_for_socket()\nPoll with exponential backoff\n50ms -> 100ms -> ... -> 1s cap\nTimeout: 30s. Lock held entire time."
+  shape: rectangle
+  style: {
+    fill: "#e0e7ff"
+    stroke: "#6366f1"
+    border-radius: 8
+    font-size: 13
+  }
+}
+
+# --- Step 6: Bridge ---
+step6: {
+  label: "6. bridge_stdio()\nDrop lock. Bidirectional byte pipe:\nstdin -> socket (client to daemon)\nsocket -> stdout (daemon to client)\ntokio::select! exits on either EOF"
+  shape: rectangle
+  style: {
+    fill: "#d1fae5"
+    stroke: "#059669"
+    border-radius: 8
+    font-size: 13
+    bold: true
+  }
+}
+
+# --- Lock lost branch ---
+wait_other: {
+  label: "Lock held by another proxy\nAnother proxy is already spawning.\nWait for socket to appear (30s timeout)."
+  shape: rectangle
+  style: {
+    fill: "#fef3c7"
+    stroke: "#d97706"
+    border-radius: 8
+    font-size: 13
+  }
+}
+
+bridge_wait: {
+  label: "bridge_stdio()\nConnect to daemon spawned by other proxy"
+  shape: rectangle
+  style: {
+    fill: "#d1fae5"
+    stroke: "#059669"
+    border-radius: 8
+    font-size: 13
+  }
+}
+
+# --- Connections ---
+start -> step1: {
+  style: { stroke: "#4b5563"; stroke-width: 2 }
+}
+step1 -> step2: {
+  style: { stroke: "#4b5563"; stroke-width: 2 }
+}
+step2 -> daemon_running: {
+  style: { stroke: "#4b5563"; stroke-width: 2 }
+}
+daemon_running -> bridge_fast: "Yes (fast path)" {
+  style: { stroke: "#059669"; stroke-width: 2; font-size: 12 }
+}
+daemon_running -> step3: "No" {
+  style: { stroke: "#dc2626"; stroke-width: 2; font-size: 12 }
+}
+step3 -> got_lock: {
+  style: { stroke: "#4b5563"; stroke-width: 2 }
+}
+got_lock -> double_check: "Yes (we spawn)" {
+  style: { stroke: "#059669"; stroke-width: 2; font-size: 12 }
+}
+got_lock -> wait_other: "No (another proxy spawning)" {
+  style: { stroke: "#d97706"; stroke-width: 2; font-size: 12 }
+}
+double_check -> daemon_appeared: {
+  style: { stroke: "#4b5563"; stroke-width: 2 }
+}
+daemon_appeared -> bridge_race: "Yes (race resolved)" {
+  style: { stroke: "#059669"; stroke-width: 2; font-size: 12 }
+}
+daemon_appeared -> step4: "No (truly no daemon)" {
+  style: { stroke: "#dc2626"; stroke-width: 2; font-size: 12 }
+}
+step4 -> step5: {
+  style: { stroke: "#4b5563"; stroke-width: 2 }
+}
+step5 -> step6: "socket connectable" {
+  style: { stroke: "#059669"; stroke-width: 2; font-size: 12 }
+}
+wait_other -> bridge_wait: "socket appears" {
+  style: { stroke: "#059669"; stroke-width: 2; font-size: 12 }
+}
+
+# --- Race prevention note ---
+race_note: {
+  label: "Flock + Double-Check Pattern\nPrevents duplicate daemon spawning when\nmultiple Claude Code sessions start simultaneously.\nAt most ONE proxy spawns the daemon; others wait."
+  shape: page
+  style: {
+    fill: "#fef2f2"
+    stroke: "#f87171"
+    border-radius: 8
+    font-size: 12
+    shadow: true
+  }
+}

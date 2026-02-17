@@ -1,0 +1,19 @@
+# Minimal gatemini config — no secrets, no BWS.
+# Copy to ~/.config/gatemini/config.yaml to get started.
+
+log_level: info
+
+backends:
+  sequential-thinking:
+    command: mcp-server-sequential-thinking
+    timeout: 120s
+
+  playwright:
+    command: npx
+    args: ["-y", "@playwright/mcp@latest"]
+    timeout: 120s
+
+  deepwiki:
+    transport: streamable-http
+    url: "https://mcp.deepwiki.com/mcp"
+    timeout: 90s
