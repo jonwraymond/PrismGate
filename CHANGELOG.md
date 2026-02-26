@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.4](https://github.com/jonwraymond/PrismGate/compare/v0.4.3...v0.4.4) (2026-02-26)
+
+
+### Features
+
+* resilient proxy with session replay and graceful daemon handoff ([644e721](https://github.com/jonwraymond/PrismGate/commit/644e721310083f654b66b4b9ff0dfd8809969055))
+
 ## [0.4.3](https://github.com/jonwraymond/PrismGate/compare/v0.4.2...v0.4.3) (2026-02-17)
 
 
