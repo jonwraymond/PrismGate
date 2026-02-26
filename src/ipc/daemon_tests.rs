@@ -23,7 +23,10 @@ mod tests {
     /// Build a minimal Config from defaults with a custom idle_timeout.
     fn test_config(idle_timeout: Duration) -> Config {
         let mut config: Config = serde_yaml_ng::from_str("{}").unwrap();
-        config.daemon = DaemonConfig { idle_timeout };
+        config.daemon = DaemonConfig {
+            idle_timeout,
+            client_drain_timeout: Duration::from_secs(30),
+        };
         config.allow_runtime_registration = true;
         config.max_dynamic_backends = 10;
         config

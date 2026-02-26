@@ -401,18 +401,29 @@ pub struct DaemonConfig {
     /// Default: 5m. Set to "0s" to disable.
     #[serde(default = "default_idle_timeout", with = "humantime_duration")]
     pub idle_timeout: Duration,
+
+    /// Max time to wait for connected clients to drain during shutdown.
+    /// After this timeout, the daemon proceeds with shutdown even if clients remain.
+    /// Default: 30s.
+    #[serde(default = "default_client_drain_timeout", with = "humantime_duration")]
+    pub client_drain_timeout: Duration,
 }
 
 impl Default for DaemonConfig {
     fn default() -> Self {
         Self {
             idle_timeout: default_idle_timeout(),
+            client_drain_timeout: default_client_drain_timeout(),
         }
     }
 }
 
 fn default_idle_timeout() -> Duration {
     Duration::from_secs(300)
+}
+
+fn default_client_drain_timeout() -> Duration {
+    Duration::from_secs(30)
 }
 
 /// Semantic embedding search configuration.

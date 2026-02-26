@@ -334,6 +334,9 @@ async fn main() -> Result<()> {
         // Stop daemon
         (Some(cli::Command::Stop), _) => ipc::stop::run(),
 
+        // Restart daemon (stop + proxies auto-spawn new)
+        (Some(cli::Command::Restart), _) => ipc::restart::run(),
+
         // Default: proxy mode (auto-start daemon if needed)
         (None, false) => ipc::proxy::run(&cli.config).await,
     }

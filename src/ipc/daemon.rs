@@ -226,10 +226,19 @@ pub async fn run(gw: InitializedGateway, bound: BoundSocket) -> Result<()> {
         error!(error = %e, "accept loop failed");
     }
 
-    // Graceful shutdown: stop accepting, wait for clients, stop backends, clean up files.
+    // Graceful shutdown: stop accepting, drain clients with timeout, stop backends, clean up files.
     info!("shutting down daemon");
+    let client_drain_timeout = gw.config.daemon.client_drain_timeout;
     client_tracker.close();
-    client_tracker.wait().await;
+    match tokio::time::timeout(client_drain_timeout, client_tracker.wait()).await {
+        Ok(()) => info!("all clients disconnected"),
+        Err(_) => {
+            warn!(
+                timeout = ?client_drain_timeout,
+                "client drain timeout reached, proceeding with shutdown"
+            );
+        }
+    }
     shutdown_notify.notify_waiters();
     gw.backend_manager.stop_all().await;
     socket::cleanup_files(&socket_path);

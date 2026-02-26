@@ -17,22 +17,25 @@ Claude Code ──stdio──▸ gatemini (proxy) ──┘ /tmp/gatemini-{UID}.
                                       └── ... (20-30+ backends, shared)
 ```
 
-- **Proxy mode** (default): thin byte pipe bridging stdio ↔ Unix socket, auto-spawns daemon on first use
-- **Daemon mode** (`serve`): binds Unix socket, manages backends, serves multiple clients concurrently
+- **Proxy mode** (default): resilient byte bridge with MCP handshake caching, auto-spawns daemon on first use, reconnects transparently on daemon death/restart
+- **Daemon mode** (`serve`): binds Unix socket, manages backends, serves multiple clients concurrently, graceful shutdown with client drain timeout
 - **Idle shutdown**: daemon exits after configurable timeout (default 5m) with no active clients; proxy auto-restarts on next use
+- **Hot restart** (`restart`): SIGTERM to daemon → client drain (30s) → proxies auto-reconnect with handshake replay → new daemon spawned with updated binary
 
 ### Modules
 
 | Module | Purpose |
 |--------|---------|
 | `src/main.rs` | Entry point, `InitializedGateway` setup, backend startup orchestration |
-| `src/cli.rs` | clap CLI parser — commands: (default proxy), `serve`, `status`, `stop` |
+| `src/cli.rs` | clap CLI parser — commands: (default proxy), `serve`, `status`, `stop`, `restart` |
 | **IPC** | |
-| `src/ipc/proxy.rs` | Proxy mode — stdio↔socket bridge, auto-start daemon with flock coordination |
-| `src/ipc/daemon.rs` | Daemon mode — Unix socket listener, per-client `GateminiServer`, idle shutdown |
+| `src/ipc/proxy.rs` | Resilient proxy — handshake caching, bidirectional bridge, auto-reconnect with session replay |
+| `src/ipc/mcp_framing.rs` | MCP message framer — read_line + classify for handshake interception |
+| `src/ipc/daemon.rs` | Daemon mode — Unix socket listener, per-client `GateminiServer`, idle shutdown, client drain timeout |
 | `src/ipc/socket.rs` | Socket path resolution, PID file management, `is_daemon_alive`, `try_acquire_lock` |
 | `src/ipc/status.rs` | `status` command — show daemon PID and alive/dead state |
 | `src/ipc/stop.rs` | `stop` command — send SIGTERM to daemon, poll for exit |
+| `src/ipc/restart.rs` | `restart` command — SIGTERM + wait for drain + proxies auto-reconnect |
 | **Backend** | |
 | `src/backend/mod.rs` | BackendManager — DashMap of running backends, start/stop/add/remove lifecycle, CallGuard drain |
 | `src/backend/stdio.rs` | StdioBackend — spawns child in process group, MCP handshake via rmcp, reaper task |
@@ -40,7 +43,7 @@ Claude Code ──stdio──▸ gatemini (proxy) ──┘ /tmp/gatemini-{UID}.
 | `src/backend/lenient_client.rs` | HTTP client wrapper tolerating missing Content-Type headers (z.ai compat) |
 | `src/backend/health.rs` | HealthChecker — periodic ping, circuit breaker, auto-restart with exponential backoff |
 | **Core** | |
-| `src/config.rs` | Config parsing, validation, hot-reload file watcher, `DaemonConfig` with idle_timeout |
+| `src/config.rs` | Config parsing, validation, hot-reload file watcher, `DaemonConfig` with idle_timeout + client_drain_timeout |
 | `src/registry.rs` | ToolRegistry — BM25 + optional semantic search index |
 | `src/cache.rs` | Tool cache persistence — instant tool availability on daemon restart |
 | `src/embeddings.rs` | Semantic embedding search via model2vec, L2-normalized cosine similarity |
@@ -64,6 +67,9 @@ Claude Code ──stdio──▸ gatemini (proxy) ──┘ /tmp/gatemini-{UID}.
 - Health checker runs on tokio interval, respects `max_restarts` and `restart_window`
 - Tool cache enables instant availability on daemon restart (loaded before backends connect)
 - Proxy auto-start uses flock + double-check pattern to prevent duplicate daemon spawning
+- Proxy caches MCP handshake (initialize req + initialized notif) for transparent reconnection
+- Proxy reconnects with exponential backoff (100ms→5s, max 10 attempts, 60s overall timeout)
+- Daemon graceful shutdown drains connected clients with configurable timeout (default 30s)
 - Process group isolation (`process_group(0)`) for clean backend termination
 - Brief discovery modes minimize token usage (~60 vs ~500 per search result)
 
@@ -72,5 +78,5 @@ Claude Code ──stdio──▸ gatemini (proxy) ──┘ /tmp/gatemini-{UID}.
 ```bash
 cargo build                    # debug build
 cargo build --release          # release build
-cargo test                     # 184 unit tests
+cargo test                     # 197 unit + integration tests
 ```

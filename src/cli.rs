@@ -55,4 +55,6 @@ pub enum Command {
     Status,
     /// Stop a running daemon.
     Stop,
+    /// Restart a running daemon (stop + let proxies auto-spawn new).
+    Restart,
 }
