@@ -163,7 +163,10 @@ impl GateminiServer {
                 tokio::spawn(async move { crate::cache::save(&cp, &reg, None).await });
                 Ok(CallToolResult::success(vec![Content::text(msg)]))
             }
-            Err(e) => Ok(CallToolResult::error(vec![Content::text(format!("{:#}", e))])),
+            Err(e) => Ok(CallToolResult::error(vec![Content::text(format!(
+                "{:#}",
+                e
+            ))])),
         }
     }
 
@@ -193,7 +196,10 @@ impl GateminiServer {
                 tokio::spawn(async move { crate::cache::save(&cp, &reg, None).await });
                 Ok(CallToolResult::success(vec![Content::text(msg)]))
             }
-            Err(e) => Ok(CallToolResult::error(vec![Content::text(format!("{:#}", e))])),
+            Err(e) => Ok(CallToolResult::error(vec![Content::text(format!(
+                "{:#}",
+                e
+            ))])),
         }
     }
 
@@ -331,7 +337,10 @@ impl GateminiServer {
 
         match result {
             Ok(output) => Ok(CallToolResult::success(vec![Content::text(output)])),
-            Err(e) => Ok(CallToolResult::error(vec![Content::text(format!("{:#}", e))])),
+            Err(e) => Ok(CallToolResult::error(vec![Content::text(format!(
+                "{:#}",
+                e
+            ))])),
         }
     }
 }

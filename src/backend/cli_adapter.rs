@@ -125,9 +125,7 @@ impl CliAdapterBackend {
         let output = tokio::time::timeout(self.timeout, cmd.output())
             .await
             .map_err(|_| anyhow::anyhow!("health check timed out for '{}'", self.name))?
-            .with_context(|| {
-                format!("failed to execute health check for '{}'", self.name)
-            })?;
+            .with_context(|| format!("failed to execute health check for '{}'", self.name))?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
@@ -174,7 +172,10 @@ pub fn parse_output(stdout: &str, format: &CliOutputFormat) -> Value {
         }
         CliOutputFormat::Text => Value::String(stdout.to_string()),
         CliOutputFormat::Lines => {
-            let lines: Vec<Value> = stdout.lines().map(|l| Value::String(l.to_string())).collect();
+            let lines: Vec<Value> = stdout
+                .lines()
+                .map(|l| Value::String(l.to_string()))
+                .collect();
             Value::Array(lines)
         }
     }
@@ -389,10 +390,7 @@ mod tests {
     #[test]
     fn test_render_template_no_args() {
         let args = Value::Null;
-        assert_eq!(
-            render_template("echo hello", &args),
-            "echo hello"
-        );
+        assert_eq!(render_template("echo hello", &args), "echo hello");
     }
 
     #[test]
@@ -527,10 +525,7 @@ mod tests {
             state: AtomicU8::new(STATE_HEALTHY),
         };
 
-        let result = backend
-            .call_tool("json_echo", None)
-            .await
-            .unwrap();
+        let result = backend.call_tool("json_echo", None).await.unwrap();
 
         assert!(result.is_object());
         assert_eq!(result["status"], "ok");

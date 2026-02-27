@@ -79,5 +79,5 @@ Claude Code ──stdio──▸ gatemini (proxy) ──┘ /tmp/gatemini-{UID}.
 ```bash
 cargo build                    # debug build
 cargo build --release          # release build
-cargo test                     # 197 unit + integration tests
+cargo test                     # 221 unit + integration tests
 ```
