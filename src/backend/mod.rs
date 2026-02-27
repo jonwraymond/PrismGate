@@ -1,3 +1,4 @@
+pub mod cli_adapter;
 pub mod composite;
 pub mod health;
 pub mod http;
@@ -340,6 +341,11 @@ impl BackendManager {
                 b.start().await?;
                 Arc::new(b)
             }
+            Transport::CliAdapter => {
+                let b = cli_adapter::CliAdapterBackend::new(name.to_string(), config.clone())?;
+                b.start().await?;
+                Arc::new(b)
+            }
         };
 
         // Discover tools and propagate config tags
@@ -364,6 +370,7 @@ impl BackendManager {
             .unwrap_or(match config.transport {
                 Transport::Stdio => DEFAULT_STDIO_MAX_CONCURRENT,
                 Transport::StreamableHttp => DEFAULT_HTTP_MAX_CONCURRENT,
+                Transport::CliAdapter => cli_adapter::DEFAULT_CLI_ADAPTER_MAX_CONCURRENT,
             });
         if max_calls > 0 {
             self.call_semaphores.insert(

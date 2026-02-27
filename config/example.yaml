@@ -55,6 +55,33 @@ backends:
     args: ["-y", "@playwright/mcp@latest"]
     timeout: 120s
 
+  # ── CLI adapter backends (wrap any CLI as MCP tools) ───────────────
+
+  # No MCP server needed — just define tools as command templates
+  jq-tools:
+    transport: cli-adapter
+    timeout: 30s
+    health_check: "jq --version"
+    tools:
+      filter:
+        description: "Apply a jq filter to JSON input"
+        input_schema:
+          type: object
+          properties:
+            filter: { type: string, description: "jq filter expression" }
+            input: { type: string, description: "JSON input to filter" }
+          required: [filter, input]
+        command: "jq '{{filter}}'"
+        stdin: "{{input}}"
+        output: json
+
+  # External adapter file (tool definitions in separate YAML)
+  # ffmpeg-tools:
+  #   transport: cli-adapter
+  #   adapter_file: ~/.config/gatemini/adapters/ffmpeg.yaml
+  #   timeout: 120s
+  #   max_concurrent_calls: 2
+
   # ── Streamable-HTTP backends ────────────────────────────────────────
 
   # Mode 2: secretref with env fallback

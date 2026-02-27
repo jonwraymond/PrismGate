@@ -50,7 +50,8 @@ Gatemini runs a single daemon that manages all backend connections. Multiple ses
 | **Tool cache** | Instant tool availability on daemon restart before backends reconnect |
 | **BM25 + semantic search** | Hybrid keyword and embedding-based tool discovery |
 | **Flexible secrets** | Env vars, `.env` files, hardcoded YAML, or BWS — with automatic fallback |
-| **Dual transport** | Stdio child processes and streamable-HTTP backends in one config |
+| **Triple transport** | Stdio child processes, streamable-HTTP, and CLI adapter backends in one config |
+| **CLI adapter** | Wrap any CLI tool as an MCP tool via `{{param}}` command templates — no MCP server needed |
 | **Hot-reload** | Config changes apply without daemon restart (backends, aliases, tags) |
 | **Fallback chains** | Automatic failover to alternative backends on transient errors |
 
@@ -293,6 +294,29 @@ backends:
       Authorization: "Bearer ${TOKEN}"
 ```
 
+**CLI Adapter** (wrap any CLI as MCP tools — no MCP server needed):
+```yaml
+backends:
+  jq-tools:
+    transport: cli-adapter
+    timeout: 30s
+    health_check: "jq --version"
+    tools:
+      filter:
+        description: "Apply a jq filter to JSON input"
+        input_schema:
+          type: object
+          properties:
+            filter: { type: string, description: "jq filter expression" }
+            input: { type: string, description: "JSON input to filter" }
+          required: [filter, input]
+        command: "jq '{{filter}}'"
+        stdin: "{{input}}"
+        output: json
+```
+
+CLI adapter tools support `{{param}}` template substitution in commands and stdin, with output parsed as `json`, `text`, or `lines`. Tool definitions can also be loaded from an external file via `adapter_file`.
+
 ### Secret Resolution
 
 Gatemini supports three modes for providing secrets — no BWS required:
@@ -360,7 +384,7 @@ health:
 cargo build                        # Debug build
 cargo build --release              # Release with all features
 cargo build --no-default-features  # Minimal (no V8, no semantic, no admin)
-cargo test                         # Run 184+ tests
+cargo test                         # Run 221+ tests
 cargo clippy -- -D warnings        # Lint check
 ```
 

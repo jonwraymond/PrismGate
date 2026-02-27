@@ -51,8 +51,10 @@ pub async fn handle_register(
         );
     }
 
-    // Determine transport
-    let transport = if obj.get("url").is_some() {
+    // Determine transport: cli-adapter if "tools" field present, HTTP if "url" present, else stdio
+    let transport = if obj.get("tools").is_some() {
+        Transport::CliAdapter
+    } else if obj.get("url").is_some() {
         Transport::StreamableHttp
     } else {
         Transport::Stdio
@@ -91,7 +93,30 @@ pub async fn handle_register(
                 "register_manual: connecting HTTP backend from MCP client request"
             );
         }
+        Transport::CliAdapter => {
+            let tool_names: Vec<&str> = obj
+                .get("tools")
+                .and_then(|v| v.as_object())
+                .map(|m| m.keys().map(|k| k.as_str()).collect())
+                .unwrap_or_default();
+            warn!(
+                backend = %name,
+                tools = ?tool_names,
+                "register_manual: registering cli-adapter backend from MCP client request"
+            );
+        }
     }
+
+    // Parse CLI adapter tool definitions if present
+    let cli_tools: Option<std::collections::HashMap<String, crate::config::CliToolConfig>> =
+        obj.get("tools").and_then(|v| {
+            serde_json::from_value(v.clone())
+                .map_err(|e| {
+                    warn!("failed to parse cli-adapter tools: {e}");
+                    e
+                })
+                .ok()
+        });
 
     let config = BackendConfig {
         transport,
@@ -127,6 +152,12 @@ pub async fn handle_register(
         rate_limit: None,
         tags: Vec::new(),
         fallback_chain: Vec::new(),
+        tools: cli_tools,
+        adapter_file: None,
+        health_check: obj
+            .get("health_check")
+            .and_then(|v| v.as_str())
+            .map(String::from),
     };
 
     let tool_count = manager.add_backend(&name, config, registry).await?;

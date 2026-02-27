@@ -72,6 +72,7 @@ src/
 │   ├── mod.rs                 # BackendManager, Backend trait, DashMap
 │   ├── stdio.rs               # Child process backends (MCP over stdio)
 │   ├── http.rs                # HTTP backends (streamable-HTTP)
+│   ├── cli_adapter.rs         # CLI adapter backends (wrap CLIs as MCP tools)
 │   ├── health.rs              # Health checker, circuit breaker, backoff
 │   ├── composite.rs           # Virtual backend for composite tools
 │   └── lenient_client.rs      # HTTP wrapper for missing Content-Type
@@ -159,8 +160,8 @@ Claude Code ──stdio──> proxy ──┘
                                 │
                          daemon (1 process)
                            ├── backend #1 (stdio)
-                           ├── backend #2 (stdio)
-                           └── backend #3 (HTTP)
+                           ├── backend #2 (HTTP)
+                           └── backend #3 (cli-adapter)
 ```
 
 **Proxy mode** (default): Lightweight byte pipe bridging stdio to Unix socket. Auto-spawns daemon on first use.
@@ -202,7 +203,7 @@ cargo test registry::tests
 cargo test -- --nocapture
 ```
 
-Current test count: 184+ unit tests covering registry, config, cache, daemon, backend concurrency, embeddings, secrets, MCP compliance, and more.
+Current test count: 221+ unit tests covering registry, config, cache, daemon, backend concurrency, CLI adapter, embeddings, secrets, MCP compliance, and more.
 
 ## Code Style
 

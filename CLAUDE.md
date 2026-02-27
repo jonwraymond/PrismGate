@@ -41,6 +41,7 @@ Claude Code ──stdio──▸ gatemini (proxy) ──┘ /tmp/gatemini-{UID}.
 | `src/backend/stdio.rs` | StdioBackend — spawns child in process group, MCP handshake via rmcp, reaper task |
 | `src/backend/http.rs` | HttpBackend — streamable-HTTP transport via rmcp |
 | `src/backend/lenient_client.rs` | HTTP client wrapper tolerating missing Content-Type headers (z.ai compat) |
+| `src/backend/cli_adapter.rs` | CliAdapterBackend — wraps arbitrary CLIs as tool providers via `{{param}}` command templates |
 | `src/backend/health.rs` | HealthChecker — periodic ping, circuit breaker, auto-restart with exponential backoff |
 | **Core** | |
 | `src/config.rs` | Config parsing, validation, hot-reload file watcher, `DaemonConfig` with idle_timeout + client_drain_timeout |
@@ -78,5 +79,5 @@ Claude Code ──stdio──▸ gatemini (proxy) ──┘ /tmp/gatemini-{UID}.
 ```bash
 cargo build                    # debug build
 cargo build --release          # release build
-cargo test                     # 197 unit + integration tests
+cargo test                     # 221 unit + integration tests
 ```

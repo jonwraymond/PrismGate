@@ -120,6 +120,82 @@ backends:
       X-Custom: "value"
 ```
 
+## CLI Adapter Backends
+
+**Source**: [`src/backend/cli_adapter.rs`](../src/backend/cli_adapter.rs)
+
+CLI adapter backends wrap arbitrary command-line tools as MCP tool providers through configuration alone — no MCP server wrapper needed.
+
+### Configuration
+
+Each tool is defined with a `command` template using `{{param}}` placeholders:
+
+```yaml
+backends:
+  jq-tools:
+    transport: cli-adapter
+    timeout: 30s
+    max_concurrent_calls: 5
+    health_check: "jq --version"
+    tools:
+      filter:
+        description: "Apply a jq filter to JSON input"
+        input_schema:
+          type: object
+          properties:
+            filter: { type: string }
+            input: { type: string }
+          required: [filter, input]
+        command: "jq '{{filter}}'"
+        stdin: "{{input}}"
+        output: json
+```
+
+Tools can also be loaded from an external YAML file:
+
+```yaml
+backends:
+  ffmpeg-tools:
+    transport: cli-adapter
+    adapter_file: ~/.config/gatemini/adapters/ffmpeg.yaml
+    timeout: 120s
+```
+
+### Execution Model
+
+```
+1. Look up CliToolConfig by tool name
+2. Render command template: replace {{param}} with argument values
+3. Render stdin template (if present)
+4. Spawn: sh -c "<rendered_command>" (Unix) or cmd /C (Windows)
+5. Pipe stdin input (if configured), close stdin
+6. Apply backend timeout
+7. Check exit code — non-zero → error with stderr
+8. Parse stdout per output format (json/text/lines)
+```
+
+Each tool call spawns a fresh process. There is no persistent child process to manage — the backend's `stop()` simply updates state.
+
+### Output Formats
+
+| Format | Behavior |
+|--------|----------|
+| `text` (default) | Return stdout as a raw string |
+| `json` | Parse stdout as JSON |
+| `lines` | Split stdout on newlines into a JSON array |
+
+### Health Check
+
+If `health_check` is configured, the command is run during `start()` and must exit with code 0. The backend's `discover_tools()` always succeeds (in-memory HashMap lookup), so health checks are startup-only verification.
+
+### Template Rendering
+
+`{{key}}` placeholders are replaced with stringified argument values. String values are inserted directly; non-string JSON values (numbers, objects) are serialized via `serde_json`. Missing parameters leave the placeholder as-is.
+
+### Zombie Prevention
+
+On timeout, the child process PID is saved before `wait_with_output()` takes ownership. If the timeout fires, `SIGKILL` is sent via the saved PID (Unix only) to prevent zombie processes.
+
 ## Tool Call Forwarding
 
 ### CallGuard (RAII In-Flight Tracking)
@@ -275,7 +351,7 @@ Backends can be added and removed at runtime via meta-tools:
 **Validation**:
 - Name must match `[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}`
 - Dynamic backend limit enforced (default 10, prevents DoS)
-- Transport auto-detected: stdio if `command` present, HTTP if `url` present
+- Transport auto-detected: cli-adapter if `tools` present, HTTP if `url` present, else stdio
 - All registrations logged for audit
 
 ### deregister_manual
@@ -289,6 +365,7 @@ Backends can be added and removed at runtime via meta-tools:
 - [`src/backend/mod.rs`](../src/backend/mod.rs) -- BackendManager and Backend trait
 - [`src/backend/stdio.rs`](../src/backend/stdio.rs) -- Stdio backend lifecycle
 - [`src/backend/http.rs`](../src/backend/http.rs) -- HTTP backend transport
+- [`src/backend/cli_adapter.rs`](../src/backend/cli_adapter.rs) -- CLI adapter backend (wraps CLIs as MCP tools)
 - [`src/backend/health.rs`](../src/backend/health.rs) -- Health checker and circuit breaker
 - [`src/backend/prerequisite.rs`](../src/backend/prerequisite.rs) -- Prerequisite processes
 - [`src/tools/register.rs`](../src/tools/register.rs) -- Runtime registration
