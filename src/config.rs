@@ -247,6 +247,20 @@ pub struct BackendConfig {
     /// NOT triggered for: invalid parameters, tool not found, authentication errors.
     #[serde(default)]
     pub fallback_chain: Vec<String>,
+
+    /// CLI adapter: inline tool definitions.
+    #[serde(default)]
+    pub tools: Option<HashMap<String, CliToolConfig>>,
+
+    /// CLI adapter: external YAML file with tool definitions.
+    /// Supports `~` expansion via shellexpand.
+    #[serde(default)]
+    pub adapter_file: Option<String>,
+
+    /// CLI adapter: shell command to verify tool availability.
+    /// Must exit with code 0 to indicate healthy.
+    #[serde(default)]
+    pub health_check: Option<String>,
 }
 
 /// Per-backend retry configuration for transient failures (Starting state).
@@ -323,6 +337,38 @@ pub struct PrerequisiteConfig {
 pub enum Transport {
     Stdio,
     StreamableHttp,
+    CliAdapter,
+}
+
+/// Output format for CLI adapter tool results.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum CliOutputFormat {
+    /// Parse stdout as JSON.
+    Json,
+    /// Return stdout as a raw string (default).
+    #[default]
+    Text,
+    /// Split stdout on newlines into a JSON array of strings.
+    Lines,
+}
+
+/// Configuration for a single CLI adapter tool.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct CliToolConfig {
+    /// Tool description shown in discovery.
+    pub description: String,
+    /// JSON Schema for tool parameters.
+    pub input_schema: serde_json::Value,
+    /// Shell command template. Placeholders: `{{param_name}}`.
+    /// Executed via `sh -c` (Unix) or `cmd /C` (Windows).
+    pub command: String,
+    /// Optional stdin template. If set, rendered value is piped to command stdin.
+    #[serde(default)]
+    pub stdin: Option<String>,
+    /// Output format: json, text, or lines.
+    #[serde(default)]
+    pub output: CliOutputFormat,
 }
 
 /// Global health check configuration.
@@ -806,6 +852,13 @@ impl Config {
                     if backend.url.is_none() {
                         anyhow::bail!(
                             "backend '{name}': streamable-http transport requires 'url' field"
+                        );
+                    }
+                }
+                Transport::CliAdapter => {
+                    if backend.tools.is_none() && backend.adapter_file.is_none() {
+                        anyhow::bail!(
+                            "backend '{name}': cli-adapter transport requires 'tools' or 'adapter_file' field"
                         );
                     }
                 }

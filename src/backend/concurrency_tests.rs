@@ -178,6 +178,9 @@ mod tests {
                     rate_limit: None,
                     tags: Vec::new(),
                     fallback_chain: Vec::new(),
+                    tools: None,
+                    adapter_file: None,
+                    health_check: None,
                 },
             );
         }
