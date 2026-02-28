@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.1](https://github.com/jonwraymond/PrismGate/compare/v1.0.0...v1.0.1) (2026-02-28)
+
+
+### Bug Fixes
+
+* set deterministic cwd when spawning daemon process ([#17](https://github.com/jonwraymond/PrismGate/issues/17)) ([ca04c7d](https://github.com/jonwraymond/PrismGate/commit/ca04c7de825ad898a50698c969ba1ddf563e0696))
+
 ## [1.0.0](https://github.com/jonwraymond/PrismGate/compare/v0.4.4...v1.0.0) (2026-02-27)
 
 
