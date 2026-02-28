@@ -528,7 +528,7 @@ fn spawn_daemon(config_path: &Path) -> Result<()> {
         .parent()
         .filter(|p| p.is_dir())
         .map(|p| p.to_path_buf())
-        .or_else(|| dirs::home_dir())
+        .or_else(dirs::home_dir)
         .unwrap_or_else(|| std::path::PathBuf::from("/"));
 
     // Spawn detached: stdin/stdout null so the daemon doesn't hold our stdio.
