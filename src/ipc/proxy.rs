@@ -520,11 +520,23 @@ fn spawn_daemon(config_path: &Path) -> Result<()> {
         .to_str()
         .context("config path is not valid UTF-8")?;
 
+    // Daemon cwd: use config file's parent directory (where sibling .env files live),
+    // falling back to user home or /. This prevents the daemon from inheriting
+    // whatever random directory the proxy happened to be in, which would leak into
+    // V8 sandbox source URLs and child process working directories.
+    let daemon_cwd = config_path
+        .parent()
+        .filter(|p| p.is_dir())
+        .map(|p| p.to_path_buf())
+        .or_else(dirs::home_dir)
+        .unwrap_or_else(|| std::path::PathBuf::from("/"));
+
     // Spawn detached: stdin/stdout null so the daemon doesn't hold our stdio.
     let _child = std::process::Command::new(exe)
         .arg("-c")
         .arg(config_str)
         .arg("serve")
+        .current_dir(&daemon_cwd)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::inherit()) // Daemon logs to stderr via tracing
