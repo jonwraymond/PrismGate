@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.3](https://github.com/jonwraymond/PrismGate/compare/v1.0.2...v1.0.3) (2026-03-06)
+
+
+### Bug Fixes
+
+* ad-hoc codesign binary on macOS during make install ([#21](https://github.com/jonwraymond/PrismGate/issues/21)) ([5a91f9f](https://github.com/jonwraymond/PrismGate/commit/5a91f9f8254e6444ee97608afd0371eda5a592b4))
+
 ## [1.0.2](https://github.com/jonwraymond/PrismGate/compare/v1.0.1...v1.0.2) (2026-03-06)
 
 
