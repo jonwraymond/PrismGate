@@ -86,7 +86,17 @@ impl ToolRegistry {
     /// for backward compatibility. On collision (2+ backends with same bare name),
     /// the bare alias is removed and only namespaced keys remain.
     pub fn register_backend_tools(&self, backend_name: &str, tools: Vec<ToolEntry>) {
-        self.register_backend_tools_namespaced(backend_name, backend_name, tools);
+        self.register_backend_tools_inner(backend_name, backend_name, tools, false);
+    }
+
+    /// Register cached tools — namespaced keys only, no bare-name aliases.
+    ///
+    /// Cached tools are available before their backend completes the MCP handshake.
+    /// Bare-name aliases are deferred until the backend goes healthy and re-registers
+    /// with live tools via `register_backend_tools`, preventing bare names from
+    /// routing to still-starting backends.
+    pub fn register_backend_tools_cached(&self, backend_name: &str, tools: Vec<ToolEntry>) {
+        self.register_backend_tools_inner(backend_name, backend_name, tools, true);
     }
 
     /// Register tools with an explicit namespace prefix.
@@ -95,6 +105,16 @@ impl ToolRegistry {
         backend_name: &str,
         namespace: &str,
         tools: Vec<ToolEntry>,
+    ) {
+        self.register_backend_tools_inner(backend_name, namespace, tools, false);
+    }
+
+    fn register_backend_tools_inner(
+        &self,
+        backend_name: &str,
+        namespace: &str,
+        tools: Vec<ToolEntry>,
+        skip_bare_aliases: bool,
     ) {
         // Clean up any existing entries for this backend (handles cache→live re-registration).
         // Remove from bare_name_owners first to prevent false collision detection.
@@ -140,11 +160,20 @@ impl ToolRegistry {
             #[cfg(feature = "semantic")]
             entries_for_embedding.push(ns_entry);
 
-            // Track bare name ownership for collision detection
+            // Track bare name ownership for collision detection.
+            // Always track ownership (even for cached) so live re-registration
+            // can detect collisions correctly.
             self.bare_name_owners
                 .entry(original.clone())
                 .or_default()
                 .push((backend_name.to_string(), namespace.to_string()));
+
+            // Skip bare-name alias creation for cached tools. Bare aliases are
+            // only created when the backend is live (healthy), preventing bare
+            // names like "web_search" from routing to still-starting backends.
+            if skip_bare_aliases {
+                continue;
+            }
 
             let owners = self.bare_name_owners.get(&original).unwrap();
             if owners.len() == 1 {

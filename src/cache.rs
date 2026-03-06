@@ -80,7 +80,7 @@ pub async fn load(
     for (backend_name, tools) in &cache.backends {
         if config_backend_names.contains(backend_name) {
             total += tools.len();
-            registry.register_backend_tools(backend_name, tools.clone());
+            registry.register_backend_tools_cached(backend_name, tools.clone());
         }
     }
 
@@ -196,9 +196,11 @@ mod tests {
         let loaded = load(&cache_path, &registry2, &config_names, None).await;
         // Snapshot saves all entries (bare + namespaced), loaded count matches what was saved
         assert!(loaded > 0);
-        // Both bare and namespaced should resolve
-        assert!(registry2.get_by_name("web_search").is_some());
-        assert!(registry2.get_by_name("tavily_search").is_some());
+        // Cached tools only have namespaced keys (no bare aliases until backend is live)
+        assert!(registry2.get_by_name("exa.web_search").is_some());
+        assert!(registry2.get_by_name("tavily.tavily_search").is_some());
+        // Bare names should NOT resolve from cache
+        assert!(registry2.get_by_name("web_search").is_none());
     }
 
     #[tokio::test]
@@ -220,7 +222,7 @@ mod tests {
         let config_names = vec!["exa".to_string()];
         let loaded = load(&cache_path, &registry2, &config_names, None).await;
         assert!(loaded > 0);
-        assert!(registry2.get_by_name("web_search").is_some());
+        assert!(registry2.get_by_name("exa.web_search").is_some());
         assert!(registry2.get_by_name("old_tool").is_none());
     }
 
@@ -278,7 +280,8 @@ mod tests {
         assert_eq!(loaded, 1);
 
         // original_name should be populated from name during migration
-        let entry = registry.get_by_name("web_search").unwrap();
+        // Cached tools are only available via namespaced key
+        let entry = registry.get_by_name("exa.web_search").unwrap();
         assert_eq!(entry.original_name, "web_search");
     }
 
