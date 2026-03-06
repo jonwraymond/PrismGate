@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.4](https://github.com/jonwraymond/PrismGate/compare/v1.0.3...v1.0.4) (2026-03-06)
+
+
+### Bug Fixes
+
+* ad-hoc codesign macOS release binaries in CI ([#23](https://github.com/jonwraymond/PrismGate/issues/23)) ([60f85f9](https://github.com/jonwraymond/PrismGate/commit/60f85f90de7c855cb0b14284ba6c3eeb3e23d646))
+
 ## [1.0.3](https://github.com/jonwraymond/PrismGate/compare/v1.0.2...v1.0.3) (2026-03-06)
 
 
