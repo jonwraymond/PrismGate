@@ -16,6 +16,9 @@ build:
 install: build
 	@mkdir -p $(INSTALL_DIR)
 	/usr/bin/install -m 755 target/release/$(BINARY) $(INSTALL_DIR)/$(BINARY)
+	@if [ "$$(uname)" = "Darwin" ]; then \
+		codesign -fs - $(INSTALL_DIR)/$(BINARY) 2>/dev/null || true; \
+	fi
 	@echo "Installed $(INSTALL_DIR)/$(BINARY) v$(VERSION)"
 
 clean:
