@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.2](https://github.com/jonwraymond/PrismGate/compare/v1.0.1...v1.0.2) (2026-03-06)
+
+
+### Bug Fixes
+
+* skip bare-name aliases for cached tools until backend is healthy ([#19](https://github.com/jonwraymond/PrismGate/issues/19)) ([bc00d14](https://github.com/jonwraymond/PrismGate/commit/bc00d140fa6ec1a739b5a46cbef7e361757709a8))
+
 ## [1.0.1](https://github.com/jonwraymond/PrismGate/compare/v1.0.0...v1.0.1) (2026-02-28)
 
 
