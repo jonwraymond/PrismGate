@@ -380,9 +380,15 @@ impl ServerHandler for GateminiServer {
                  - /mcp__gatemini__discover → guided progressive discovery walkthrough\n\
                  - /mcp__gatemini__find_tool → search + top match's full schema + execution example\n\
                  - /mcp__gatemini__backend_status → health/status table for all backends\n\n\
+                 ## Naming Conventions\n\
+                 - ALWAYS use qualified names: `backend.tool_name` (e.g. `exa.web_search_exa`)\n\
+                 - Bare names (e.g. `web_search`) may not resolve if the backend is still starting\n\
+                 - In call_tool_chain, hyphens become underscores: `codebase-retrieval` -> `codebase_retrieval`\n\
+                 - Backend names too: `my-backend` -> `my_backend`\n\n\
                  ## call_tool_chain Sandbox\n\
                  - ES module sandbox (V8) — NO require(), import, fs, path, or Node.js APIs\n\
                  - Tools as functions: `const r = await backend.tool_name({params}); return r;`\n\
+                 - Hyphens in names are auto-converted to underscores for valid JS identifiers\n\
                  - Introspection: `__getToolInterface('backend.tool')` returns schema\n\
                  - Standard JS only: JSON, Math, Array, Object, Promise, async/await, console\n\
                  - If a backend is stopped, the tool call will auto-restart it\n\n\
