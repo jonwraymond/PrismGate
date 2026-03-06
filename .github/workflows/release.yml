@@ -34,6 +34,7 @@ jobs:
           fi
           mkdir -p dist
           cp "$BINARY_PATH" dist/gatemini
+          codesign -fs - dist/gatemini
           tar -czf "dist/gatemini-${GITHUB_REF_NAME}-darwin-x86_64.tar.gz" -C dist gatemini
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -63,6 +64,7 @@ jobs:
           fi
           mkdir -p dist
           cp "$BINARY_PATH" dist/gatemini
+          codesign -fs - dist/gatemini
           tar -czf "dist/gatemini-${GITHUB_REF_NAME}-darwin-arm64.tar.gz" -C dist gatemini
       - name: Upload artifact
         uses: actions/upload-artifact@v4
