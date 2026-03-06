@@ -73,6 +73,8 @@ Claude Code ──stdio──▸ gatemini (proxy) ──┘ /tmp/gatemini-{UID}.
 - Daemon graceful shutdown drains connected clients with configurable timeout (default 30s)
 - Process group isolation (`process_group(0)`) for clean backend termination
 - Brief discovery modes minimize token usage (~60 vs ~500 per search result)
+- Cached tools only get bare-name aliases after backend goes healthy (prevents "still starting" errors)
+- In call_tool_chain, hyphens in tool/backend names become underscores (`codebase-retrieval` → `codebase_retrieval`)
 
 ## Building & Testing
 
