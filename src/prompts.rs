@@ -102,7 +102,11 @@ fn discover_prompt(registry: &ToolRegistry) -> GetPromptResult {
          ## Tips\n\
          - Brief mode saves 80-98% tokens on discovery\n\
          - Only load full schemas when you're ready to call a tool\n\
-         - Use `@gatemini://tools` for a compact index of all {tool_count} tools\n"
+         - Use `@gatemini://tools` for a compact index of all {tool_count} tools\n\n\
+         ## Naming Rules\n\
+         - Always use **qualified names**: `backend.tool_name` (e.g. `exa.web_search_exa`)\n\
+         - Hyphens become underscores in call_tool_chain: `my-backend` → `my_backend`\n\
+         - Bare tool names may not resolve if the backend is still starting\n"
     );
 
     GetPromptResult {
@@ -144,13 +148,14 @@ fn find_tool_prompt(task: &str, registry: &ToolRegistry) -> GetPromptResult {
                  **Execute with:**\n```typescript\n\
                  const result = await {}.{}({{ /* params */ }});\n\
                  return result;\n\
-                 ```\n",
+                 ```\n\n\
+                 > **Note:** Hyphens in names become underscores in call_tool_chain. Always use qualified names (`backend.tool`).\n",
                 top.name,
                 top.backend_name,
                 top.description,
                 serde_json::to_string_pretty(&top.input_schema).unwrap_or_default(),
                 top.backend_name.replace('-', "_"),
-                top.name,
+                top.original_name.replace('-', "_"),
             ));
         }
     }

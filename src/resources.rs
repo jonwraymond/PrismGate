@@ -368,7 +368,11 @@ fn overview_text(registry: &ToolRegistry) -> String {
          - search_tools defaults to brief=true (~60 tokens/result vs ~500)\n\
          - tool_info defaults to detail=\"brief\" (~200 tokens vs ~10k)\n\
          - Use @gatemini://tool/{{name}} resource to load full schema into context on-demand\n\
-         - Use @gatemini://tools for a compact index of all {} tools\n",
+         - Use @gatemini://tools for a compact index of all {} tools\n\n\
+         ## Naming Rules\n\n\
+         - Always use qualified names: `backend.tool_name` (e.g. `exa.web_search_exa`)\n\
+         - In call_tool_chain, hyphens become underscores: `my-backend` → `my_backend`, `codebase-retrieval` → `codebase_retrieval`\n\
+         - Bare names may not resolve if the owning backend is still starting\n",
         registry.tool_count(),
         registry.backend_count(),
         registry.tool_count(),
