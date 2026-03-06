@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.5](https://github.com/jonwraymond/PrismGate/compare/v1.0.4...v1.0.5) (2026-03-06)
+
+
+### Bug Fixes
+
+* document naming conventions in server instructions and prompts ([#26](https://github.com/jonwraymond/PrismGate/issues/26)) ([e5dca3b](https://github.com/jonwraymond/PrismGate/commit/e5dca3b01e5856b6133155d76ecb852752efe2a3))
+
 ## [1.0.4](https://github.com/jonwraymond/PrismGate/compare/v1.0.3...v1.0.4) (2026-03-06)
 
 
