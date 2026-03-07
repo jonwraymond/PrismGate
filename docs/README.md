@@ -1,56 +1,37 @@
-# PrismGate Documentation
+# Gatemini Documentation
 
-PrismGate (gatemini) is a Rust MCP gateway that connects to 30+ backend MCP servers and exposes 7 meta-tools to AI agents via a shared daemon architecture.
+This set of docs is aligned to the current Rust implementation in `src/`, not to historical marketing copy or one specific populated registry snapshot.
 
-## Quick Links
+Naming note:
 
-- **Discovering tools**: [Tool Discovery](tool-discovery.md) -- progressive disclosure workflow
-- **Adding backends**: [Backend Management](backend-management.md) -- stdio/HTTP/CLI adapter lifecycle
-- **Understanding token savings**: [Token Efficiency](token-efficiency.md) -- measured 82-98% reduction
-- **Configuration**: [Secrets & Config](secrets-and-config.md) -- env vars, .env files, BWS, hot-reload
+- `gatemini` is the binary, package, config directory, socket prefix, and MCP server name.
+- `PrismGate` is the GitHub repository and release channel name.
 
-## Documentation Index
+## Start here
 
-### Core Architecture
+- [Architecture](architecture.md): daemon/proxy lifecycle, socket coordination, direct mode, restart flow
+- [Codebase Map](codebase-map.md): end-to-end tour of the source tree and runtime ownership
+- [Tool Discovery](tool-discovery.md): the 7 meta-tools, BM25 plus optional semantic search, RRF fusion
+- [Backend Management](backend-management.md): backend states, transports, health checker, prerequisites, concurrency
+- [Secrets & Config](secrets-and-config.md): `.env` load order, environment interpolation, secretref resolution, hot-reload boundaries
+- [Resources & Prompts](resources-and-prompts.md): live `gatemini://` resources and MCP prompts
+- [Sandbox](sandbox.md): `call_tool_chain` fast paths and V8 execution model
+- [Token Efficiency](token-efficiency.md): where the context savings come from and how to measure them
+- [Telemetry](telemetry-strategy.md): what the code already tracks and what OTEL work is still proposed
 
-| Document | Description |
-|----------|-------------|
-| [Architecture](architecture.md) | IPC daemon/proxy model, Unix socket coordination, process lifecycle |
-| [Tool Discovery](tool-discovery.md) | Progressive disclosure, BM25+semantic hybrid search, brief/full modes |
-| [Token Efficiency](token-efficiency.md) | Measured savings with real data, comparison tables, industry benchmarks |
-| [Sandbox](sandbox.md) | V8 `call_tool_chain` execution, bridge preamble, direct parsing fast path |
+## Benchmarks and references
 
-### Operations
+- [Search Quality](benchmarks/search-quality.md): code-backed search behavior plus a test methodology
+- [Token Savings](benchmarks/token-savings.md): example measurement approaches, not a fixed source-of-truth registry size
+- [MCP Best Practices](references/mcp-best-practices.md): external material mapped back to this project
+- [Competing Gateways](references/competing-gateways.md): positioning context and tradeoffs
 
-| Document | Description |
-|----------|-------------|
-| [Backend Management](backend-management.md) | Health checks, circuit breaker, auto-restart, stdio/HTTP/CLI adapter backends |
-| [Secrets & Config](secrets-and-config.md) | Three secret modes (env vars, secretref+fallback, BWS), multi-location .env, hot-reload |
-| [Resources & Prompts](resources-and-prompts.md) | MCP resources for @-mention discovery, guided workflow prompts |
-| [Telemetry Strategy](telemetry-strategy.md) | OpenTelemetry integration plan with GenAI semantic conventions |
+## Source orientation
 
-### Benchmarks
+If you are reading code and docs side by side, start with:
 
-| Document | Description |
-|----------|-------------|
-| [Search Quality](benchmarks/search-quality.md) | BM25+semantic validation at scale, RRF fusion analysis |
-| [Token Savings](benchmarks/token-savings.md) | Real measurements, before/after comparisons, test methodology |
-
-### References
-
-| Document | Description |
-|----------|-------------|
-| [MCP Best Practices](references/mcp-best-practices.md) | 34+ curated external sources on tool design, naming, progressive disclosure |
-| [Competing Gateways](references/competing-gateways.md) | Kong, Envoy, Microsoft, Lasso, IBM architecture comparison |
-
-## Building
-
-```bash
-cargo build                    # debug build
-cargo build --release          # release build (includes V8 sandbox + semantic search)
-cargo test                     # run unit tests
-```
-
-## Source Code Map
-
-See [CLAUDE.md](../CLAUDE.md) for the complete module reference table.
+- `src/main.rs` for shared initialization
+- `src/ipc/` for daemon and proxy behavior
+- `src/server.rs` for the public MCP surface
+- `src/backend/` for transport implementations and lifecycle management
+- `src/config.rs` for defaults and hot-reload behavior

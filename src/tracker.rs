@@ -1,3 +1,5 @@
+//! In-memory tracking for recent tool calls, usage counts, and backend latency.
+
 use std::collections::{HashMap, VecDeque};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};

@@ -1,3 +1,5 @@
+//! Command-line interface and standard platform path helpers.
+
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 

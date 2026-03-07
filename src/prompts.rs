@@ -1,3 +1,5 @@
+//! Guided MCP prompts backed by the live registry, backend manager, and tracker.
+
 use std::sync::Arc;
 
 use rmcp::{ErrorData as McpError, model::*};

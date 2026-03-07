@@ -1,161 +1,80 @@
 # Resources & Prompts
 
-PrismGate uses all three MCP primitives -- tools, resources, and prompts -- to provide multiple discovery pathways for AI agents.
-
-## MCP Primitive Roles
-
-| Primitive | Control | PrismGate Use |
-|-----------|---------|---------------|
-| **Tools** | Model-controlled (AI decides when to call) | 7 meta-tools for search, inspect, execute |
-| **Resources** | Application-controlled (client loads via @-mention) | Compact indices, on-demand schemas |
-| **Prompts** | User-controlled (slash commands, menus) | Guided discovery workflows |
-
-This separation follows the [MCP specification](https://modelcontextprotocol.io/specification/2025-11-25): tools are for actions the AI initiates, resources are for data the application provides, and prompts are for user-initiated workflows.
+Gatemini exposes tools, resources, and prompts together. The goal is to give clients a compact, structured discovery surface without requiring every interaction to go through tool calls.
 
 ## Resources
 
-**Source**: [`src/resources.rs`](../src/resources.rs)
+Resources are implemented in `src/resources.rs`.
 
-### Static Resources
+### Static resources
 
-| URI | Tokens | Content |
-|-----|--------|---------|
-| `gatemini://overview` | ~500 | Gateway guide: how to use meta-tools, discovery workflow, token savings tips |
-| `gatemini://backends` | Variable | JSON list of all backends with status and tool counts |
-| `gatemini://tools` | ~3,000 | Compact index of ALL tools (name, backend, first sentence) |
+| URI | Content |
+|-----|---------|
+| `gatemini://overview` | gateway usage overview |
+| `gatemini://backends` | backend list with status, availability, and live tool counts |
+| `gatemini://tools` | compact tool index |
+| `gatemini://recent` | last 50 recorded tool calls |
 
-The `gatemini://tools` resource is the flagship optimization: loading it provides awareness of all 258+ tools for ~3,000 tokens versus ~40,000 tokens for full schemas -- a **92.5% reduction**.
+### Resource templates
 
-### Resource Templates
+| URI template | Content |
+|--------------|---------|
+| `gatemini://tool/{tool_name}` | one full tool entry from the registry |
+| `gatemini://backend/{backend_name}` | one backend with status, availability, tool count, and tool names |
+| `gatemini://backend/{backend_name}/tools` | the tools for one backend |
+| `gatemini://recent/{limit}` | the last `N` tool calls |
 
-| URI Pattern | Content | On-Demand Cost |
-|-------------|---------|----------------|
-| `gatemini://tool/{tool_name}` | Full schema for one tool | 200-10,000 tokens |
-| `gatemini://backend/{backend_name}` | Backend details, status, tool count | ~200 tokens |
-| `gatemini://backend/{backend_name}/tools` | Brief tool list for one backend | Variable |
+The resource layer also implements template completion for tool and backend names.
 
-Templates enable targeted lookups: instead of loading all 258 tool schemas, an agent can load the compact index and then request full schemas only for tools it intends to use.
+## Prompt surface
 
-### First Sentence Truncation
+Prompts are implemented in `src/prompts.rs`.
 
-Resources use a more aggressive 120-character truncation than discovery tools (200 characters) for maximum compactness:
+Available prompts:
 
-```rust
-// In resources.rs: 120 char limit
-fn first_sentence(text: &str) -> String { ... }
+| Prompt | What it returns |
+|--------|-----------------|
+| `discover` | live discovery walkthrough using current registry counts |
+| `find_tool` | search results plus the top match schema and example call |
+| `backend_status` | a markdown table with backend state, availability, tool count, and latency stats |
 
-// In discovery.rs: 200 char limit
-fn first_sentence(text: &str) -> String { ... }
-```
+`backend_status` currently includes:
 
-### Resource Completions
+- backend name
+- state
+- availability
+- tool count
+- p50 latency
+- p95 latency
+- sample count
 
-PrismGate provides autocomplete for resource URI parameters:
+## Recent-call data
 
-```
-gatemini://tool/web_     → ["web_search_exa", "web_search_tavily", ...]
-gatemini://backend/e     → ["exa"]
-```
+The resources and prompts use `CallTracker` data from `src/tracker.rs`.
 
-This enables IDE-like completion when constructing resource URIs.
+What is tracked today:
 
-## Prompts
+- bounded recent call history
+- per-tool usage counts
+- per-backend HDR latency histograms
 
-**Source**: [`src/prompts.rs`](../src/prompts.rs)
+That is why `gatemini://recent` and `backend_status` can return live operational data without a separate telemetry backend.
 
-### discover
+## Server instructions
 
-A 4-step guided walkthrough teaching the progressive disclosure workflow:
+The server also embeds discovery instructions in its MCP info block, implemented in `src/server.rs`.
 
-```
-Step 1: View available backends
-  → Load @gatemini://backends
+That instruction text tells agents, in effect:
 
-Step 2: Search for tools
-  → search_tools("your task", brief=true) — ~60 tokens/result
+- search first
+- inspect second
+- execute through `call_tool_chain`
+- avoid assuming backend tools are directly exposed MCP tools
 
-Step 3: Get full schema when ready to execute
-  → tool_info("tool_name", detail="full") — or load @gatemini://tool/{name}
+## Protocol note
 
-Step 4: Execute
-  → call_tool_chain('backend.tool_name({args})')
-```
+The code currently advertises protocol version `2025-06-18`.
 
-The prompt explicitly documents token savings: brief mode saves 80-98% tokens during discovery.
+For general MCP concepts, use the living spec home rather than an older dated deep link:
 
-### find_tool
-
-Takes a task description as input and automates the search workflow:
-
-1. Performs BM25 search for top 5 matches
-2. Displays results in a markdown table (name, backend, brief description)
-3. Includes the full schema for the top match
-4. Provides an executable TypeScript example:
-
-```typescript
-const r = await backend.tool_name({param: "value"});
-return r;
-```
-
-### backend_status
-
-Generates a health dashboard showing all backends:
-
-```markdown
-| Backend | Status | Tools | Transport |
-|---------|--------|-------|-----------|
-| exa | Healthy | 3 | stdio |
-| tavily | Healthy | 1 | stdio |
-| custom | Starting | 0 | http |
-```
-
-## Server Instructions
-
-**Source**: [`src/server.rs`](../src/server.rs)
-
-PrismGate embeds discovery instructions directly in its MCP `get_info()` response. These instructions are delivered to the AI agent before it makes any tool calls:
-
-```
-gatemini is an MCP gateway that aggregates tools from multiple backend MCP servers.
-Use search_tools to find tools, tool_info for details, and call_tool_chain to execute
-TypeScript code that calls backend tools.
-
-## Discovery Workflow (use progressive disclosure to save context)
-1. search_tools("your task") → brief results by default (~60 tokens/result)
-2. tool_info("name") → brief: name, backend, description, param names (~200 tokens)
-3. tool_info("name", detail="full") → complete schema, ONLY when ready to call
-4. call_tool_chain("code") → execute TypeScript
-```
-
-This approach teaches agents the progressive disclosure pattern without requiring external documentation, and it works across all MCP clients (Claude Code, Cursor, etc.).
-
-## When to Use Each Primitive
-
-### Use Resources When
-
-- Loading context at conversation start (e.g., `@gatemini://tools` for tool awareness)
-- Agent needs static data that doesn't require a decision (backend list, tool schemas)
-- Client supports @-mention syntax
-
-### Use Tools When
-
-- Agent is searching for relevant tools (`search_tools`)
-- Agent needs to inspect a specific tool (`tool_info`)
-- Agent is executing an action (`call_tool_chain`)
-
-### Use Prompts When
-
-- User wants a guided walkthrough (`/discover`)
-- User wants to find a tool interactively (`/find_tool`)
-- User wants to check backend health (`/backend_status`)
-
-## Sources
-
-- [`src/resources.rs`](../src/resources.rs) -- Resource implementation
-- [`src/prompts.rs`](../src/prompts.rs) -- Prompt implementations
-- [`src/server.rs`](../src/server.rs) -- Server instructions and MCP integration
-- [MCP Specification (2025-11-25)](https://modelcontextprotocol.io/specification/2025-11-25) -- Official protocol spec
-- [MCP Resources](https://modelcontextprotocol.info/docs/concepts/resources/) -- Resource concept guide
-- [MCP Features Guide (WorkOS)](https://workos.com/blog/mcp-features-guide) -- Comprehensive feature overview
-- [Laurent Kubaski stdio transport](https://medium.com/@laurentkubaski/understanding-mcp-stdio-transport-protocol-ae3d5daf64db) -- Transport protocol
-- [CodeSignal MCP Primitives](https://codesignal.com/learn/courses/developing-and-integrating-a-mcp-server-in-python/lessons/exploring-and-exposing-mcp-server-capabilities-tools-resources-and-prompts) -- Primitive roles
+- <https://modelcontextprotocol.io/specification>

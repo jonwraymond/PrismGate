@@ -1,19 +1,19 @@
 site_name: Gatemini
-site_description: Rust MCP gateway with progressive tool discovery
-repo_url: https://github.com/jraymond/gatemini
-repo_name: jraymond/gatemini
+site_description: Shared-daemon Rust MCP gateway with progressive tool discovery
+repo_url: https://github.com/jonwraymond/prismgate
+repo_name: jonwraymond/PrismGate
 
 theme:
   name: material
   palette:
     - scheme: default
-      primary: deep purple
+      primary: teal
       accent: amber
       toggle:
         icon: material/weather-night
         name: Switch to dark mode
     - scheme: slate
-      primary: deep purple
+      primary: teal
       accent: amber
       toggle:
         icon: material/weather-sunny
@@ -37,14 +37,11 @@ theme:
 
 plugins:
   - search
-  - d2:
-      layout: elk
-      theme: 200
-      dark_theme: 200
-  - git-revision-date-localized:
-      enable_creation_date: true
   - minify:
       minify_html: true
+
+extra_css:
+  - stylesheets/extra.css
 
 markdown_extensions:
   - admonition
@@ -70,6 +67,7 @@ markdown_extensions:
 nav:
   - Home: README.md
   - Architecture: architecture.md
+  - Codebase Map: codebase-map.md
   - Tool Discovery: tool-discovery.md
   - Token Efficiency: token-efficiency.md
   - Sandbox: sandbox.md

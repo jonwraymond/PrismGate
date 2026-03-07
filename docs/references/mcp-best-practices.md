@@ -98,9 +98,9 @@ Curated external research on building effective MCP servers, organized by topic.
 
 ## MCP Protocol & Primitives
 
-### MCP Specification (2025-11-25)
-- **URL**: https://modelcontextprotocol.io/specification/2025-11-25
-- **Key finding**: Official spec defining tools/list, tools/call, pagination, listChanged notifications, and three primitives.
+### MCP Specification
+- **URL**: https://modelcontextprotocol.io/specification
+- **Key finding**: Living spec defining tools, resources, prompts, pagination, and protocol behavior.
 - **Relevance**: PrismGate implements all three MCP primitives.
 
 ### MCP Resources Concept
