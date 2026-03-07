@@ -1,219 +1,84 @@
 # Contributing to Gatemini
 
-Thanks for your interest in contributing to Gatemini! This guide covers everything you need to get started.
+This guide reflects the current repo layout and build surface.
 
 ## Prerequisites
 
-- **Rust 1.85+** (edition 2024) via [rustup](https://rustup.rs/)
-- **Node.js 18+** (many MCP backends are npx-based)
-- **D2** (optional, for diagram rendering): `brew install d2` or [d2lang.com](https://d2lang.com)
+- Rust 1.85+
+- Node.js 18+ if you want to exercise common `npx`-based MCP backends
+- D2 if you want to edit and regenerate diagrams
+- Python plus `requirements-docs.txt` if you want to build the MkDocs site locally
 
-### Optional dependencies
-
-| Feature | Dependency | Purpose |
-|---------|-----------|---------|
-| `sandbox` | V8 via rustyscript | TypeScript execution in `call_tool_chain` |
-| `semantic` | model2vec-rs + hf-hub | Embedding-based tool search |
-| `admin` | axum | HTTP admin API |
-
-All three are enabled by default. To build without optional features:
+## Build and test
 
 ```bash
-cargo build --no-default-features
-```
-
-## Getting Started
-
-```bash
-# Clone the repo
-git clone https://github.com/jonwraymond/prismgate.git
-cd prismgate
-
-# Build (debug)
 cargo build
-
-# Build (release, includes V8 + semantic + admin)
-cargo build --release
-
-# Run tests
 cargo test
-
-# Run clippy
 cargo clippy -- -D warnings
-
-# Check formatting
 cargo fmt --check
 ```
 
-## Project Structure
+Docs build:
 
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements-docs.txt
+mkdocs build
 ```
+
+## Branching
+
+Use a prefixed branch name:
+
+```bash
+git checkout -b codex/your-change
+```
+
+## Project structure
+
+```text
 src/
-├── main.rs                    # Entry point, InitializedGateway setup
-├── cli.rs                     # clap CLI (proxy, serve, status, stop)
-├── config.rs                  # Config parsing, validation, hot-reload
-├── server.rs                  # MCP server, per-client sessions
-├── registry.rs                # ToolRegistry (BM25 + RRF hybrid search)
-├── cache.rs                   # Tool cache persistence
-├── embeddings.rs              # Semantic embedding search (model2vec)
-├── tracker.rs                 # CallTracker (usage, latency, recents)
-├── resources.rs               # MCP resources (@-mention URIs)
-├── prompts.rs                 # MCP prompts (discover, find_tool, etc.)
-├── admin.rs                   # Optional axum admin API
-│
-├── ipc/
-│   ├── proxy.rs               # stdio <-> Unix socket bridge
-│   ├── daemon.rs              # Socket listener, accept loop, idle shutdown
-│   ├── socket.rs              # Path resolution, PID files, liveness
-│   ├── status.rs              # `gatemini status` command
-│   └── stop.rs                # `gatemini stop` command
-│
-├── backend/
-│   ├── mod.rs                 # BackendManager, Backend trait, DashMap
-│   ├── stdio.rs               # Child process backends (MCP over stdio)
-│   ├── http.rs                # HTTP backends (streamable-HTTP)
-│   ├── cli_adapter.rs         # CLI adapter backends (wrap CLIs as MCP tools)
-│   ├── health.rs              # Health checker, circuit breaker, backoff
-│   ├── composite.rs           # Virtual backend for composite tools
-│   └── lenient_client.rs      # HTTP wrapper for missing Content-Type
-│
-├── tools/
-│   ├── discovery.rs           # search_tools, list_tools_meta, tool_info
-│   ├── register.rs            # register_manual, deregister_manual
-│   └── sandbox.rs             # call_tool_chain routing
-│
-├── sandbox/
-│   ├── mod.rs                 # V8 sandbox execution
-│   └── bridge.rs              # JS preamble generation
-│
-└── secrets/
-    ├── resolver.rs            # secretref: pattern resolution
-    └── bws.rs                 # Bitwarden Secrets Manager provider
+  main.rs                shared initialization and mode dispatch
+  cli.rs                 CLI parsing and platform path helpers
+  config.rs              config loading, defaults, validation, watcher
+  server.rs              public MCP tools and session server
+  registry.rs            tool registry and search
+  cache.rs               cache load/save
+  tracker.rs             recent-call and latency tracking
+  resources.rs           MCP resources
+  prompts.rs             MCP prompts
+  admin.rs               optional admin API
+  ipc/                   proxy, daemon, socket, status, stop, restart, framing
+  backend/               transport implementations and lifecycle management
+  sandbox/               V8 bridge and execution thread
+  secrets/               secret providers and resolver
+  tools/                 discovery, registration, and sandbox handlers
 ```
 
-## Development Workflow
+## Documentation rules for contributors
 
-### 1. Create a branch
+- Treat `src/config.rs` as the default-value source of truth.
+- Treat `src/server.rs`, `src/resources.rs`, and `src/prompts.rs` as the public MCP-surface source of truth.
+- Treat `src/backend/mod.rs` and `src/backend/health.rs` as the backend-state source of truth.
+- Avoid baking registry-size snapshots into docs unless they are clearly labeled as examples.
+- If you change D2 sources in `docs/diagrams/*.d2`, regenerate the matching SVGs before finishing.
+
+## Regenerating diagrams
+
+From the repo root:
 
 ```bash
-git checkout -b feat/your-feature main
+for f in docs/diagrams/*.d2; do
+  d2 -l elk "$f" "${f%.d2}.svg"
+done
 ```
 
-### 2. Write tests first
+## Pull requests
 
-We follow TDD where practical. Tests live alongside source code in `#[cfg(test)]` modules:
+Keep changes tight and verifiable:
 
-```rust
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_your_feature() {
-        // ...
-    }
-}
-```
-
-For async tests:
-
-```rust
-#[tokio::test]
-async fn test_async_feature() {
-    // ...
-}
-```
-
-### 3. Implement the feature
-
-Key patterns to follow:
-
-- **Concurrent state**: Use `DashMap` for shared data, `Arc<T>` for shared ownership
-- **Backend trait**: Implement `Backend` for new transport types
-- **Config**: Add new fields with `#[serde(default)]` for backwards compatibility
-- **Error handling**: Use `anyhow::Result` for application errors, `thiserror` for library errors
-- **Logging**: Use `tracing` macros (`info!`, `warn!`, `error!`) with structured fields
-
-### 4. Verify
-
-```bash
-cargo test                           # All tests pass
-cargo clippy -- -D warnings          # No warnings
-cargo fmt --check                    # Formatting clean
-```
-
-### 5. Submit a PR
-
-- Keep PRs focused on a single concern
-- Write a clear description of what changed and why
-- Reference related issues if applicable
-- CI runs tests, clippy, and fmt checks automatically
-
-## Architecture Overview
-
-Gatemini uses a **shared daemon architecture**:
-
-```
-Claude Code ──stdio──> proxy ──┐
-Claude Code ──stdio──> proxy ──┤ Unix socket
-Claude Code ──stdio──> proxy ──┘
-                                │
-                         daemon (1 process)
-                           ├── backend #1 (stdio)
-                           ├── backend #2 (HTTP)
-                           └── backend #3 (cli-adapter)
-```
-
-**Proxy mode** (default): Lightweight byte pipe bridging stdio to Unix socket. Auto-spawns daemon on first use.
-
-**Daemon mode** (`serve`): Binds Unix socket, manages backends, serves multiple clients concurrently. Exits on idle timeout (default 5 min).
-
-### Key subsystems
-
-| Subsystem | Owner | Description |
-|-----------|-------|-------------|
-| `BackendManager` | `backend/mod.rs` | DashMap of running backends, lifecycle management |
-| `ToolRegistry` | `registry.rs` | BM25 + semantic search index, tool namespace collision detection |
-| `HealthChecker` | `backend/health.rs` | Periodic pings, circuit breaker, auto-restart with backoff |
-| `GateminiServer` | `server.rs` | Per-client MCP session, tool router |
-| `CallTracker` | `tracker.rs` | Usage counts, latency histograms, recent calls |
-
-### Concurrency model
-
-- **Tokio** async runtime for all I/O
-- **DashMap** for lock-free concurrent reads (one shard per CPU)
-- **Arc** for shared ownership across tasks
-- **RwLock** for infrequently-written shared state
-- **AtomicUsize/AtomicU8** for counters and state flags
-- **V8 sandbox** runs on a dedicated OS thread (V8 isolates are `!Send`)
-
-## Testing
-
-```bash
-# Run all tests
-cargo test
-
-# Run a specific test
-cargo test test_name
-
-# Run tests for a specific module
-cargo test registry::tests
-
-# Run with output
-cargo test -- --nocapture
-```
-
-Current test count: 221+ unit tests covering registry, config, cache, daemon, backend concurrency, CLI adapter, embeddings, secrets, MCP compliance, and more.
-
-## Code Style
-
-- Follow standard Rust conventions (`rustfmt` defaults)
-- Prefer `anyhow::Result` for fallible functions
-- Use structured logging: `info!(field = %value, "message")`
-- Keep functions focused and small
-- Document public APIs with `///` doc comments
-- Use `#[cfg(feature = "...")]` for optional functionality
-
-## Questions?
-
-Open an issue on GitHub or check the [detailed docs](docs/README.md) for architecture deep-dives.
+- explain what changed
+- explain why the change was needed
+- include docs updates when the public surface or defaults changed
+- mention any follow-up work if the implementation still has known limits

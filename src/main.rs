@@ -1,3 +1,8 @@
+//! Entry point and shared initialization for the gatemini runtime.
+//!
+//! This file wires together config loading, tracing, secrets, cache restore,
+//! backend startup, and mode dispatch for proxy, direct, and daemon execution.
+
 mod admin;
 mod backend;
 mod cache;

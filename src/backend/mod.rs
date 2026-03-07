@@ -1,3 +1,5 @@
+//! Backend trait definitions and lifecycle management for all transport types.
+
 pub mod cli_adapter;
 pub mod composite;
 pub mod health;

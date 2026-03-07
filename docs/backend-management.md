@@ -1,142 +1,79 @@
 # Backend Management
 
-PrismGate manages 30+ backend MCP servers through a concurrent lifecycle system with health monitoring, circuit breaking, and automatic recovery.
+The backend subsystem turns a config file into running MCP transports, restart behavior, and a unified registry.
 
-![Backend Health & Circuit Breaker](diagrams/backend-lifecycle.svg)
+![Backend lifecycle](diagrams/backend-lifecycle.svg){ .diagram-wide }
+
+## Public backend states
+
+The public enum in `src/backend/mod.rs` is intentionally small:
+
+- `Starting`
+- `Healthy`
+- `Unhealthy`
+- `Stopped`
+
+There are no public states such as "Degraded", "Restarting", or "Circuit Open". Circuit-breaker timing exists internally in the health checker and is reflected through `Unhealthy` and `Stopped`.
 
 ## BackendManager
 
-**Source**: [`src/backend/mod.rs`](../src/backend/mod.rs)
+`BackendManager` owns:
 
-The `BackendManager` is the central authority for backend lifecycle:
+- the live backend map
+- the backend config map
+- per-backend semaphores
+- per-backend retry configs
+- rate limiters
+- dynamic backend tracking
+- managed prerequisite PIDs
+- in-flight call draining
+- optional call tracking hooks
 
-```rust
-struct BackendManager {
-    backends: Arc<DashMap<String, Arc<dyn Backend>>>,  // Running backends
-    configs: RwLock<HashMap<String, BackendConfig>>,    // All backend configs
-    in_flight_calls: AtomicUsize,                       // Global call counter
-    dynamic_backends: RwLock<HashSet<String>>,           // Runtime-registered
-    prerequisite_pids: DashMap<String, u32>,             // Managed prerequisites
-}
-```
+The manager is transport-agnostic; it delegates concrete behavior to `Backend` implementations.
 
-### Why DashMap?
+## Supported transports
 
-`DashMap` provides lock-free concurrent reads through internal sharding (one shard per CPU core, each with an independent `RwLock`). Multiple backends can register tools simultaneously at startup without contention. This is critical during initialization when 30+ backends connect and discover tools concurrently.
+### `stdio`
 
-## Backend Trait
+Child process backends communicate over stdin/stdout using rmcp.
 
-All backends implement a common trait:
+Key details from `src/backend/stdio.rs`:
 
-| Method | Purpose |
-|--------|---------|
-| `start()` | Spawn process / connect to HTTP endpoint, perform MCP handshake |
-| `stop()` | Graceful shutdown, terminate child process |
-| `call_tool(name, args)` | Forward tool call to the backend |
-| `discover_tools()` | List available tools via MCP |
-| `is_available()` | Quick state check (non-blocking) |
-| `state()` | Current state: Starting, Healthy, Unhealthy, Stopped |
-| `wait_for_exit()` | Monitor child process for unexpected exit (stdio only) |
+- stdin and stdout are piped
+- stderr is set to `Stdio::null()`
+- Unix builds place the child in a new process group
+- a reaper task watches for unexpected exit and marks the backend stopped
 
-## Stdio Backends
+That process-group isolation is what lets shutdown send `SIGTERM` to the whole backend tree instead of only the parent process.
 
-**Source**: [`src/backend/stdio.rs`](../src/backend/stdio.rs)
+### `streamable-http`
 
-Stdio backends are MCP servers spawned as child processes communicating over stdin/stdout.
+Remote HTTP backends are implemented in `src/backend/http.rs`.
 
-### Spawn and Handshake
-
-```
-1. tokio::process::Command::new(command)
-   ├─ .args(args)
-   ├─ .envs(env)                     -- Resolved secrets injected here
-   ├─ .stdin(Stdio::piped())
-   ├─ .stdout(Stdio::piped())
-   ├─ .stderr(Stdio::inherit())      -- Backend logs visible in daemon stderr
-   └─ .process_group(0)              -- New process group for clean termination
-
-2. rmcp handshake: ().serve((stdout, stdin))
-   └─ MCP initialize → peer_info (server_name, version)
-
-3. Spawn reaper task (monitors for unexpected exit)
-```
-
-### Process Termination
-
-```rust
-// Step 1: SIGTERM to process group (child + all its children)
-libc::kill(-(pid as i32), libc::SIGTERM);
-
-// Step 2: Wait 200ms for graceful exit
-tokio::time::sleep(Duration::from_millis(200)).await;
-
-// Step 3: Force kill as fallback
-child.kill().await;
-```
-
-Process group isolation (`process_group(0)`) ensures that if a backend spawns subprocesses (e.g., Node.js spawning worker threads), they're all terminated together. Without this, killing the parent would orphan children to init.
-
-### Reaper Task
-
-Each stdio backend spawns a background task that monitors for unexpected exits:
-
-```rust
-async fn reaper(backend: Arc<StdioBackend>) {
-    backend.wait_for_exit().await;
-    // Mark as Stopped — health checker will auto-restart
-}
-```
-
-This provides immediate crash detection rather than waiting for the next health check interval.
-
-## HTTP Backends
-
-**Source**: [`src/backend/http.rs`](../src/backend/http.rs)
-
-HTTP backends connect to remote MCP servers via Streamable HTTP transport:
-
-```
-gatemini daemon ──HTTP──▸ remote MCP server
-                          (e.g., z.ai, custom HTTP servers)
-```
-
-### LenientClient
-
-**Source**: [`src/backend/lenient_client.rs`](../src/backend/lenient_client.rs)
-
-Some MCP servers (notably z.ai) omit the `Content-Type` header in responses. PrismGate wraps the reqwest client to tolerate this, treating missing Content-Type as `application/json`.
-
-### Header Forwarding
-
-HTTP backends support `Authorization` and custom headers:
+Use this transport in config:
 
 ```yaml
 backends:
-  my_api:
-    transport: http
-    url: "https://api.example.com/mcp"
+  github:
+    transport: streamable-http
+    url: "https://api.githubcopilot.com/mcp/"
     headers:
-      Authorization: "Bearer secretref:bws:project/dotenv/key/MY_API_KEY"
-      X-Custom: "value"
+      Authorization: "Bearer ${GITHUB_PAT_TOKEN}"
 ```
 
-## CLI Adapter Backends
+The lenient client wrapper exists to tolerate some imperfect servers that omit expected response headers.
 
-**Source**: [`src/backend/cli_adapter.rs`](../src/backend/cli_adapter.rs)
+### `cli-adapter`
 
-CLI adapter backends wrap arbitrary command-line tools as MCP tool providers through configuration alone — no MCP server wrapper needed.
+CLI adapter backends let you publish tools without writing a separate MCP server.
 
-### Configuration
-
-Each tool is defined with a `command` template using `{{param}}` placeholders:
+You can either define tools inline:
 
 ```yaml
 backends:
   jq-tools:
     transport: cli-adapter
     timeout: 30s
-    max_concurrent_calls: 5
-    health_check: "jq --version"
     tools:
       filter:
         description: "Apply a jq filter to JSON input"
@@ -151,227 +88,81 @@ backends:
         output: json
 ```
 
-Tools can also be loaded from an external YAML file:
+Or point to an external adapter file:
 
 ```yaml
 backends:
   ffmpeg-tools:
     transport: cli-adapter
     adapter_file: ~/.config/gatemini/adapters/ffmpeg.yaml
-    timeout: 120s
 ```
 
-### Execution Model
+The adapter file path supports `~` expansion in the CLI adapter loader.
 
-```
-1. Look up CliToolConfig by tool name
-2. Render command template: replace {{param}} with argument values
-3. Render stdin template (if present)
-4. Spawn: sh -c "<rendered_command>" (Unix) or cmd /C (Windows)
-5. Pipe stdin input (if configured), close stdin
-6. Apply backend timeout
-7. Check exit code — non-zero → error with stderr
-8. Parse stdout per output format (json/text/lines)
-```
+## Concurrency, retries, and fallback
 
-Each tool call spawns a fresh process. There is no persistent child process to manage — the backend's `stop()` simply updates state.
+Per-backend limits come from config:
 
-### Output Formats
+- `max_concurrent_calls`
+- `semaphore_timeout`
+- `retry`
+- `rate_limit`
+- `fallback_chain`
 
-| Format | Behavior |
-|--------|----------|
-| `text` (default) | Return stdout as a raw string |
-| `json` | Parse stdout as JSON |
-| `lines` | Split stdout on newlines into a JSON array |
+Retry behavior only applies to the `Starting` state, where the manager waits briefly for a backend that is still connecting. Calls to `Unhealthy` or `Stopped` backends fail immediately unless the manager routes into a fallback backend for a transient error.
 
-### Health Check
+## Health checker
 
-If `health_check` is configured, the command is run during `start()` and must exit with code 0. The backend's `discover_tools()` always succeeds (in-memory HashMap lookup), so health checks are startup-only verification.
+The health loop in `src/backend/health.rs` runs in three phases:
 
-### Template Rendering
+1. ping healthy backends
+2. handle unhealthy and stopped backends
+3. retry pending configured backends that never became live
 
-`{{key}}` placeholders are replaced with stringified argument values. String values are inserted directly; non-string JSON values (numbers, objects) are serialized via `serde_json`. Missing parameters leave the placeholder as-is.
+![Health checker](diagrams/health-checker.svg){ .diagram-wide }
 
-### Zombie Prevention
+Current defaults from `src/config.rs`:
 
-On timeout, the child process PID is saved before `wait_with_output()` takes ownership. If the timeout fires, `SIGKILL` is sent via the saved PID (Unix only) to prevent zombie processes.
+| Setting | Default |
+|---------|---------|
+| `health.interval` | `30s` |
+| `health.timeout` | `5s` |
+| `health.failure_threshold` | `3` |
+| `health.max_restarts` | `5` |
+| `health.restart_window` | `60s` |
+| `health.restart_initial_backoff` | `1s` |
+| `health.restart_max_backoff` | `30s` |
+| `health.restart_timeout` | `30s` |
+| `health.recovery_multiplier` | `3` |
+| `health.drain_timeout` | `10s` |
 
-## Tool Call Forwarding
+Internal circuit-breaker behavior:
 
-### CallGuard (RAII In-Flight Tracking)
+- healthy backends are pinged
+- failures increment `consecutive_failures`
+- once the threshold is reached, the backend is marked `Unhealthy`
+- the health checker records `circuit_open_since`
+- after `interval * recovery_multiplier`, a half-open probe is attempted
+- if the probe fails, restart logic or another recovery window applies
 
-Every tool call is wrapped in a `CallGuard` that increments `in_flight_calls` on creation and decrements on drop:
+## Prerequisites
 
-```rust
-let _guard = CallGuard::new(&self.in_flight_calls);
-// ... execute tool call ...
-// Guard dropped here → counter decremented
-```
+Some backends depend on another process already running. That is handled by `src/backend/prerequisite.rs`.
 
-This ensures accurate tracking even if the call panics or errors.
+Features:
 
-### Retry Logic for Starting Backends
+- optional `pgrep -f` dedup via `process_match`
+- optional managed lifecycle on shutdown
+- startup delay before backend connect
 
-If a backend is in `Starting` state (connecting but not yet ready), tool calls retry with backoff:
+If `managed: true`, Gatemini records the spawned prerequisite PID and terminates the process group during shutdown.
 
-| Attempt | Delay | Total Wait |
-|---------|-------|------------|
-| 1 | 500ms | 500ms |
-| 2 | 1s | 1.5s |
-| 3 | 2s | 3.5s |
+## Composite tools
 
-After 3 attempts, the call fails with an error. Backends in `Unhealthy` or `Stopped` states fail immediately (no retry).
+Composite tools are not a separate transport. They are registered under the virtual `__composite` backend and executed through the sandbox layer.
 
-### Graceful Shutdown
+Important limitation:
 
-`stop_all()` waits for all in-flight calls to complete before terminating backends:
-
-```
-1. Stop accepting new calls (mark all backends as Stopping)
-2. Wait for in_flight_calls.load() == 0
-3. Stop each backend (SIGTERM → force kill)
-4. Clean up prerequisite processes
-```
-
-## Health Checker
-
-**Source**: [`src/backend/health.rs`](../src/backend/health.rs)
-
-The health checker runs on a configurable interval (default 5s) and manages backend health through three phases:
-
-### Phase 1: Ping Healthy Backends
-
-- Concurrent MCP ping requests to all `Healthy` backends
-- Staggered across 80% of the interval to avoid thundering herd
-- Configurable timeout per ping (default 10s)
-
-### Phase 2: Handle Failed Backends
-
-For `Stopped` or `Unhealthy` backends:
-
-```
-Circuit open?
-  ├─ Yes, within recovery window → Skip (circuit stays open)
-  ├─ Yes, recovery window expired → Half-open probe
-  │   ├─ Probe succeeds → Circuit closed, mark Healthy
-  │   └─ Probe fails → Reset circuit timer, stay open
-  └─ No → Auto-restart with exponential backoff
-```
-
-### Phase 3: Retry Pending Backends
-
-Backends that failed initial handshake (config exists but never entered DashMap) are retried with the same backoff logic.
-
-### Circuit Breaker
-
-| Parameter | Default | Purpose |
-|-----------|---------|---------|
-| `failure_threshold` | 3 | Consecutive failures before circuit opens |
-| `max_restarts` | 3 | Maximum restarts per window |
-| `restart_window` | 5 min | Window for counting restarts |
-
-States:
-
-```
-Closed (Healthy)
-  ── N consecutive failures ──▸ Open (Unhealthy)
-                                  ── 3x check interval ──▸ Half-Open
-                                                            ├─ Probe OK ──▸ Closed
-                                                            └─ Probe fail ──▸ Open
-```
-
-### Exponential Backoff
-
-Restart delay doubles with each attempt:
-
-| Attempt | Delay |
-|---------|-------|
-| 0 | 1s |
-| 1 | 2s |
-| 2 | 4s |
-| 3 | 8s |
-| 4 | 16s |
-| 5+ | 30s (capped) |
-
-The restart window resets after `restart_window` (5 min) expires, allowing fresh restart attempts for transient failures.
-
-## Prerequisite Processes
-
-**Source**: [`src/backend/prerequisite.rs`](../src/backend/prerequisite.rs)
-
-Some backends require a prerequisite process (e.g., a local API server) before they can start:
-
-```yaml
-backends:
-  vibe_kanban:
-    command: npx
-    args: ["-y", "vibe-kanban-mcp"]
-    prerequisite:
-      command: "python3"
-      args: ["-m", "http.server", "8080"]
-      process_match: "http.server 8080"  # pgrep pattern for dedup
-      managed: true                       # Stop on daemon shutdown
-      startup_delay: 2s                   # Wait before starting backend
-```
-
-### Deduplication
-
-Before spawning, PrismGate checks if the prerequisite is already running:
-
-```bash
-pgrep -f "http.server 8080"
-```
-
-If found, the spawn is skipped (idempotent). This prevents duplicate processes when the daemon restarts.
-
-### Lifecycle
-
-- `managed: true` -- PrismGate sends SIGTERM to the process group on daemon shutdown
-- `managed: false` -- PrismGate leaves the process running (external management)
-
-## Runtime Registration
-
-**Source**: [`src/tools/register.rs`](../src/tools/register.rs)
-
-Backends can be added and removed at runtime via meta-tools:
-
-### register_manual
-
-```json
-{
-  "manual_call_template": {
-    "name": "my-backend",
-    "command": "npx",
-    "args": ["-y", "my-mcp-server"],
-    "env": {"API_KEY": "..."}
-  }
-}
-```
-
-**Validation**:
-- Name must match `[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}`
-- Dynamic backend limit enforced (default 10, prevents DoS)
-- Transport auto-detected: cli-adapter if `tools` present, HTTP if `url` present, else stdio
-- All registrations logged for audit
-
-### deregister_manual
-
-- Only dynamic (runtime-registered) backends can be removed
-- Static config backends are protected from deregistration
-- Distinguishes "not found" from "static/protected" in error messages
-
-## Sources
-
-- [`src/backend/mod.rs`](../src/backend/mod.rs) -- BackendManager and Backend trait
-- [`src/backend/stdio.rs`](../src/backend/stdio.rs) -- Stdio backend lifecycle
-- [`src/backend/http.rs`](../src/backend/http.rs) -- HTTP backend transport
-- [`src/backend/cli_adapter.rs`](../src/backend/cli_adapter.rs) -- CLI adapter backend (wraps CLIs as MCP tools)
-- [`src/backend/health.rs`](../src/backend/health.rs) -- Health checker and circuit breaker
-- [`src/backend/prerequisite.rs`](../src/backend/prerequisite.rs) -- Prerequisite processes
-- [`src/tools/register.rs`](../src/tools/register.rs) -- Runtime registration
-- [DashMap](https://github.com/xacrimon/dashmap) -- Concurrent HashMap
-- [rmcp](https://github.com/4t145/rmcp) -- Rust MCP SDK
-- [AWS Circuit Breaker](https://docs.aws.amazon.com/prescriptive-guidance/latest/cloud-design-patterns/circuit-breaker.html) -- Pattern reference
-- [Azure Circuit Breaker](https://learn.microsoft.com/en-us/azure/architecture/patterns/circuit-breaker) -- Health check probing
-- [AWS Exponential Backoff](https://aws.amazon.com/builders-library/timeouts-retries-and-backoff-with-jitter/) -- Backoff with jitter
-- [Process group termination](https://www.baeldung.com/linux/kill-members-process-group) -- kill(-pgid)
+- config watcher notices composite tool changes
+- those changes are logged
+- they are not hot-reloaded; daemon restart is required

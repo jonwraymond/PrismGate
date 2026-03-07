@@ -1,3 +1,5 @@
+//! Public MCP server surface for the shared gateway.
+
 use std::path::PathBuf;
 use std::sync::Arc;
 

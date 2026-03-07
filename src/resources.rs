@@ -1,3 +1,5 @@
+//! MCP resources and resource-template handling for compact discovery views.
+
 use std::sync::Arc;
 
 use rmcp::{ErrorData as McpError, model::*};

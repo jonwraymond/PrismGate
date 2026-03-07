@@ -1,3 +1,5 @@
+//! Configuration loading, defaults, validation, secret resolution, and hot-reload.
+
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;

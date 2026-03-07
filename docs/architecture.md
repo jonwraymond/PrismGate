@@ -1,242 +1,109 @@
 # Architecture
 
-PrismGate uses a shared daemon model to multiplex backend MCP servers across multiple AI agent sessions. A single daemon process manages all backends, while lightweight proxy processes bridge each Claude Code session's stdio to the daemon via Unix domain sockets.
+Gatemini runs as a shared daemon with lightweight per-session proxies. The daemon owns backend connections and the live registry; each client process only bridges stdio to the daemon over a Unix socket.
 
-## Process Model
+![IPC architecture](diagrams/ipc-architecture.svg){ .diagram-wide }
 
-![IPC & Process Model](diagrams/architecture.svg)
+## Process model
 
-```
-Claude Code ──stdio──▸ gatemini (proxy) ──┐
-Claude Code ──stdio──▸ gatemini (proxy) ──┤ Unix socket
-Claude Code ──stdio──▸ gatemini (proxy) ──┘ /tmp/gatemini-{UID}.sock
-                                           │
-                                    gatemini daemon (1 process)
-                                      ├── backend MCP server #1 (stdio child)
-                                      ├── backend MCP server #2 (stdio child)
-                                      ├── backend MCP server #3 (HTTP)
-                                      └── ... (30+ backends, shared)
-```
+There are three operating modes:
 
-This architecture delivers three key benefits:
+| Mode | Entry point | Purpose |
+|------|-------------|---------|
+| Proxy | `gatemini` | Default MCP client integration |
+| Direct | `gatemini --direct` | Single-session debugging with no daemon |
+| Daemon | `gatemini serve` | Foreground daemon process |
 
-1. **Resource sharing** -- 30+ backend processes run once, shared across all Claude Code sessions
-2. **Instant startup** -- proxy connects to existing daemon in ~2s; no backend initialization per session
-3. **Independent lifecycle** -- daemon survives client disconnects; auto-shuts down after 5 minutes idle
+Proxy mode is what most clients use. It performs no backend setup and no registry initialization itself. Its job is to connect to the daemon or start it when needed.
 
-## Proxy Mode
+## Initialization order
 
-**Source**: [`src/ipc/proxy.rs`](../src/ipc/proxy.rs)
+The heavy initialization path is shared between direct mode and daemon mode in `src/main.rs`.
 
-The proxy is a zero-initialization byte pipe. It performs no config loading, no tracing setup, and no backend management. Its sole job is bridging Claude Code's stdio to the daemon's Unix socket.
+Actual order:
 
-### Startup Sequence
+1. load `.env`
+2. load config
+3. initialize tracing
+4. resolve secrets
+5. create tracker, registry, and backend manager
+6. load cached tools and usage stats
+7. register aliases and composite tools
+8. spawn background workers
 
-```
-1. cleanup_stale_socket()
-   └─ If socket exists but daemon is dead → remove stale socket + PID file
+Background workers include:
 
-2. try_connect() [2s timeout]
-   └─ Success → bridge_stdio() → done (fast path)
+- backend startup
+- health checker
+- config watcher
+- optional admin API
 
-3. try_acquire_lock() [exclusive flock on .lock file]
-   ├─ Won lock:
-   │   ├─ Double-check: try_connect() again (race protection)
-   │   ├─ spawn_daemon() as detached child (stdin/stdout null, stderr inherit)
-   │   └─ wait_for_socket() [exponential backoff: 50ms→1s, 30s timeout]
-   └─ Lock held by another proxy:
-       └─ wait_for_socket() [another proxy is already spawning]
+## Early socket binding
 
-4. bridge_stdio()
-   └─ Bidirectional: stdin→socket, socket→stdout
-   └─ Exits on either EOF or BrokenPipe
-```
+Daemon mode does something important before that initialization completes: it binds the socket early.
 
-### Flock + Double-Check Pattern
+![Daemon lifecycle](diagrams/daemon-lifecycle.svg){ .diagram-wide }
 
-When multiple Claude Code sessions start simultaneously, only one proxy should spawn the daemon. PrismGate uses a file lock with double-checking:
+That ordering matters because proxies can connect while initialization is still in progress. Bytes sent by the client wait in the kernel socket buffer until the accept loop starts.
 
-1. **First check**: `try_connect()` -- most common path, daemon already running
-2. **Acquire exclusive flock** on `{socket_path}.lock` -- non-blocking, fails if held
-3. **Second check**: `try_connect()` again -- another proxy may have just finished spawning
-4. **Spawn if needed**: only the lock holder spawns; others wait for the socket
+## Proxy startup and reconnect behavior
 
-The lock is held throughout daemon spawning and released after the socket becomes connectable. This prevents duplicate daemon instances without polling or retry loops.
+Proxy startup is coordinated with a non-blocking flock on the socket lock file.
 
-### Daemon Spawning
+![Proxy startup](diagrams/proxy-startup.svg){ .diagram-medium }
 
-The proxy spawns itself with the `serve` subcommand:
+The flow is:
 
-```
-gatemini -c /path/to/config.yaml serve
-```
+1. clean up a stale socket if the PID is dead
+2. try a fast-path connect
+3. if needed, acquire the lock
+4. connect again in case another proxy won the race
+5. spawn `gatemini serve`
+6. wait for the socket to become connectable
+7. bridge stdio to the socket
 
-- `stdin`/`stdout` set to `Stdio::null()` -- daemon doesn't hold proxy's stdio
-- `stderr` inherited -- daemon logs via tracing appear in the terminal
-- Process is detached -- proxy can exit without killing the daemon
+The proxy also caches the MCP initialize request and initialized notification. If the daemon restarts, the proxy reconnects and replays that handshake so the client session can continue with less disruption.
 
-## Daemon Mode
+## Accept loop and shutdown
 
-**Source**: [`src/ipc/daemon.rs`](../src/ipc/daemon.rs)
+After initialization, the daemon accepts client connections and creates a fresh `GateminiServer` per client. Those server instances are cheap because they share the real state through `Arc`s.
 
-The daemon is the heavyweight process that manages all backend MCP servers. It initializes once and serves multiple clients concurrently.
+Shutdown triggers:
 
-### Initialization (shared with all modes)
+- idle timeout with zero active sessions
+- `SIGTERM`
+- `SIGINT`
 
-**Source**: [`src/main.rs`](../src/main.rs) -- `initialize()`
+Shutdown sequence:
 
-```
-1. load_dotenv()           -- Load ~/.env (Once pattern, thread-safe)
-2. Load config             -- shellexpand → YAML parse
-3. Initialize tracing      -- Structured logging to stderr
-4. resolve_secrets_async   -- Resolve secretref: patterns
-5. Create ToolRegistry     -- With or without EmbeddingIndex
-6. Create BackendManager   -- DashMap-backed concurrent store
-7. Load tool cache         -- Instant tool availability from previous run
-8. Spawn background tasks:
-   ├── start_all()         -- Connect all backends, discover tools
-   ├── health_checker()    -- Periodic pings, circuit breaker
-   ├── watch_config()      -- File watcher for hot-reload
-   └── admin_api()         -- Optional HTTP admin (feature-gated)
-```
+1. stop accepting new clients
+2. wait for connected clients to drain, up to `daemon.client_drain_timeout`
+3. notify background tasks
+4. stop backends and wait for in-flight calls, up to `health.drain_timeout`
+5. remove socket, lock, and PID files
 
-### Accept Loop
+## Socket paths
 
-After initialization, the daemon binds the Unix socket and enters the accept loop:
+Socket resolution is deterministic so proxies and daemon always look in the same place.
 
-```rust
-loop {
-    select! {
-        accept = listener.accept() => { /* spawn client task */ }
-        () = idle_sleep, if idle_enabled && active_sessions == 0 => { break; }
-        _ = sigterm.recv() => { break; }
-        _ = sigint.recv() => { break; }
-    }
-}
-```
+| Platform | Default path |
+|----------|--------------|
+| Linux with `XDG_RUNTIME_DIR` | `$XDG_RUNTIME_DIR/gatemini.sock` |
+| macOS and fallback | `/tmp/gatemini-$UID.sock` |
 
-Each connected client gets a new `GateminiServer` instance (cheap: clones `Arc` references to the shared registry and backend manager). The rmcp crate handles the full MCP protocol per session.
+Sibling paths are also used for:
 
-**Key concurrency primitives**:
+- lock file
+- PID file
 
-| Primitive | Purpose |
-|-----------|---------|
-| `TaskTracker` | Tracks active client tasks for graceful shutdown |
-| `AtomicUsize` | Counts active sessions for idle timeout |
-| `Arc<Notify>` | Broadcasts shutdown signal to background tasks |
+## Backend ownership
 
-### Idle Shutdown
+The daemon owns:
 
-The daemon exits after `idle_timeout` (default 5 minutes) with zero active clients:
-
-- Timer resets on every new client connection
-- Timer is pushed forward while any client is connected
-- The proxy auto-restarts the daemon on next use
-
-### Graceful Shutdown Sequence
-
-```
-1. Stop accepting new connections (break accept loop)
-2. client_tracker.close() + wait() -- drain active client sessions
-3. shutdown_notify.notify_waiters() -- signal background tasks
-4. backend_manager.stop_all() -- stop all backends, wait for in-flight calls
-5. socket::cleanup_files() -- remove socket + PID file
-```
-
-## Socket Coordination
-
-**Source**: [`src/ipc/socket.rs`](../src/ipc/socket.rs)
-
-### Path Determination
-
-```
-/tmp/gatemini-{UID}.sock          -- socket
-/tmp/gatemini-{UID}.sock.pid      -- PID file
-/tmp/gatemini-{UID}.sock.lock     -- flock coordination
-```
-
-On Linux with `$XDG_RUNTIME_DIR`, the base path uses that instead of `/tmp`. The UID suffix ensures multi-user isolation on shared machines.
-
-### Liveness Check
-
-`is_daemon_alive()` reads the PID file and sends signal 0:
-
-```rust
-libc::kill(pid as libc::pid_t, 0)  // 0 = no signal, just check existence
-```
-
-Returns `true` if the process exists and belongs to the current user.
-
-### Lock Acquisition
-
-`try_acquire_lock()` uses `flock(LOCK_EX | LOCK_NB)`:
-
-- **Non-blocking**: returns immediately if another process holds the lock
-- **File descriptor ownership**: lock auto-releases if the process crashes
-- **Deliberate retention**: lock file is never deleted (it's the coordination mechanism)
-
-## Status and Stop Commands
-
-**Sources**: [`src/ipc/status.rs`](../src/ipc/status.rs), [`src/ipc/stop.rs`](../src/ipc/stop.rs)
-
-| Command | Action |
-|---------|--------|
-| `gatemini status` | Read PID file, check if alive via signal 0, print status |
-| `gatemini stop` | Send SIGTERM to daemon PID, poll for exit (100ms intervals, 5s timeout) |
-
-## Process Group Isolation
-
-**Source**: [`src/backend/stdio.rs`](../src/backend/stdio.rs)
-
-Each stdio backend spawns with `process_group(0)`, creating a new process group:
-
-```rust
-cmd.process_group(0)  // setsid-like: child gets its own PGID = PID
-```
-
-On termination, PrismGate sends SIGTERM to the entire process group:
-
-```rust
-libc::kill(-(pid as i32), libc::SIGTERM)  // negative PID = process group
-```
-
-This ensures the backend and all its children (subprocesses, scripts) are terminated together. Without process groups, killing the parent would orphan children to init.
-
-### Termination Sequence
-
-```
-1. SIGTERM to process group: kill(-(pid), SIGTERM)
-2. Wait 200ms for graceful exit
-3. Force kill child: child.kill() as fallback
-```
-
-## Transport Performance
-
-PrismGate chose Unix domain sockets over TCP for proxy-daemon IPC:
-
-| Metric | Unix Socket | TCP Localhost |
-|--------|-------------|---------------|
-| Latency | ~2-3 us | ~3.6 us |
-| Throughput (100B msg) | 130k msg/s | 70k msg/s |
-| Overhead | Kernel bypass | Full TCP/IP stack |
-
-Benchmarks from [Baeldung IPC comparison](https://www.baeldung.com/linux/ipc-performance-comparison). UDS avoids TCP checksum, congestion control, and routing overhead. The tradeoff is local-machine only -- which is exactly PrismGate's deployment model.
-
-## Three Operating Modes
-
-| Mode | Command | Use Case |
-|------|---------|----------|
-| **Proxy** (default) | `gatemini` | Claude Code integration via stdio |
-| **Daemon** | `gatemini serve` | Started automatically by proxy; can also run standalone |
-| **Direct** | `gatemini --direct` | Single-session mode, no daemon/socket (debugging) |
-
-## Sources
-
-- [`src/ipc/proxy.rs`](../src/ipc/proxy.rs) -- Proxy mode implementation
-- [`src/ipc/daemon.rs`](../src/ipc/daemon.rs) -- Daemon accept loop and shutdown
-- [`src/ipc/socket.rs`](../src/ipc/socket.rs) -- Socket path, PID, flock coordination
-- [`src/main.rs`](../src/main.rs) -- Initialization and mode dispatch
-- [rmcp](https://github.com/4t145/rmcp) -- Rust MCP SDK used for protocol handling
-- [Baeldung IPC Performance](https://www.baeldung.com/linux/ipc-performance-comparison) -- UDS vs TCP benchmarks
-- [flock(2) man page](https://man7.org/linux/man-pages/man2/flock.2.html) -- File locking semantics
-- [Process group kill semantics](https://www.baeldung.com/linux/kill-members-process-group) -- kill(-pgid)
+- live backend instances
+- the shared tool registry
+- recent-call and latency tracking
+- config watch state
+- optional admin HTTP routes
+
+Clients never talk directly to backend MCP servers. They talk to Gatemini, and Gatemini forwards or orchestrates calls on their behalf.

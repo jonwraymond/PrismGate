@@ -1,0 +1,32 @@
+.md-content img.diagram-wide,
+.md-content img.diagram-medium {
+  display: block;
+  margin: 1.5rem auto;
+  max-width: 100%;
+  height: auto;
+  padding: 0.75rem;
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--md-default-bg-color) 92%, var(--md-default-fg-color) 8%);
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
+}
+
+.md-content img.diagram-wide {
+  width: min(100%, 980px);
+}
+
+.md-content img.diagram-medium {
+  width: min(100%, 760px);
+}
+
+.md-typeset h1,
+.md-typeset h2 {
+  letter-spacing: -0.01em;
+}
+
+.md-typeset table:not([class]) {
+  font-size: 0.92rem;
+}
+
+.md-typeset code {
+  border-radius: 0.35rem;
+}
