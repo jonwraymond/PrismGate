@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.1.0](https://github.com/jonwraymond/PrismGate/compare/v1.0.5...v1.1.0) (2026-03-07)
+
+
+### Features
+
+* add container builds for PRs and releases ([442dd4e](https://github.com/jonwraymond/PrismGate/commit/442dd4e6b94867f1f9a6b4010f07853195b84e54))
+
+
+### Bug Fixes
+
+* clarify call_tool_chain return semantics ([6067047](https://github.com/jonwraymond/PrismGate/commit/6067047f0305847eabe4d0d59a84ff37363c52bd))
+
 ## [1.0.5](https://github.com/jonwraymond/PrismGate/compare/v1.0.4...v1.0.5) (2026-03-06)
 
 
