@@ -75,6 +75,22 @@ pub fn list_static_resources() -> Vec<Resource> {
             },
             annotations: None,
         },
+        Resource {
+            raw: RawResource {
+                uri: "gatemini://call_tool_chain".to_string(),
+                name: "call_tool_chain".to_string(),
+                title: Some("call_tool_chain Guide".to_string()),
+                description: Some(
+                    "Execution contract, return semantics, and examples for sandboxed TypeScript tool calls"
+                        .to_string(),
+                ),
+                mime_type: Some("text/plain".to_string()),
+                size: None,
+                icons: None,
+                meta: None,
+            },
+            annotations: None,
+        },
     ]
 }
 
@@ -131,6 +147,20 @@ pub fn list_resource_templates() -> Vec<ResourceTemplate> {
                         .to_string(),
                 ),
                 mime_type: Some("application/json".to_string()),
+                icons: None,
+            },
+            annotations: None,
+        },
+        ResourceTemplate {
+            raw: RawResourceTemplate {
+                uri_template: "gatemini://guide/{topic}".to_string(),
+                name: "guide".to_string(),
+                title: Some("Guide".to_string()),
+                description: Some(
+                    "Focused guidance for gateway concepts such as call_tool_chain return semantics and discovery workflow"
+                        .to_string(),
+                ),
+                mime_type: Some("text/plain".to_string()),
                 icons: None,
             },
             annotations: None,
@@ -194,6 +224,7 @@ pub async fn read_resource(
 
     match path {
         "overview" => Ok(text_resource(uri, &overview_text(registry))),
+        "call_tool_chain" => Ok(text_resource(uri, &call_tool_chain_guide_text())),
         "backends" => {
             let statuses = backend_manager.get_all_status();
             let infos: Vec<BackendInfo> = statuses
@@ -246,6 +277,17 @@ pub async fn read_resource(
                 let json = serde_json::to_string_pretty(&calls)
                     .map_err(|e| McpError::internal_error(e.to_string(), None))?;
                 Ok(text_resource(uri, &json))
+            } else if let Some(topic) = path.strip_prefix("guide/") {
+                match topic {
+                    "call_tool_chain" => Ok(text_resource(uri, &call_tool_chain_guide_text())),
+                    "discovery" => Ok(text_resource(uri, &overview_text(registry))),
+                    _ => Err(McpError::invalid_params(
+                        format!(
+                            "Unknown guide topic '{topic}'. Available topics: call_tool_chain, discovery"
+                        ),
+                        None,
+                    )),
+                }
             } else if let Some(tool_name) = path.strip_prefix("tool/") {
                 // gatemini://tool/{tool_name}
                 let entry = registry.get_by_name(tool_name).ok_or_else(|| {
@@ -349,6 +391,21 @@ pub fn complete(
                         has_more: Some(false),
                     },
                 })
+            } else if uri.contains("guide/{topic}") || uri.contains("guide/") {
+                let prefix = &request.argument.value;
+                let values: Vec<String> = ["call_tool_chain", "discovery"]
+                    .into_iter()
+                    .filter(|topic| topic.starts_with(prefix))
+                    .map(str::to_string)
+                    .collect();
+                let total = values.len() as u32;
+                Ok(CompleteResult {
+                    completion: CompletionInfo {
+                        values,
+                        total: Some(total),
+                        has_more: Some(false),
+                    },
+                })
             } else {
                 Ok(CompleteResult::default())
             }
@@ -370,7 +427,12 @@ fn overview_text(registry: &ToolRegistry) -> String {
          - search_tools defaults to brief=true (~60 tokens/result vs ~500)\n\
          - tool_info defaults to detail=\"brief\" (~200 tokens vs ~10k)\n\
          - Use @gatemini://tool/{{name}} resource to load full schema into context on-demand\n\
+         - Use @gatemini://call_tool_chain or @gatemini://guide/call_tool_chain for the execution contract and return semantics\n\
          - Use @gatemini://tools for a compact index of all {} tools\n\n\
+         ## call_tool_chain Contract\n\n\
+         - `call_tool_chain` returns the value your code explicitly `return`s\n\
+         - `console.log(...)` output is for debugging and is not surfaced as the tool result\n\
+         - If you omit `return`, the result is usually `null`\n\n\
          ## Naming Rules\n\n\
          - Always use qualified names: `backend.tool_name` (e.g. `exa.web_search_exa`)\n\
          - In call_tool_chain, hyphens become underscores: `my-backend` → `my_backend`, `codebase-retrieval` → `codebase_retrieval`\n\
@@ -379,6 +441,40 @@ fn overview_text(registry: &ToolRegistry) -> String {
         registry.backend_count(),
         registry.tool_count(),
     )
+}
+
+fn call_tool_chain_guide_text() -> String {
+    "# call_tool_chain Guide\n\n\
+     ## Execution Contract\n\n\
+     - `call_tool_chain` returns the value your sandbox entrypoint explicitly `return`s\n\
+     - `console.log(...)` output is for debugging only and is not surfaced as the tool result\n\
+     - If you do not `return` a value, the result is usually `null`\n\n\
+     ## Recommended Pattern\n\n\
+     ```typescript\n\
+     const lib = await context7.resolve_library_id({\n\
+       query: \"Tailscale official documentation\",\n\
+       libraryName: \"Tailscale\",\n\
+     });\n\
+     const refSearch = await ref.ref_search_documentation({\n\
+       query: \"site:tailscale.com/kb subnet routers exit nodes\",\n\
+     });\n\
+     return { lib, refSearch };\n\
+     ```\n\n\
+     ## Avoid This\n\n\
+     ```typescript\n\
+     const lib = await context7.resolve_library_id({\n\
+       query: \"Tailscale official documentation\",\n\
+       libraryName: \"Tailscale\",\n\
+     });\n\
+     console.log(JSON.stringify(lib, null, 2));\n\
+     // No explicit return -> call_tool_chain result is usually null\n\
+     ```\n\n\
+     ## Quick Rules\n\n\
+     - Always return a compact object or summary from multi-step chains\n\
+     - Use `console.log(...)` only for debugging while developing the chain\n\
+     - Prefer qualified names such as `backend.tool_name(...)`\n\
+     - Hyphens become underscores in sandbox identifiers\n"
+        .to_string()
 }
 
 fn text_resource(uri: &str, text: &str) -> ReadResourceResult {

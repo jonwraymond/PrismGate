@@ -321,7 +321,7 @@ impl GateminiServer {
     }
 
     #[tool(
-        description = "Execute TypeScript code with direct access to all registered tools as hierarchical functions (e.g., manual.tool())."
+        description = "Execute TypeScript code with direct access to all registered tools as hierarchical functions (e.g., manual.tool()). IMPORTANT: the tool result is the value your code returns. `console.log(...)` output is not returned; if you do not return a value, the result is usually `null`."
     )]
     async fn call_tool_chain(
         &self,
@@ -390,6 +390,7 @@ impl ServerHandler for GateminiServer {
                  ## call_tool_chain Sandbox\n\
                  - ES module sandbox (V8) — NO require(), import, fs, path, or Node.js APIs\n\
                  - Tools as functions: `const r = await backend.tool_name({params}); return r;`\n\
+                 - Always return a value from the entrypoint. `console.log(...)` is for debugging only and is not surfaced as the tool result; omitting `return` usually yields `null`\n\
                  - Hyphens in names are auto-converted to underscores for valid JS identifiers\n\
                  - Introspection: `__getToolInterface('backend.tool')` returns schema\n\
                  - Standard JS only: JSON, Math, Array, Object, Promise, async/await, console\n\

@@ -167,6 +167,32 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_call_tool_chain_description_mentions_return_semantics() {
+        let (peer, _, _) = setup_mcp_client().await;
+        let tools = peer.list_all_tools().await.unwrap();
+
+        let call_tool_chain = tools
+            .iter()
+            .find(|tool| tool.name == "call_tool_chain")
+            .expect("call_tool_chain tool should exist");
+
+        let description = call_tool_chain
+            .description
+            .as_deref()
+            .unwrap_or_default()
+            .to_lowercase();
+
+        assert!(
+            description.contains("return"),
+            "call_tool_chain description should mention explicit return semantics"
+        );
+        assert!(
+            description.contains("console.log"),
+            "call_tool_chain description should mention console.log behavior"
+        );
+    }
+
+    #[tokio::test]
     async fn test_tools_call_search_success() {
         let (peer, _, _) = setup_mcp_client().await;
 
@@ -315,6 +341,7 @@ mod tests {
         assert!(names.contains(&"overview".to_string()));
         assert!(names.contains(&"backends".to_string()));
         assert!(names.contains(&"tools".to_string()));
+        assert!(names.contains(&"call_tool_chain".to_string()));
     }
 
     #[tokio::test]
@@ -335,6 +362,10 @@ mod tests {
         assert!(
             uris.iter().any(|u| u.contains("backend/")),
             "should have backend/{{name}} template"
+        );
+        assert!(
+            uris.iter().any(|u| u.contains("guide/")),
+            "should have guide/{{topic}} template"
         );
     }
 
@@ -364,6 +395,37 @@ mod tests {
         assert!(
             text.contains("tool") || text.contains("backend"),
             "overview should contain tool/backend info"
+        );
+        assert!(
+            text.contains("console.log") && text.contains("null"),
+            "overview should explain call_tool_chain return semantics"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_resources_read_call_tool_chain_guide() {
+        let (peer, _, _) = setup_mcp_client().await;
+
+        let result = peer
+            .read_resource(ReadResourceRequestParams {
+                meta: None,
+                uri: "gatemini://guide/call_tool_chain".to_string(),
+            })
+            .await
+            .unwrap();
+
+        let text: String = result
+            .contents
+            .first()
+            .and_then(|c| match c {
+                ResourceContents::TextResourceContents { text, .. } => Some(text.clone()),
+                _ => None,
+            })
+            .unwrap_or_default();
+
+        assert!(
+            text.contains("console.log") && text.contains("return"),
+            "guide should explain return semantics"
         );
     }
 
@@ -399,6 +461,32 @@ mod tests {
         assert!(
             !result.messages.is_empty(),
             "prompt response should have messages"
+        );
+
+        let text = extract_prompt_text(&result);
+        assert!(
+            text.contains("console.log") && text.contains("return"),
+            "find_tool prompt should mention return semantics"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_prompts_get_discover_mentions_return_semantics() {
+        let (peer, _, _) = setup_mcp_client().await;
+
+        let result = peer
+            .get_prompt(GetPromptRequestParams {
+                meta: None,
+                name: "discover".to_string(),
+                arguments: None,
+            })
+            .await
+            .unwrap();
+
+        let text = extract_prompt_text(&result);
+        assert!(
+            text.contains("console.log") && text.contains("return"),
+            "discover prompt should mention return semantics"
         );
     }
 
@@ -446,6 +534,18 @@ mod tests {
             .iter()
             .filter_map(|c| match &c.raw {
                 RawContent::Text(t) => Some(t.text.clone()),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    fn extract_prompt_text(result: &GetPromptResult) -> String {
+        result
+            .messages
+            .iter()
+            .filter_map(|message| match &message.content {
+                PromptMessageContent::Text { text } => Some(text.clone()),
                 _ => None,
             })
             .collect::<Vec<_>>()
