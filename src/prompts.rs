@@ -97,11 +97,13 @@ fn discover_prompt(registry: &ToolRegistry) -> GetPromptResult {
          Use `call_tool_chain` to run TypeScript that calls backend tools:\n\
          ```typescript\n\
          const result = await exa.web_search_exa({{ query: \"MCP protocol\" }});\n\
+         // call_tool_chain returns the value you return, not console output\n\
          return result;\n\
          ```\n\n\
          ## Tips\n\
          - Brief mode saves 80-98% tokens on discovery\n\
          - Only load full schemas when you're ready to call a tool\n\
+         - Always `return` a value from `call_tool_chain`; `console.log(...)` does not become the tool result\n\
          - Use `@gatemini://tools` for a compact index of all {tool_count} tools\n\n\
          ## Naming Rules\n\
          - Always use **qualified names**: `backend.tool_name` (e.g. `exa.web_search_exa`)\n\
@@ -119,7 +121,10 @@ fn find_tool_prompt(task: &str, registry: &ToolRegistry) -> GetPromptResult {
     // Search for tools matching the task
     let results = registry.search(task, 5, None, None);
 
-    let mut text = format!("# Tools for: {task}\n\n");
+    let mut text = format!(
+        "# Tools for: {task}\n\n\
+         > **Execution note:** When you use `call_tool_chain`, explicitly `return` the value you want back. `console.log(...)` output is not the tool result.\n\n"
+    );
 
     if results.is_empty() {
         text.push_str("No tools found matching this task. Try a different description.\n");
@@ -147,9 +152,10 @@ fn find_tool_prompt(task: &str, registry: &ToolRegistry) -> GetPromptResult {
                  **Input Schema:**\n```json\n{}\n```\n\n\
                  **Execute with:**\n```typescript\n\
                  const result = await {}.{}({{ /* params */ }});\n\
+                 // IMPORTANT: return a value explicitly; console.log(...) is not the result\n\
                  return result;\n\
                  ```\n\n\
-                 > **Note:** Hyphens in names become underscores in call_tool_chain. Always use qualified names (`backend.tool`).\n",
+                 > **Note:** Hyphens in names become underscores in call_tool_chain. Always use qualified names (`backend.tool`) and explicitly `return` the value you want back.\n",
                 top.name,
                 top.backend_name,
                 top.description,
