@@ -393,6 +393,9 @@ impl ServerHandler for GateminiServer {
                  - Always return a value from the entrypoint. `console.log(...)` is for debugging only and is not surfaced as the tool result; omitting `return` usually yields `null`\n\
                  - Hyphens in names are auto-converted to underscores for valid JS identifiers\n\
                  - Introspection: `__getToolInterface('backend.tool')` returns schema\n\
+                 - Backends are top-level variables — use `exa.web_search_exa()` for direct calls\n\
+                 - Dynamic dispatch via `__backends`: `await __backends[name][tool]({...})` for multi-tool loops\n\
+                 - `__backends` maps both original (`my-backend`) and sanitized (`my_backend`) names\n\
                  - Standard JS only: JSON, Math, Array, Object, Promise, async/await, console\n\
                  - If a backend is stopped, the tool call will auto-restart it\n\n\
                  ## Example: Find and use a web search tool\n\

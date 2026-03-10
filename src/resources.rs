@@ -469,11 +469,28 @@ fn call_tool_chain_guide_text() -> String {
      console.log(JSON.stringify(lib, null, 2));\n\
      // No explicit return -> call_tool_chain result is usually null\n\
      ```\n\n\
+     ## Dynamic Dispatch\n\n\
+     For multi-tool loops, use `__backends` for dynamic backend lookup:\n\n\
+     ```typescript\n\
+     const queries = [\n\
+       { backend: \"auggie\", tool: \"codebase_retrieval\", args: { query: \"...\" } },\n\
+       { backend: \"exa\", tool: \"web_search_exa\", args: { query: \"...\" } },\n\
+     ];\n\
+     const results = [];\n\
+     for (const q of queries) {\n\
+       results.push(await __backends[q.backend][q.tool](q.args));\n\
+     }\n\
+     return results;\n\
+     ```\n\n\
+     `__backends` maps both original names (`my-backend`) and sanitized names (`my_backend`).\n\
+     Direct access (`exa.web_search_exa()`) still works for simple calls.\n\
+     Do NOT use `globalThis[name]` — backends are not on globalThis.\n\n\
      ## Quick Rules\n\n\
      - Always return a compact object or summary from multi-step chains\n\
      - Use `console.log(...)` only for debugging while developing the chain\n\
      - Prefer qualified names such as `backend.tool_name(...)`\n\
-     - Hyphens become underscores in sandbox identifiers\n"
+     - Hyphens become underscores in sandbox identifiers\n\
+     - Use `__backends[name]` for dynamic dispatch in loops\n"
         .to_string()
 }
 

@@ -67,6 +67,31 @@ pub fn generate_preamble(tools: &[ToolEntry]) -> String {
         preamble.push_str("};\n\n");
     }
 
+    // Generate __backends map for dynamic dispatch.
+    // Maps both sanitized names ("my_backend") and original names ("my-backend")
+    // to the const backend objects, enabling patterns like:
+    //   const r = await __backends["auggie"].codebase_retrieval({...});
+    //   const r = await __backends[backendName][toolName]({...});
+    preamble.push_str("const __backends = {\n");
+    for backend_name in by_backend.keys() {
+        let js_name = sanitize_identifier(backend_name);
+        // Always map the sanitized name
+        preamble.push_str(&format!(
+            "  {}: {},\n",
+            serde_json::to_string(&js_name).unwrap_or_default(),
+            js_name
+        ));
+        // Also map the original name if different (e.g., "my-backend" -> my_backend)
+        if js_name != *backend_name {
+            preamble.push_str(&format!(
+                "  {}: {},\n",
+                serde_json::to_string(backend_name).unwrap_or_default(),
+                js_name
+            ));
+        }
+    }
+    preamble.push_str("};\n\n");
+
     // Generate __interfaces object
     preamble.push_str("const __interfaces = {\n");
     for (backend_name, backend_tools) in &by_backend {
@@ -224,9 +249,27 @@ mod tests {
     }
 
     #[test]
+    fn test_generate_preamble_backends_map() {
+        let tools = vec![
+            make_entry("web_search", "Search", "exa"),
+            make_entry("search", "Search", "my-search-backend"),
+        ];
+        let preamble = generate_preamble(&tools);
+
+        // Should contain __backends map
+        assert!(preamble.contains("const __backends = {"));
+        // Should map sanitized name to the const variable
+        assert!(preamble.contains(r#""exa": exa"#));
+        assert!(preamble.contains(r#""my_search_backend": my_search_backend"#));
+        // Should also map original hyphenated name
+        assert!(preamble.contains(r#""my-search-backend": my_search_backend"#));
+    }
+
+    #[test]
     fn test_generate_preamble_empty() {
         let preamble = generate_preamble(&[]);
         assert!(preamble.contains("const __interfaces = {"));
+        assert!(preamble.contains("const __backends = {"));
         assert!(preamble.contains("function __getToolInterface"));
     }
 
