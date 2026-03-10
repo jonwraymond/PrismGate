@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.1](https://github.com/jonwraymond/PrismGate/compare/v1.2.0...v1.2.1) (2026-03-10)
+
+
+### Bug Fixes
+
+* auto-restart daemon on make install for seamless updates ([#35](https://github.com/jonwraymond/PrismGate/issues/35)) ([3727a82](https://github.com/jonwraymond/PrismGate/commit/3727a82e52c8f58a327f83dff0a7a2459849df10))
+
 ## [1.2.0](https://github.com/jonwraymond/PrismGate/compare/v1.1.1...v1.2.0) (2026-03-10)
 
 
