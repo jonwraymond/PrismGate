@@ -469,11 +469,24 @@ fn call_tool_chain_guide_text() -> String {
      console.log(JSON.stringify(lib, null, 2));\n\
      // No explicit return -> call_tool_chain result is usually null\n\
      ```\n\n\
+     ## Dynamic Dispatch\n\n\
+     Backends are top-level variables, NOT properties of `globalThis`.\n\
+     `globalThis.exa` and bracket notation like `globalThis[name]` are `undefined`.\n\n\
+     ```typescript\n\
+     // WRONG: dynamic dispatch via globalThis\n\
+     const result = await globalThis[backendName][toolName]({...}); // TypeError\n\n\
+     // CORRECT: use backend variables directly\n\
+     const result = await auggie.codebase_retrieval({...});\n\
+     return result;\n\
+     ```\n\n\
+     For loops over multiple tools, make separate call_tool_chain calls\n\
+     or list tool calls sequentially using direct backend references.\n\n\
      ## Quick Rules\n\n\
      - Always return a compact object or summary from multi-step chains\n\
      - Use `console.log(...)` only for debugging while developing the chain\n\
      - Prefer qualified names such as `backend.tool_name(...)`\n\
-     - Hyphens become underscores in sandbox identifiers\n"
+     - Hyphens become underscores in sandbox identifiers\n\
+     - Backends are top-level variables, NOT on globalThis\n"
         .to_string()
 }
 
