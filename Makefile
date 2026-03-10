@@ -20,6 +20,11 @@ install: build
 		codesign -fs - $(INSTALL_DIR)/$(BINARY) 2>/dev/null || true; \
 	fi
 	@echo "Installed $(INSTALL_DIR)/$(BINARY) v$(VERSION)"
+	@# Graceful hot restart: drain in-flight calls, proxies auto-reconnect
+	@# with handshake replay — client sessions are preserved transparently.
+	@$(INSTALL_DIR)/$(BINARY) restart 2>/dev/null && \
+		echo "Daemon restarted (clients reconnecting)" || \
+		echo "No daemon running (will start on next connection)"
 
 clean:
 	cargo clean
