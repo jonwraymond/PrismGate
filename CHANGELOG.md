@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.2](https://github.com/jonwraymond/PrismGate/compare/v1.2.1...v1.2.2) (2026-03-10)
+
+
+### Bug Fixes
+
+* rewrite overview resource as comprehensive agent instruction guide ([#37](https://github.com/jonwraymond/PrismGate/issues/37)) ([2e72dcd](https://github.com/jonwraymond/PrismGate/commit/2e72dcd33b0423c23257f6dae24125aedd62e7e2))
+
 ## [1.2.1](https://github.com/jonwraymond/PrismGate/compare/v1.2.0...v1.2.1) (2026-03-10)
 
 
