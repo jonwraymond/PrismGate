@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.0](https://github.com/jonwraymond/PrismGate/compare/v1.1.1...v1.2.0) (2026-03-10)
+
+
+### Features
+
+* add __backends map for dynamic dispatch in sandbox ([#33](https://github.com/jonwraymond/PrismGate/issues/33)) ([3486fbd](https://github.com/jonwraymond/PrismGate/commit/3486fbd3f2de555f09a6dcffe4155e051abd8135))
+
 ## [1.1.1](https://github.com/jonwraymond/PrismGate/compare/v1.1.0...v1.1.1) (2026-03-10)
 
 
