@@ -417,26 +417,43 @@ pub fn complete(
 fn overview_text(registry: &ToolRegistry) -> String {
     format!(
         "# Gatemini MCP Gateway\n\n\
-         Gatemini aggregates {} tools from {} backends into a single MCP server.\n\n\
-         ## How to Discover Tools\n\n\
-         1. **Quick overview**: Use @gatemini://backends to see all backends and tool counts\n\
-         2. **Search by task**: Use search_tools(task_description=\"what you need\") — returns brief results by default\n\
-         3. **Get full schema**: Use tool_info(tool_name=\"name\", detail=\"full\") only when you need the complete input schema\n\
-         4. **Execute**: Use call_tool_chain to run TypeScript that calls backend tools\n\n\
-         ## Tips\n\n\
-         - search_tools defaults to brief=true (~60 tokens/result vs ~500)\n\
-         - tool_info defaults to detail=\"brief\" (~200 tokens vs ~10k)\n\
-         - Use @gatemini://tool/{{name}} resource to load full schema into context on-demand\n\
-         - Use @gatemini://call_tool_chain or @gatemini://guide/call_tool_chain for the execution contract and return semantics\n\
-         - Use @gatemini://tools for a compact index of all {} tools\n\n\
-         ## call_tool_chain Contract\n\n\
-         - `call_tool_chain` returns the value your code explicitly `return`s\n\
-         - `console.log(...)` output is for debugging and is not surfaced as the tool result\n\
-         - If you omit `return`, the result is usually `null`\n\n\
+         You are connected to gatemini, an MCP gateway that aggregates {} tools from {} backends          into a single interface. You interact with it through 7 meta-tools — never call backend          tools directly as MCP tools.\n\n\
+         ## Discovery\n\n\
+         1. `search_tools(task_description=\"what you need\")` — brief results (~60 tokens each)\n\
+         2. `tool_info(tool_name=\"backend.tool_name\")` — parameter names (~200 tokens)\n\
+         3. `tool_info(tool_name=\"...\", detail=\"full\")` — complete input schema (only when ready to call)\n\
+         4. `list_tools_meta` — paginated browsing of all {} tools\n\n\
+         ## Execution\n\n\
+         Call backend tools via `call_tool_chain` with TypeScript:\n\
+         ```typescript\n\
+         const r = await exa.web_search_exa({{ query: \"...\" }});\n\
+         return r;\n\
+         ```\n\
+         You MUST explicitly `return` a value. `console.log()` output is not the result; omitting `return` yields `null`.\n\n\
+         For multi-tool loops, use `__backends` for dynamic dispatch:\n\
+         ```typescript\n\
+         for (const q of queries) {{\n\
+           results.push(await __backends[q.backend][q.tool](q.args));\n\
+         }}\n\
+         return results;\n\
+         ```\n\n\
          ## Naming Rules\n\n\
-         - Always use qualified names: `backend.tool_name` (e.g. `exa.web_search_exa`)\n\
-         - In call_tool_chain, hyphens become underscores: `my-backend` → `my_backend`, `codebase-retrieval` → `codebase_retrieval`\n\
-         - Bare names may not resolve if the owning backend is still starting\n",
+         - ALWAYS use qualified names: `backend.tool_name` (e.g. `exa.web_search_exa`)\n\
+         - Hyphens become underscores in sandbox: `my-backend` -> `my_backend`\n\
+         - `__backends` maps both original and sanitized names\n\
+         - Bare names may not resolve if the backend is still starting\n\n\
+         ## Resources\n\n\
+         - `@gatemini://tools` — compact index of all tools (~3k tokens)\n\
+         - `@gatemini://backends` — backend health status and tool counts\n\
+         - `@gatemini://tool/{{name}}` — full schema for one tool\n\
+         - `@gatemini://call_tool_chain` — execution contract and examples\n\n\
+         ## Prompts\n\n\
+         - `/mcp__gatemini__discover` — guided discovery walkthrough\n\
+         - `/mcp__gatemini__find_tool` — search + top match schema\n\
+         - `/mcp__gatemini__backend_status` — health dashboard\n\n\
+         ## Runtime Management\n\n\
+         - `register_manual` / `deregister_manual` — add/remove backends dynamically\n\
+         - `get_required_keys_for_tool` — check env vars a backend needs\n",
         registry.tool_count(),
         registry.backend_count(),
         registry.tool_count(),
