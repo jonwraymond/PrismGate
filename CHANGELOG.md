@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.1](https://github.com/jonwraymond/PrismGate/compare/v1.1.0...v1.1.1) (2026-03-10)
+
+
+### Bug Fixes
+
+* document that sandbox backends are not on globalThis ([#31](https://github.com/jonwraymond/PrismGate/issues/31)) ([b96960d](https://github.com/jonwraymond/PrismGate/commit/b96960d75bbec7450a189f1e85bdbda43e2360a0))
+
 ## [1.1.0](https://github.com/jonwraymond/PrismGate/compare/v1.0.5...v1.1.0) (2026-03-07)
 
 
