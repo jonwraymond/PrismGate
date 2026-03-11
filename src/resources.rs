@@ -421,7 +421,7 @@ fn overview_text(registry: &ToolRegistry) -> String {
          ## Discovery\n\n\
          1. `search_tools(task_description=\"what you need\")` — brief results (~60 tokens each)\n\
          2. `tool_info(tool_name=\"backend.tool_name\")` — parameter names (~200 tokens)\n\
-         3. `tool_info(tool_name=\"...\", detail=\"full\")` — complete input schema (only when ready to call)\n\
+         3. `tool_info(tool_name=\"...\", detail=\"full\")` — complete input schema (REQUIRED before first call — never guess parameter names)\n\
          4. `list_tools_meta` — paginated browsing of all {} tools\n\n\
          ## Execution\n\n\
          Call backend tools via `call_tool_chain` with TypeScript:\n\
