@@ -372,6 +372,7 @@ impl ServerHandler for GateminiServer {
                  - tool_info: Get tool details. detail=\"brief\" (default) or detail=\"full\" for complete input schema\n\
                  - list_tools_meta: Paginated tool list. cursor + page_size (default 50)\n\
                  - call_tool_chain: Execute TypeScript with tools as `backend.tool_name(args)`. Use __interfaces for introspection\n\n\
+                 IMPORTANT: Never guess parameter names. Always call tool_info(detail=\"full\") or __getToolInterface(\"backend.tool\") before first use of any tool.\n\n\
                  ## Resources (load on-demand via @ mention)\n\
                  - @gatemini://overview → gateway guide with live tool/backend counts\n\
                  - @gatemini://backends → all backends with status and tool counts\n\
