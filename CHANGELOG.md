@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.5](https://github.com/jonwraymond/PrismGate/compare/v1.2.4...v1.2.5) (2026-03-11)
+
+
+### Bug Fixes
+
+* add .trim_start_matches("return ") after existing stripping. ([05784b6](https://github.com/jonwraymond/PrismGate/commit/05784b688f1b4dfa4c13bd5032f5df70f207ae29))
+* strip bare return prefix in direct tool call parser ([#43](https://github.com/jonwraymond/PrismGate/issues/43)) ([05784b6](https://github.com/jonwraymond/PrismGate/commit/05784b688f1b4dfa4c13bd5032f5df70f207ae29))
+
 ## [1.2.4](https://github.com/jonwraymond/PrismGate/compare/v1.2.3...v1.2.4) (2026-03-11)
 
 
