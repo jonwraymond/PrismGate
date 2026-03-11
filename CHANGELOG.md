@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.4](https://github.com/jonwraymond/PrismGate/compare/v1.2.3...v1.2.4) (2026-03-11)
+
+
+### Bug Fixes
+
+* use ~/.prismgate/gatemini.yaml as default config path ([#41](https://github.com/jonwraymond/PrismGate/issues/41)) ([c051ae4](https://github.com/jonwraymond/PrismGate/commit/c051ae4deda7a4a7a3816b4e0eb031ad70c74c33))
+
 ## [1.2.3](https://github.com/jonwraymond/PrismGate/compare/v1.2.2...v1.2.3) (2026-03-11)
 
 
