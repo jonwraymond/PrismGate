@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.3](https://github.com/jonwraymond/PrismGate/compare/v1.2.2...v1.2.3) (2026-03-11)
+
+
+### Bug Fixes
+
+* emphasize schema lookup before first tool call in instructions ([#39](https://github.com/jonwraymond/PrismGate/issues/39)) ([72838f4](https://github.com/jonwraymond/PrismGate/commit/72838f4adea3437109c00b71f99d2df557b05122))
+
 ## [1.2.2](https://github.com/jonwraymond/PrismGate/compare/v1.2.1...v1.2.2) (2026-03-10)
 
 
