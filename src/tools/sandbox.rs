@@ -94,6 +94,7 @@ async fn try_direct_tool_call(
         .replace("return result;", "")
         .replace("return result", "")
         .trim()
+        .trim_start_matches("return ")
         .to_string();
 
     // Match: `name.tool({...})` or `name.tool({...});`
