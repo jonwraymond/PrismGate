@@ -1,4 +1,6 @@
 INSTALL_DIR := $(HOME)/.local/bin
+CONFIG_DIR := $(HOME)/.prismgate
+CONFIG_FILE := $(CONFIG_DIR)/gatemini.yaml
 BINARY := gatemini
 CARGO_TOML := Cargo.toml
 
@@ -18,6 +20,12 @@ install: build
 	/usr/bin/install -m 755 target/release/$(BINARY) $(INSTALL_DIR)/$(BINARY)
 	@if [ "$$(uname)" = "Darwin" ]; then \
 		codesign -fs - $(INSTALL_DIR)/$(BINARY) 2>/dev/null || true; \
+	fi
+	@# Seed starter config if none exists
+	@mkdir -p $(CONFIG_DIR)
+	@if [ ! -f $(CONFIG_FILE) ]; then \
+		cp config/starter.yaml $(CONFIG_FILE); \
+		echo "Created $(CONFIG_FILE) (starter config)"; \
 	fi
 	@echo "Installed $(INSTALL_DIR)/$(BINARY) v$(VERSION)"
 	@# Graceful hot restart: drain in-flight calls, proxies auto-reconnect

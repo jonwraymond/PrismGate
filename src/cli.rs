@@ -4,14 +4,14 @@ use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
 /// Standard prismgate config directory.
-/// Uses platform config dirs (Linux/macOS: ~/.config, Windows: %APPDATA%).
-/// Falls back to `.gatemini` in the current directory if home cannot be resolved.
+/// Defaults to `~/.prismgate`. Falls back to platform config dirs if home
+/// cannot be resolved.
 pub fn prismgate_home() -> PathBuf {
-    dirs::config_dir()
+    dirs::home_dir()
+        .map(|h| h.join(".prismgate"))
+        .or_else(dirs::config_dir)
         .or_else(dirs::data_dir)
-        .or_else(|| dirs::home_dir().map(|h| h.join(".gatemini")))
-        .unwrap_or_else(|| PathBuf::from(".gatemini"))
-        .join("gatemini")
+        .unwrap_or_else(|| PathBuf::from(".prismgate"))
 }
 
 /// Standard cache root for downloaded assets and generated caches.
@@ -34,7 +34,7 @@ pub fn prismgate_cache_home() -> PathBuf {
 )]
 pub struct Cli {
     /// Path to the configuration file.
-    #[arg(short, long, default_value_os_t = prismgate_home().join("config.yaml"))]
+    #[arg(short, long, default_value_os_t = prismgate_home().join("gatemini.yaml"))]
     pub config: PathBuf,
 
     /// Run in legacy direct stdio mode (1:1, no daemon).
