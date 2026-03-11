@@ -13,7 +13,7 @@ static DOTENV_ONCE: Once = Once::new();
 ///
 /// Loads from up to three locations (later files override earlier):
 /// 1. `~/.env` (home directory)
-/// 2. `prismgate_home()/.env` (e.g., `~/.config/gatemini/.env`)
+/// 2. `prismgate_home()/.env` (e.g., `~/.prismgate/.env`)
 /// 3. Sibling of the config file (e.g., `/path/to/config.yaml` → `/path/to/.env`)
 ///
 /// Paths are deduplicated via canonicalize to avoid double-loading when

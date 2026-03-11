@@ -1,0 +1,44 @@
+# Gatemini configuration
+# Add backends below. Run `gatemini` to start.
+# Full reference: https://github.com/jonwraymond/PrismGate
+
+log_level: info
+
+backends: {}
+  # Example stdio backend:
+  # my-server:
+  #   command: npx
+  #   args: ["-y", "my-mcp-server"]
+  #   timeout: 30s
+  #
+  # Example HTTP backend:
+  # my-api:
+  #   transport: streamable-http
+  #   url: "https://api.example.com/mcp"
+  #   timeout: 60s
+  #
+  # Example CLI adapter (no MCP server needed):
+  # my-cli:
+  #   transport: cli-adapter
+  #   timeout: 30s
+  #   tools:
+  #     my_tool:
+  #       description: "Run my CLI tool"
+  #       input_schema:
+  #         type: object
+  #         properties:
+  #           query: { type: string }
+  #         required: [query]
+  #       command: "my-cli --query '{{query}}'"
+  #       output: text
+
+health:
+  interval: 30s
+  timeout: 5s
+  failure_threshold: 3
+  max_restarts: 5
+  restart_window: 60s
+
+sandbox:
+  timeout: 30s
+  max_output_size: 200000
