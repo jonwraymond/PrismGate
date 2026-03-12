@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.3.0](https://github.com/jonwraymond/PrismGate/compare/v1.2.5...v1.3.0) (2026-03-12)
+
+
+### Features
+
+* add per-session dedicated backend instances with autoscaling pool ([bae33ac](https://github.com/jonwraymond/PrismGate/commit/bae33ac28fdd031e9de37599ad45b7278ae25919))
+* per-session dedicated backend instances with autoscaling pool ([d86444f](https://github.com/jonwraymond/PrismGate/commit/d86444f9455af2218ed20c1c6d0c1597c7edc459))
+
 ## [1.2.5](https://github.com/jonwraymond/PrismGate/compare/v1.2.4...v1.2.5) (2026-03-11)
 
 
