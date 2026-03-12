@@ -107,3 +107,11 @@ The daemon owns:
 - optional admin HTTP routes
 
 Clients never talk directly to backend MCP servers. They talk to Gatemini, and Gatemini forwards or orchestrates calls on their behalf.
+
+## Session identity
+
+Each proxy connection receives a unique session ID (monotonically increasing `u64` from an `AtomicU64` counter in the accept loop). This ID is threaded through `GateminiServer` → `call_tool_chain` → `BackendManager::call_tool` so that dedicated instance pools can route calls to the correct per-session backend instance. Direct mode uses session ID `0`.
+
+## Dedicated instance pools
+
+Backends configured with `instance_mode: dedicated` get a per-session instance pool instead of sharing a single backend. The pool pre-warms idle instances, lazily spawns on demand up to a configurable cap, and recycles instances on session disconnect. See [Backend Management](backend-management.md#dedicated-instance-mode) for details.

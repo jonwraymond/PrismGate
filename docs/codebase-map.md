@@ -85,6 +85,7 @@ Files:
 - `src/backend/cli_adapter.rs`: CLI templates exposed as tools without a dedicated MCP server
 - `src/backend/prerequisite.rs`: prerequisite process dedup and lifecycle
 - `src/backend/health.rs`: health checker, restart windows, internal circuit-breaker timing
+- `src/backend/pool.rs`: per-session dedicated instance pool for stateful backends
 - `src/backend/composite.rs`: virtual backend for composite tools
 - `src/backend/lenient_client.rs`: HTTP client wrapper for servers with imperfect content-type behavior
 

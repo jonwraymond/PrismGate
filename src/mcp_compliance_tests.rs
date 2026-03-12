@@ -38,6 +38,7 @@ mod tests {
             true,
             10,
             Arc::new(Semaphore::new(8)),
+            None,
         );
 
         let (client_io, server_io) = tokio::io::duplex(65536);
@@ -86,6 +87,7 @@ mod tests {
             true,
             10,
             Arc::new(Semaphore::new(8)),
+            None,
         );
 
         let (client_io, server_io) = tokio::io::duplex(65536);
@@ -516,7 +518,7 @@ mod tests {
 
         let args = serde_json::json!({"key": "value", "count": 42});
         manager
-            .call_tool("param-test", "echo_tool", Some(args.clone()))
+            .call_tool("param-test", "echo_tool", Some(args.clone()), None)
             .await
             .unwrap();
 

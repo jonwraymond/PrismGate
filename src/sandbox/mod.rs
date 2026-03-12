@@ -29,6 +29,7 @@ pub async fn execute(
     code: &str,
     timeout: Duration,
     max_heap_size: Option<usize>,
+    session_id: Option<u64>,
 ) -> Result<String> {
     let main_handle = tokio::runtime::Handle::current();
     let manager = Arc::clone(manager);
@@ -57,6 +58,7 @@ pub async fn execute(
                 &code,
                 timeout,
                 heap_size,
+                session_id,
             );
             let _ = tx.send(result);
         })?;
@@ -67,6 +69,7 @@ pub async fn execute(
 
 /// Run the sandboxed execution on a dedicated thread.
 #[cfg(feature = "sandbox")]
+#[allow(clippy::too_many_arguments)]
 fn run_sandbox(
     main_handle: tokio::runtime::Handle,
     manager: Arc<BackendManager>,
@@ -75,6 +78,7 @@ fn run_sandbox(
     code: &str,
     timeout: Duration,
     max_heap_size: usize,
+    session_id: Option<u64>,
 ) -> Result<String> {
     use rustyscript::{Module, Runtime, RuntimeOptions};
     use std::pin::Pin;
@@ -132,9 +136,10 @@ fn run_sandbox(
                     let args_for_retry = arguments.clone();
                     let bn = backend_name.clone();
                     let tn = tool_name.clone();
+                    let sid = session_id;
                     let result = handle
                         .spawn(async move {
-                            mgr.call_tool(&bn, &tn, arguments).await
+                            mgr.call_tool(&bn, &tn, arguments, sid).await
                         })
                         .await
                         .map_err(|e| {
@@ -167,9 +172,10 @@ fn run_sandbox(
                                     let retry_mgr = mgr_for_restart;
                                     let retry_bn = backend_name.clone();
                                     let retry_tn = tool_name.clone();
+                                    let retry_sid = session_id;
                                     let retry_result = handle
                                         .spawn(async move {
-                                            retry_mgr.call_tool(&retry_bn, &retry_tn, args_for_retry).await
+                                            retry_mgr.call_tool(&retry_bn, &retry_tn, args_for_retry, retry_sid).await
                                         })
                                         .await
                                         .map_err(|e| rustyscript::Error::Runtime(format!("retry join: {e}")))?;

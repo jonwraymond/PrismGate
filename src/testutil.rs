@@ -323,7 +323,7 @@ mod tests {
         // Call via manager
         let args = serde_json::json!({"key": "value"});
         let result = manager
-            .call_tool("mock-backend", "echo_tool", Some(args.clone()))
+            .call_tool("mock-backend", "echo_tool", Some(args.clone()), None)
             .await
             .unwrap();
         assert_eq!(result, args);
@@ -349,9 +349,14 @@ mod tests {
         for i in 0..5u32 {
             let mgr = Arc::clone(&manager);
             handles.push(tokio::spawn(async move {
-                mgr.call_tool("sem-test", "slow_tool", Some(serde_json::json!({"id": i})))
-                    .await
-                    .unwrap();
+                mgr.call_tool(
+                    "sem-test",
+                    "slow_tool",
+                    Some(serde_json::json!({"id": i})),
+                    None,
+                )
+                .await
+                .unwrap();
             }));
         }
 
@@ -389,7 +394,7 @@ mod tests {
         // Fire first call (holds the permit)
         let mgr1 = Arc::clone(&manager);
         let _first = tokio::spawn(async move {
-            mgr1.call_tool("timeout-test", "slow_tool", None)
+            mgr1.call_tool("timeout-test", "slow_tool", None, None)
                 .await
                 .unwrap();
         });
@@ -398,7 +403,9 @@ mod tests {
         tokio::time::sleep(Duration::from_millis(50)).await;
 
         // Second call should timeout waiting for permit
-        let result = manager.call_tool("timeout-test", "echo_tool", None).await;
+        let result = manager
+            .call_tool("timeout-test", "echo_tool", None, None)
+            .await;
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
         assert!(
@@ -423,6 +430,7 @@ mod tests {
                 "defaults-test",
                 "echo_tool",
                 Some(serde_json::json!({"x": 1})),
+                None,
             )
             .await;
         assert!(result.is_ok());
@@ -467,7 +475,7 @@ mod tests {
         for _ in 0..10 {
             let mgr = Arc::clone(&manager);
             handles.push(tokio::spawn(async move {
-                mgr.call_tool("unlimited-test", "slow_tool", None)
+                mgr.call_tool("unlimited-test", "slow_tool", None, None)
                     .await
                     .unwrap();
             }));
@@ -491,7 +499,7 @@ mod tests {
 
         // Call that errors — should still release the permit
         let result = manager
-            .call_tool("error-release-test", "error_tool", None)
+            .call_tool("error-release-test", "error_tool", None, None)
             .await;
         assert!(result.is_err());
 
@@ -501,6 +509,7 @@ mod tests {
                 "error-release-test",
                 "echo_tool",
                 Some(serde_json::json!({"ok": true})),
+                None,
             )
             .await;
         assert!(result.is_ok());
@@ -560,6 +569,7 @@ mod tests {
             None,
             None,
             &semaphore,
+            None,
         )
         .await;
         assert!(
@@ -584,6 +594,7 @@ mod tests {
             Some(500), // 500ms timeout
             None,
             &semaphore,
+            None,
         )
         .await;
         assert!(result.is_err());
@@ -624,6 +635,7 @@ mod tests {
                 "timeout-release-test",
                 "echo_tool",
                 Some(serde_json::json!({"first": true})),
+                None,
             )
             .await;
         assert!(result.is_ok());
@@ -634,6 +646,7 @@ mod tests {
                 "timeout-release-test",
                 "echo_tool",
                 Some(serde_json::json!({"second": true})),
+                None,
             )
             .await;
         assert!(result.is_ok());
