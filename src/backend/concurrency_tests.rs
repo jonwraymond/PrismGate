@@ -140,7 +140,9 @@ mod tests {
         );
 
         // New calls should fail immediately (Unhealthy state)
-        let result = manager.call_tool("state-test", "echo_tool", None, None).await;
+        let result = manager
+            .call_tool("state-test", "echo_tool", None, None)
+            .await;
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("not available"));
     }
@@ -365,18 +367,33 @@ mod tests {
 
         // First two calls should succeed
         let r1 = manager
-            .call_tool("rate-test", "echo_tool", Some(serde_json::json!({"n": 1})), None)
+            .call_tool(
+                "rate-test",
+                "echo_tool",
+                Some(serde_json::json!({"n": 1})),
+                None,
+            )
             .await;
         assert!(r1.is_ok(), "call 1 should succeed");
 
         let r2 = manager
-            .call_tool("rate-test", "echo_tool", Some(serde_json::json!({"n": 2})), None)
+            .call_tool(
+                "rate-test",
+                "echo_tool",
+                Some(serde_json::json!({"n": 2})),
+                None,
+            )
             .await;
         assert!(r2.is_ok(), "call 2 should succeed");
 
         // Third call should fail — rate limit exceeded
         let r3 = manager
-            .call_tool("rate-test", "echo_tool", Some(serde_json::json!({"n": 3})), None)
+            .call_tool(
+                "rate-test",
+                "echo_tool",
+                Some(serde_json::json!({"n": 3})),
+                None,
+            )
             .await;
         assert!(r3.is_err(), "call 3 should be rate limited");
         let err = r3.unwrap_err().to_string();

@@ -5,8 +5,8 @@
 //! lazily spawned on demand, and recycled (stop + respawn) on session disconnect.
 
 use std::collections::{HashMap, VecDeque};
-use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Duration;
 
 use anyhow::Result;
@@ -107,8 +107,7 @@ impl InstancePool {
 
         let backend: Arc<dyn Backend> = match self.config.transport {
             Transport::Stdio => {
-                let b =
-                    super::stdio::StdioBackend::new(instance_name.clone(), self.config.clone());
+                let b = super::stdio::StdioBackend::new(instance_name.clone(), self.config.clone());
                 b.start().await?;
                 Arc::new(b)
             }
@@ -420,8 +419,8 @@ mod tests {
     use crate::registry::ToolEntry;
     use async_trait::async_trait;
     use serde_json::Value;
-    use std::sync::atomic::{AtomicU32, AtomicU8, Ordering};
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicU8, AtomicU32, Ordering};
 
     /// Mock backend for pool tests.
     struct MockBackend {

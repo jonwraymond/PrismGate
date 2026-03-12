@@ -349,9 +349,14 @@ mod tests {
         for i in 0..5u32 {
             let mgr = Arc::clone(&manager);
             handles.push(tokio::spawn(async move {
-                mgr.call_tool("sem-test", "slow_tool", Some(serde_json::json!({"id": i})), None)
-                    .await
-                    .unwrap();
+                mgr.call_tool(
+                    "sem-test",
+                    "slow_tool",
+                    Some(serde_json::json!({"id": i})),
+                    None,
+                )
+                .await
+                .unwrap();
             }));
         }
 
@@ -398,7 +403,9 @@ mod tests {
         tokio::time::sleep(Duration::from_millis(50)).await;
 
         // Second call should timeout waiting for permit
-        let result = manager.call_tool("timeout-test", "echo_tool", None, None).await;
+        let result = manager
+            .call_tool("timeout-test", "echo_tool", None, None)
+            .await;
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
         assert!(

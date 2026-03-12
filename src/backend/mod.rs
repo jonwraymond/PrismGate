@@ -375,13 +375,11 @@ impl BackendManager {
 
         // Create dedicated instance pool if configured
         if is_dedicated {
-            let pool = pool::InstancePool::new(
-                name.to_string(),
-                config.clone(),
-                Arc::clone(registry),
-            )
-            .await?;
-            self.dedicated_pools.insert(name.to_string(), Arc::new(pool));
+            let pool =
+                pool::InstancePool::new(name.to_string(), config.clone(), Arc::clone(registry))
+                    .await?;
+            self.dedicated_pools
+                .insert(name.to_string(), Arc::new(pool));
             info!(backend = %name, "dedicated instance pool active");
         }
 
