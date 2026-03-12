@@ -158,6 +158,8 @@ pub async fn handle_register(
             .get("health_check")
             .and_then(|v| v.as_str())
             .map(String::from),
+        instance_mode: Default::default(),
+        pool: Default::default(),
     };
 
     let tool_count = manager.add_backend(&name, config, registry).await?;

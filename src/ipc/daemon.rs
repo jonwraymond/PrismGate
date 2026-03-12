@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 
 use anyhow::Result;
 #[cfg(unix)]
@@ -113,6 +113,7 @@ pub async fn run(gw: InitializedGateway, bound: BoundSocket) -> Result<()> {
     let sandbox_semaphore = Arc::new(tokio::sync::Semaphore::new(
         gw.config.sandbox.max_concurrent_sandboxes as usize,
     ));
+    let session_id_gen = Arc::new(AtomicU64::new(1));
     let shutdown_notify = Arc::clone(&gw.shutdown_notify);
 
     // Track active client tasks for graceful shutdown.
@@ -147,7 +148,8 @@ pub async fn run(gw: InitializedGateway, bound: BoundSocket) -> Result<()> {
                         Ok((stream, _addr)) => {
                             let sessions = Arc::clone(&active_sessions);
                             sessions.fetch_add(1, Ordering::SeqCst);
-                            info!(active = sessions.load(Ordering::SeqCst), "client connected");
+                            let session_id = session_id_gen.fetch_add(1, Ordering::Relaxed);
+                            info!(active = sessions.load(Ordering::SeqCst), session = session_id, "client connected");
 
                             let server = GateminiServer::new(
                                 Arc::clone(&registry),
@@ -157,24 +159,28 @@ pub async fn run(gw: InitializedGateway, bound: BoundSocket) -> Result<()> {
                                 allow_runtime_registration,
                                 max_dynamic_backends,
                                 Arc::clone(&sandbox_semaphore),
+                                Some(session_id),
                             );
 
                             let notify = Arc::clone(&session_change);
+                            let mgr_for_release = Arc::clone(&backend_manager);
                             client_tracker.spawn(async move {
                                 use rmcp::ServiceExt;
                                 let (read, write) = tokio::io::split(stream);
                                 match server.serve((read, write)).await {
                                     Ok(service) => {
                                         if let Err(e) = service.waiting().await {
-                                            warn!(error = %e, "client session ended with error");
+                                            warn!(error = %e, session = session_id, "client session ended with error");
                                         }
                                     }
                                     Err(e) => {
-                                        error!(error = %e, "failed to start client session");
+                                        error!(error = %e, session = session_id, "failed to start client session");
                                     }
                                 }
+                                // Release dedicated pool instances for this session
+                                mgr_for_release.release_session(session_id).await;
                                 let count = sessions.fetch_sub(1, Ordering::SeqCst) - 1;
-                                info!(active = count, "client disconnected");
+                                info!(active = count, session = session_id, "client disconnected");
                                 notify.notify_one();
                             });
 

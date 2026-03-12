@@ -110,10 +110,13 @@ pub struct GateminiServer {
     pub max_dynamic_backends: usize,
     /// Limits concurrent V8 sandbox executions to prevent OOM.
     pub sandbox_semaphore: Arc<Semaphore>,
+    /// Session ID for dedicated instance pool routing. None for direct mode legacy.
+    pub session_id: Option<u64>,
     tool_router: ToolRouter<Self>,
 }
 
 impl GateminiServer {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         registry: Arc<ToolRegistry>,
         backend_manager: Arc<BackendManager>,
@@ -122,6 +125,7 @@ impl GateminiServer {
         allow_runtime_registration: bool,
         max_dynamic_backends: usize,
         sandbox_semaphore: Arc<Semaphore>,
+        session_id: Option<u64>,
     ) -> Self {
         Self {
             registry,
@@ -131,6 +135,7 @@ impl GateminiServer {
             allow_runtime_registration,
             max_dynamic_backends,
             sandbox_semaphore,
+            session_id,
             tool_router: Self::tool_router(),
         }
     }
@@ -334,6 +339,7 @@ impl GateminiServer {
             params.timeout,
             params.max_output_size,
             &self.sandbox_semaphore,
+            self.session_id,
         )
         .await;
 

@@ -138,7 +138,7 @@ mod tests {
 
         for (backend, tool_name) in &backends_tested {
             match manager
-                .call_tool(backend, tool_name, Some(serde_json::json!({})))
+                .call_tool(backend, tool_name, Some(serde_json::json!({})), None)
                 .await
             {
                 Ok(_) => {

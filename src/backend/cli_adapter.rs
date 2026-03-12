@@ -785,6 +785,8 @@ mod tests {
             tools: None,
             adapter_file: None,
             health_check: None,
+            instance_mode: Default::default(),
+            pool: Default::default(),
         };
 
         let result = CliAdapterBackend::new("empty".to_string(), config);

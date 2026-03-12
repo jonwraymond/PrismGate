@@ -99,6 +99,41 @@ backends:
 
 The adapter file path supports `~` expansion in the CLI adapter loader.
 
+## Dedicated instance mode
+
+By default, all proxy sessions share a single backend instance (`instance_mode: shared`). For stateful backends like `sequential-thinking` that maintain per-session state, this causes state bleed across sessions.
+
+Setting `instance_mode: dedicated` gives each proxy session its own isolated backend instance from an autoscaling pool:
+
+```yaml
+backends:
+  sequential-thinking:
+    command: mcp-server-sequential-thinking
+    timeout: 120s
+    instance_mode: dedicated
+    pool:
+      min_idle: 1
+      max_instances: 10
+      acquire_timeout: 30s
+```
+
+Pool behavior:
+
+- pre-warms `min_idle` instances at startup (default: 1)
+- lazily spawns new instances on demand up to `max_instances` (default: 20)
+- on session disconnect, the assigned instance is stopped and a fresh one is spawned to maintain the idle pool
+- if all instances are busy, new sessions wait up to `acquire_timeout` (default: 30s) before failing
+
+Only `stdio` and `cli-adapter` transports support dedicated mode. HTTP backends ignore the setting.
+
+The pool implementation lives in `src/backend/pool.rs`. The health checker calls `restart_pool_primary()` instead of `restart_backend()` for dedicated backends.
+
+| Setting | Default |
+|---------|---------|
+| `pool.min_idle` | `1` |
+| `pool.max_instances` | `20` |
+| `pool.acquire_timeout` | `30s` |
+
 ## Concurrency, retries, and fallback
 
 Per-backend limits come from config:

@@ -72,6 +72,17 @@ Prompts:
 | `src/sandbox/` | V8 execution bridge |
 | `src/secrets/` | secret providers and resolver |
 
+## Dedicated instance mode
+
+- `instance_mode: dedicated` gives each proxy session its own backend instance from a pool
+- only applies to `stdio` and `cli-adapter` transports; HTTP backends ignore it
+- pool pre-warms `min_idle` instances (default 1), lazy-spawns on demand up to `max_instances` (default 20)
+- instances are recycled (stop + respawn) on session disconnect for clean state
+- session_id is threaded from daemon accept loop through GateminiServer → sandbox → BackendManager
+- direct mode uses session_id 0
+- pool implementation lives in `src/backend/pool.rs`
+- health checker calls `restart_pool_primary()` instead of `restart_backend()` for dedicated backends
+
 ## Important implementation notes
 
 - transport names are `stdio`, `streamable-http`, and `cli-adapter`

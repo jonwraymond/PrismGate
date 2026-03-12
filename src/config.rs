@@ -263,6 +263,16 @@ pub struct BackendConfig {
     /// Must exit with code 0 to indicate healthy.
     #[serde(default)]
     pub health_check: Option<String>,
+
+    /// Instance mode: shared (default) or dedicated (per-session isolated instances).
+    /// Dedicated mode gives each proxy session its own backend instance from a pool.
+    /// Only applies to stdio and cli-adapter transports; HTTP backends ignore it.
+    #[serde(default)]
+    pub instance_mode: InstanceMode,
+
+    /// Pool configuration for dedicated instance mode.
+    #[serde(default)]
+    pub pool: PoolConfig,
 }
 
 /// Per-backend retry configuration for transient failures (Starting state).
@@ -340,6 +350,39 @@ pub enum Transport {
     Stdio,
     StreamableHttp,
     CliAdapter,
+}
+
+/// Instance mode: shared (default) or dedicated (per-session isolated instances).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum InstanceMode {
+    #[default]
+    Shared,
+    Dedicated,
+}
+
+/// Pool configuration for dedicated instance mode.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct PoolConfig {
+    /// Minimum idle instances to keep pre-warmed. Default: 1.
+    #[serde(default = "default_pool_min_idle")]
+    pub min_idle: u32,
+    /// Maximum total instances across all sessions. Default: 20.
+    #[serde(default = "default_pool_max_instances")]
+    pub max_instances: u32,
+    /// Timeout waiting for an available instance. Default: 30s.
+    #[serde(default = "default_pool_acquire_timeout", with = "humantime_duration")]
+    pub acquire_timeout: Duration,
+}
+
+impl Default for PoolConfig {
+    fn default() -> Self {
+        Self {
+            min_idle: default_pool_min_idle(),
+            max_instances: default_pool_max_instances(),
+            acquire_timeout: default_pool_acquire_timeout(),
+        }
+    }
 }
 
 /// Output format for CLI adapter tool results.
@@ -572,6 +615,15 @@ fn default_recovery_multiplier() -> u32 {
 }
 fn default_drain_timeout() -> Duration {
     Duration::from_secs(10)
+}
+fn default_pool_min_idle() -> u32 {
+    1
+}
+fn default_pool_max_instances() -> u32 {
+    20
+}
+fn default_pool_acquire_timeout() -> Duration {
+    Duration::from_secs(30)
 }
 
 // --- Default impls ---
@@ -864,6 +916,21 @@ impl Config {
                         );
                     }
                 }
+            }
+
+            if backend.instance_mode == InstanceMode::Dedicated
+                && backend.transport == Transport::StreamableHttp
+            {
+                tracing::warn!(
+                    backend = %name,
+                    "instance_mode: dedicated is not supported for streamable-http, forcing shared"
+                );
+            }
+
+            if backend.instance_mode == InstanceMode::Dedicated && backend.pool.max_instances == 0 {
+                anyhow::bail!(
+                    "backend '{name}': pool.max_instances must be >= 1 for dedicated instance mode"
+                );
             }
 
             if let Some(max) = backend.max_concurrent_calls

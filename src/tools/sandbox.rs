@@ -14,7 +14,7 @@ use crate::registry::ToolRegistry;
 /// 2. If that fails and the sandbox feature is enabled, acquire sandbox semaphore
 ///    and execute in the V8 sandbox
 /// 3. If sandbox is not available, return an error
-#[allow(unused_variables)]
+#[allow(unused_variables, clippy::too_many_arguments)]
 pub async fn handle_call_tool_chain(
     registry: &Arc<ToolRegistry>,
     manager: &Arc<BackendManager>,
@@ -22,12 +22,13 @@ pub async fn handle_call_tool_chain(
     timeout: Option<u64>,
     max_output_size: Option<usize>,
     sandbox_semaphore: &Semaphore,
+    session_id: Option<u64>,
 ) -> Result<String> {
     let max_output = max_output_size.unwrap_or(200_000);
 
     // Try to parse as a direct tool call (fast path — no V8, no semaphore needed).
     // Pattern: `await manual_name.tool_name({...})` or JSON with tool_name + arguments
-    if let Some(result) = try_direct_tool_call(registry, manager, code).await {
+    if let Some(result) = try_direct_tool_call(registry, manager, code, session_id).await {
         return result.map(|v| truncate_output(&v, max_output));
     }
 
@@ -53,6 +54,7 @@ pub async fn handle_call_tool_chain(
             code,
             timeout_dur,
             None, // use default V8 heap size (50MB)
+            session_id,
         )
         .await?;
         return Ok(truncate_output(&result, max_output));
@@ -75,6 +77,7 @@ async fn try_direct_tool_call(
     registry: &Arc<ToolRegistry>,
     manager: &Arc<BackendManager>,
     code: &str,
+    session_id: Option<u64>,
 ) -> Option<Result<String>> {
     let code = code.trim();
 
@@ -83,7 +86,9 @@ async fn try_direct_tool_call(
         && let Some(tool) = parsed.get("tool").and_then(|v| v.as_str())
     {
         let arguments = parsed.get("arguments").cloned();
-        return Some(call_tool_by_dotted_name(registry, manager, tool, arguments).await);
+        return Some(
+            call_tool_by_dotted_name(registry, manager, tool, arguments, session_id).await,
+        );
     }
 
     // Try to extract `backend.tool(args)` pattern from simple code
@@ -118,7 +123,9 @@ async fn try_direct_tool_call(
 
             let dotted = format!("{}.{}", backend_name, tool_name);
             debug!(pattern = %dotted, "parsed direct tool call from code");
-            return Some(call_tool_by_dotted_name(registry, manager, &dotted, arguments).await);
+            return Some(
+                call_tool_by_dotted_name(registry, manager, &dotted, arguments, session_id).await,
+            );
         }
     }
 
@@ -135,6 +142,7 @@ async fn call_tool_by_dotted_name(
     manager: &Arc<BackendManager>,
     dotted_name: &str,
     arguments: Option<Value>,
+    session_id: Option<u64>,
 ) -> Result<String> {
     // Resolve: try looking up the full dotted name first (handles both namespaced and bare)
     let entry = if let Some(e) = registry.get_by_name(dotted_name) {
@@ -170,6 +178,7 @@ async fn call_tool_by_dotted_name(
             &entry.original_name,
             arguments.clone(),
             registry,
+            session_id,
         )
         .await;
 
@@ -183,7 +192,7 @@ async fn call_tool_by_dotted_name(
                 .await
                 .with_context(|| format!("on-demand restart of '{}' failed", entry.backend_name))?;
             manager
-                .call_tool(&entry.backend_name, call_name, arguments)
+                .call_tool(&entry.backend_name, call_name, arguments, session_id)
                 .await
                 .with_context(|| {
                     format!(

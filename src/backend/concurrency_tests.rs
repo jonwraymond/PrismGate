@@ -28,7 +28,7 @@ mod tests {
             handles.push(tokio::spawn(async move {
                 let args = serde_json::json!({"id": i});
                 let result = mgr
-                    .call_tool("crosstalk-test", "echo_tool", Some(args))
+                    .call_tool("crosstalk-test", "echo_tool", Some(args), None)
                     .await
                     .unwrap();
                 // Verify response matches request
@@ -76,7 +76,7 @@ mod tests {
                 handles.push(tokio::spawn(async move {
                     let args = serde_json::json!({"backend": i, "call": j});
                     let result = mgr
-                        .call_tool(&backend_name, "echo_tool", Some(args))
+                        .call_tool(&backend_name, "echo_tool", Some(args), None)
                         .await
                         .unwrap();
                     assert_eq!(result["backend"], i);
@@ -116,7 +116,7 @@ mod tests {
         for _ in 0..10 {
             let mgr = Arc::clone(&manager);
             handles.push(tokio::spawn(async move {
-                mgr.call_tool("state-test", "slow_tool", None).await
+                mgr.call_tool("state-test", "slow_tool", None, None).await
             }));
         }
 
@@ -140,7 +140,7 @@ mod tests {
         );
 
         // New calls should fail immediately (Unhealthy state)
-        let result = manager.call_tool("state-test", "echo_tool", None).await;
+        let result = manager.call_tool("state-test", "echo_tool", None, None).await;
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("not available"));
     }
@@ -181,6 +181,8 @@ mod tests {
                     tools: None,
                     adapter_file: None,
                     health_check: None,
+                    instance_mode: Default::default(),
+                    pool: Default::default(),
                 },
             );
         }
@@ -190,7 +192,7 @@ mod tests {
         for _ in 0..5 {
             let mgr = Arc::clone(&manager);
             handles.push(tokio::spawn(async move {
-                mgr.call_tool("restart-test", "slow_tool", None).await
+                mgr.call_tool("restart-test", "slow_tool", None, None).await
             }));
         }
 
@@ -223,7 +225,7 @@ mod tests {
         for _ in 0..30 {
             let mgr = Arc::clone(&manager);
             handles.push(tokio::spawn(async move {
-                mgr.call_tool("backpressure-test", "slow_tool", None)
+                mgr.call_tool("backpressure-test", "slow_tool", None, None)
                     .await
                     .unwrap();
             }));
@@ -268,7 +270,7 @@ mod tests {
             let mgr = Arc::clone(&manager);
             handles.push(tokio::spawn(async move {
                 // These may succeed or error depending on timing
-                let _ = mgr.call_tool("drain-test", "slow_tool", None).await;
+                let _ = mgr.call_tool("drain-test", "slow_tool", None, None).await;
             }));
         }
 
@@ -312,7 +314,7 @@ mod tests {
         for _ in 0..5 {
             let mgr = Arc::clone(&manager);
             handles.push(tokio::spawn(async move {
-                let _ = mgr.call_tool("rapid-test", "slow_tool", None).await;
+                let _ = mgr.call_tool("rapid-test", "slow_tool", None, None).await;
             }));
         }
 
@@ -340,6 +342,7 @@ mod tests {
                 "rapid-test",
                 "echo_tool",
                 Some(serde_json::json!({"new": true})),
+                None,
             )
             .await;
         assert!(result.is_ok());
@@ -362,18 +365,18 @@ mod tests {
 
         // First two calls should succeed
         let r1 = manager
-            .call_tool("rate-test", "echo_tool", Some(serde_json::json!({"n": 1})))
+            .call_tool("rate-test", "echo_tool", Some(serde_json::json!({"n": 1})), None)
             .await;
         assert!(r1.is_ok(), "call 1 should succeed");
 
         let r2 = manager
-            .call_tool("rate-test", "echo_tool", Some(serde_json::json!({"n": 2})))
+            .call_tool("rate-test", "echo_tool", Some(serde_json::json!({"n": 2})), None)
             .await;
         assert!(r2.is_ok(), "call 2 should succeed");
 
         // Third call should fail — rate limit exceeded
         let r3 = manager
-            .call_tool("rate-test", "echo_tool", Some(serde_json::json!({"n": 3})))
+            .call_tool("rate-test", "echo_tool", Some(serde_json::json!({"n": 3})), None)
             .await;
         assert!(r3.is_err(), "call 3 should be rate limited");
         let err = r3.unwrap_err().to_string();
@@ -421,6 +424,7 @@ mod tests {
                 "replenish-test",
                 "echo_tool",
                 Some(serde_json::json!({"n": 1})),
+                None,
             )
             .await;
         let _ = manager
@@ -428,6 +432,7 @@ mod tests {
                 "replenish-test",
                 "echo_tool",
                 Some(serde_json::json!({"n": 2})),
+                None,
             )
             .await;
 
@@ -437,6 +442,7 @@ mod tests {
                 "replenish-test",
                 "echo_tool",
                 Some(serde_json::json!({"n": 3})),
+                None,
             )
             .await;
         assert!(r.is_err(), "should be rate limited before replenishment");
@@ -450,6 +456,7 @@ mod tests {
                 "replenish-test",
                 "echo_tool",
                 Some(serde_json::json!({"n": 4})),
+                None,
             )
             .await;
         assert!(r.is_ok(), "should succeed after replenishment");

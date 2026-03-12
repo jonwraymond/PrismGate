@@ -48,6 +48,10 @@ Transport defaults:
 - backend transport defaults to `stdio`
 - backend timeout defaults to `30s`
 - retry defaults to 3 attempts with `500ms` initial delay, `2s` max delay, multiplier `2.0`
+- `instance_mode` defaults to `shared`
+- `pool.min_idle` defaults to `1`
+- `pool.max_instances` defaults to `20`
+- `pool.acquire_timeout` defaults to `30s`
 
 ## Supported transports
 

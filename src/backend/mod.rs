@@ -5,6 +5,7 @@ pub mod composite;
 pub mod health;
 pub mod http;
 pub mod lenient_client;
+pub mod pool;
 pub mod prerequisite;
 pub mod stdio;
 
@@ -24,7 +25,7 @@ use std::time::Duration;
 use tokio::sync::{RwLock, Semaphore};
 use tracing::{debug, error, info, warn};
 
-use crate::config::{BackendConfig, Config, Transport};
+use crate::config::{BackendConfig, Config, InstanceMode, Transport};
 use crate::registry::{ToolEntry, ToolRegistry};
 
 /// Default max concurrent calls for stdio backends.
@@ -223,6 +224,8 @@ pub struct BackendManager {
     pub drain_timeout: Duration,
     /// Optional call tracker for usage stats, latency, and recent calls.
     tracker: Option<Arc<crate::tracker::CallTracker>>,
+    /// Per-backend dedicated instance pools (instance_mode: dedicated).
+    dedicated_pools: DashMap<String, Arc<pool::InstancePool>>,
 }
 
 impl BackendManager {
@@ -240,6 +243,7 @@ impl BackendManager {
             prerequisite_pids: DashMap::new(),
             drain_timeout: Duration::from_secs(10),
             tracker: None,
+            dedicated_pools: DashMap::new(),
         })
     }
 
@@ -261,6 +265,7 @@ impl BackendManager {
             prerequisite_pids: DashMap::new(),
             drain_timeout: health_config.drain_timeout,
             tracker,
+            dedicated_pools: DashMap::new(),
         })
     }
 
@@ -331,6 +336,8 @@ impl BackendManager {
         }
 
         let is_stdio = config.transport == Transport::Stdio;
+        let is_dedicated = config.instance_mode == InstanceMode::Dedicated
+            && config.transport != Transport::StreamableHttp;
 
         let backend: Arc<dyn Backend> = match config.transport {
             Transport::Stdio => {
@@ -363,8 +370,20 @@ impl BackendManager {
         let namespace = config.namespace.as_deref().unwrap_or(name);
         registry.register_backend_tools_namespaced(name, namespace, tools);
 
-        // Store backend
+        // Store backend (shared path or primary instance for health checks)
         self.backends.insert(name.to_string(), Arc::clone(&backend));
+
+        // Create dedicated instance pool if configured
+        if is_dedicated {
+            let pool = pool::InstancePool::new(
+                name.to_string(),
+                config.clone(),
+                Arc::clone(registry),
+            )
+            .await?;
+            self.dedicated_pools.insert(name.to_string(), Arc::new(pool));
+            info!(backend = %name, "dedicated instance pool active");
+        }
 
         // Create per-backend call semaphore (0 = unlimited)
         let max_calls = config
@@ -485,6 +504,9 @@ impl BackendManager {
         if let Some((_, handle)) = self.rate_limiter_handles.remove(name) {
             handle.abort();
         }
+        if let Some((_, pool)) = self.dedicated_pools.remove(name) {
+            pool.stop_all().await;
+        }
         self.dynamic_backends.write().await.remove(name);
 
         // Stop managed prerequisite if tracked
@@ -510,8 +532,26 @@ impl BackendManager {
         backend_name: &str,
         tool_name: &str,
         arguments: Option<Value>,
+        session_id: Option<u64>,
     ) -> Result<Value> {
         let _guard = CallGuard::new(&self.in_flight_calls);
+
+        // Dedicated pool path: route to session-specific instance
+        if let Some(pool) = self.dedicated_pools.get(backend_name) {
+            let sid = session_id.ok_or_else(|| {
+                anyhow::anyhow!(
+                    "backend '{}' requires dedicated instance but no session_id provided",
+                    backend_name
+                )
+            })?;
+            let instance = pool.acquire(sid).await?;
+            let start = std::time::Instant::now();
+            let result = instance.call_tool(tool_name, arguments).await;
+            if let Some(ref tracker) = self.tracker {
+                tracker.record(tool_name, backend_name, start.elapsed(), result.is_ok());
+            }
+            return result;
+        }
 
         // Check rate limiter (token bucket) before acquiring concurrency semaphore.
         // `forget()` permanently consumes the permit (token), so the replenishment
@@ -674,9 +714,10 @@ impl BackendManager {
         original_name: &str,
         arguments: Option<Value>,
         registry: &crate::registry::ToolRegistry,
+        session_id: Option<u64>,
     ) -> Result<Value> {
         let result = self
-            .call_tool(backend_name, tool_name, arguments.clone())
+            .call_tool(backend_name, tool_name, arguments.clone(), session_id)
             .await;
         if result.is_ok() {
             return result;
@@ -715,7 +756,7 @@ impl BackendManager {
                     "trying fallback backend"
                 );
                 match self
-                    .call_tool(fallback_name, original_name, arguments.clone())
+                    .call_tool(fallback_name, original_name, arguments.clone(), session_id)
                     .await
                 {
                     Ok(result) => {
@@ -740,6 +781,34 @@ impl BackendManager {
 
         // All fallbacks exhausted — return original error
         Err(err)
+    }
+
+    /// Release all dedicated pool instances assigned to a session.
+    /// Called when a proxy client disconnects.
+    pub async fn release_session(&self, session_id: u64) {
+        for entry in self.dedicated_pools.iter() {
+            if let Err(e) = entry.value().release(session_id).await {
+                warn!(backend = %entry.key(), error = %e, "pool release failed");
+            }
+        }
+    }
+
+    /// Check if a backend uses dedicated instance mode.
+    pub fn is_dedicated(&self, name: &str) -> bool {
+        self.dedicated_pools.contains_key(name)
+    }
+
+    /// Restart the primary instance in a dedicated pool.
+    pub async fn restart_pool_primary(
+        &self,
+        name: &str,
+        registry: &Arc<ToolRegistry>,
+    ) -> Result<usize> {
+        let pool = self
+            .dedicated_pools
+            .get(name)
+            .ok_or_else(|| anyhow::anyhow!("no dedicated pool for backend '{name}'"))?;
+        pool.restart_primary(registry).await
     }
 
     /// Register a pre-built backend directly (e.g. CompositeBackend).
@@ -827,6 +896,12 @@ impl BackendManager {
         }
 
         while join_set.join_next().await.is_some() {}
+
+        // Stop all dedicated instance pools
+        for entry in self.dedicated_pools.iter() {
+            entry.value().stop_all().await;
+        }
+        self.dedicated_pools.clear();
 
         // Stop managed prerequisite processes
         for entry in self.prerequisite_pids.iter() {

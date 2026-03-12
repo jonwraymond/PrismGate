@@ -279,12 +279,20 @@ pub async fn run_health_checker(
                                 health.restart_window_start = Some(Instant::now());
                             }
 
-                            match timeout(
-                                config.restart_timeout,
-                                manager.restart_backend(&status.name, &registry),
-                            )
-                            .await
-                            {
+                            let restart_result = if manager.is_dedicated(&status.name) {
+                                timeout(
+                                    config.restart_timeout,
+                                    manager.restart_pool_primary(&status.name, &registry),
+                                )
+                                .await
+                            } else {
+                                timeout(
+                                    config.restart_timeout,
+                                    manager.restart_backend(&status.name, &registry),
+                                )
+                                .await
+                            };
+                            match restart_result {
                                 Ok(Ok(tool_count)) => {
                                     info!(
                                         backend = %status.name,
