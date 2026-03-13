@@ -92,6 +92,18 @@ pub fn generate_preamble(tools: &[ToolEntry]) -> String {
     }
     preamble.push_str("};\n\n");
 
+    // Mirror backends onto globalThis so `globalThis['auggie']` and
+    // `globalThis.exa` work — LLMs frequently generate this pattern despite
+    // instructions saying backends are top-level variables.
+    for backend_name in by_backend.keys() {
+        let js_name = sanitize_identifier(backend_name);
+        preamble.push_str(&format!("globalThis['{}'] = {};\n", js_name, js_name));
+        if js_name != *backend_name {
+            preamble.push_str(&format!("globalThis['{}'] = {};\n", backend_name, js_name));
+        }
+    }
+    preamble.push('\n');
+
     // Generate __interfaces object
     preamble.push_str("const __interfaces = {\n");
     for (backend_name, backend_tools) in &by_backend {
@@ -271,6 +283,21 @@ mod tests {
         assert!(preamble.contains("const __interfaces = {"));
         assert!(preamble.contains("const __backends = {"));
         assert!(preamble.contains("function __getToolInterface"));
+    }
+
+    #[test]
+    fn test_generate_preamble_globalthis_mirrors() {
+        let tools = vec![
+            make_entry("web_search", "Search", "exa"),
+            make_entry("search", "Search", "my-search-backend"),
+        ];
+        let preamble = generate_preamble(&tools);
+
+        // Sanitized names mirrored to globalThis
+        assert!(preamble.contains("globalThis['exa'] = exa;"));
+        assert!(preamble.contains("globalThis['my_search_backend'] = my_search_backend;"));
+        // Original hyphenated name also mirrored
+        assert!(preamble.contains("globalThis['my-search-backend'] = my_search_backend;"));
     }
 
     #[test]
