@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.3.1](https://github.com/jonwraymond/PrismGate/compare/v1.3.0...v1.3.1) (2026-03-13)
+
+
+### Bug Fixes
+
+* mirror backend variables onto globalThis in sandbox ([8d9d01b](https://github.com/jonwraymond/PrismGate/commit/8d9d01ba997b5e93a408cc1639113e0f81029b9c))
+* mirror backend variables onto globalThis in sandbox ([6e415a3](https://github.com/jonwraymond/PrismGate/commit/6e415a346c361ae5877aa69c0038f8280912a4e7))
+
 ## [1.3.0](https://github.com/jonwraymond/PrismGate/compare/v1.2.5...v1.3.0) (2026-03-12)
 
 
