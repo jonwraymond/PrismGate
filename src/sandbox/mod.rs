@@ -222,6 +222,19 @@ fn run_sandbox(
     // Generate preamble with tool accessor objects
     let preamble = bridge::generate_preamble(&tools);
 
+    // Collect backend names (both original and sanitized) for error hints.
+    let backend_names: std::collections::HashSet<String> = tools
+        .iter()
+        .flat_map(|t| {
+            let sanitized = bridge::sanitize_identifier(&t.backend_name);
+            if sanitized == t.backend_name {
+                vec![sanitized]
+            } else {
+                vec![sanitized, t.backend_name.clone()]
+            }
+        })
+        .collect();
+
     // Wrap user code in an async main function if not already exported
     let full_code =
         if code.contains("export default") || code.contains("export async function main") {
@@ -233,13 +246,70 @@ fn run_sandbox(
     let module = Module::new("sandbox.ts", &full_code);
     let module_handle = runtime
         .load_module(&module)
-        .map_err(|e| anyhow::anyhow!("sandbox module load error: {e}"))?;
+        .map_err(|e| enhance_sandbox_error(e, &backend_names))?;
 
     let result: Value = runtime
         .call_entrypoint(&module_handle, rustyscript::json_args!())
-        .map_err(|e| anyhow::anyhow!("sandbox execution error: {e}"))?;
+        .map_err(|e| enhance_sandbox_error(e, &backend_names))?;
 
     debug!("sandbox execution complete");
 
     serde_json::to_string_pretty(&result).map_err(|e| anyhow::anyhow!("result serialization: {e}"))
+}
+
+/// Enhance sandbox errors with actionable hints for common LLM mistakes.
+#[cfg(feature = "sandbox")]
+fn enhance_sandbox_error(
+    err: rustyscript::Error,
+    backend_names: &std::collections::HashSet<String>,
+) -> anyhow::Error {
+    let msg = err.to_string();
+
+    // Pattern: `const auggie = await auggie.codebase_retrieval(...)` shadows the backend const.
+    // V8 error: "ReferenceError: Cannot access 'X' before initialization"
+    if msg.contains("Cannot access '")
+        && msg.contains("before initialization")
+        && let Some(start) = msg.find("Cannot access '")
+    {
+        let rest = &msg[start + 15..];
+        if let Some(end) = rest.find('\'') {
+            let var_name = &rest[..end];
+            if backend_names.contains(var_name) {
+                return anyhow::anyhow!(
+                    "sandbox execution error: {msg}\n\n\
+                     HINT: `{var_name}` is a backend name. Writing `const {var_name} = await {var_name}.tool(...)` \
+                     shadows the backend variable before it's read. \
+                     Use a different name: `const {var_name}Result = await {var_name}.tool(...)`"
+                );
+            }
+        }
+    }
+
+    // Pattern: `X is not defined` — might be a misspelled backend name
+    if msg.contains("is not defined")
+        && let Some(start) = msg.find("ReferenceError: ")
+    {
+        let rest = &msg[start + 16..];
+        if let Some(end) = rest.find(" is not defined") {
+            let var_name = rest[..end].trim();
+            // Check for close matches against backend names
+            let suggestion = backend_names
+                .iter()
+                .find(|bn| {
+                    // Simple typo detection: off by case or underscore/hyphen
+                    bn.eq_ignore_ascii_case(var_name)
+                        || bn.replace('_', "-") == var_name
+                        || bn.replace('-', "_") == var_name
+                })
+                .cloned();
+            if let Some(correct) = suggestion {
+                return anyhow::anyhow!(
+                    "sandbox execution error: {msg}\n\n\
+                     HINT: Did you mean `{correct}`? Available backends with similar names: {correct}"
+                );
+            }
+        }
+    }
+
+    anyhow::anyhow!("sandbox execution error: {msg}")
 }
