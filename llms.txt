@@ -1,0 +1,31 @@
+# Gatemini
+
+> Rust MCP gateway exposing a discovery surface over backend MCP servers
+
+## Docs
+
+- [CLAUDE.md](CLAUDE.md): Project structure, module map, runtime summary
+- [Architecture](docs/architecture.md): Daemon/proxy lifecycle, session identity
+- [Backend Management](docs/backend-management.md): Transports, dedicated pools, health
+- [Tool Discovery](docs/tool-discovery.md): BM25, trigram, fuzzy search fallback
+- [Sandbox](docs/sandbox.md): V8 execution, direct calls, intent filtering
+- [Token Efficiency](docs/token-efficiency.md): Brief mode, progressive disclosure
+
+## Dynamic Resources
+
+- `@gatemini://overview`: Gateway guide with live tool/backend counts
+- `@gatemini://tools`: Compact tool index (~3k tokens)
+- `@gatemini://backends`: Backend health and tool counts
+- `@gatemini://llms`: Machine-readable tool reference (auto-generated)
+- `@gatemini://llms-full`: Complete tool schemas (auto-generated)
+- `@gatemini://stats`: Session context savings statistics
+- `@gatemini://recent`: Recent tool calls with timing
+- `@gatemini://tool/{name}`: Full schema for one tool
+- `@gatemini://backend/{name}`: Backend details + tool list
+
+## API
+
+- 7 meta-tools: search_tools, tool_info, list_tools_meta, call_tool_chain, register_manual, deregister_manual, get_required_keys_for_tool
+- Prompts: discover, find_tool, backend_status
+- Search: three-tier fallback (BM25 → trigram → fuzzy Levenshtein)
+- Output: smart truncation (head 60% + tail 40%), intent filtering, JSON chunking

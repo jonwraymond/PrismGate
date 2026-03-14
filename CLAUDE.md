@@ -42,6 +42,9 @@ Resources:
 - `gatemini://backends`
 - `gatemini://tools`
 - `gatemini://recent`
+- `gatemini://stats`
+- `gatemini://llms`
+- `gatemini://llms-full`
 - `gatemini://tool/{tool_name}`
 - `gatemini://backend/{backend_name}`
 - `gatemini://backend/{backend_name}/tools`
@@ -61,14 +64,14 @@ Prompts:
 | `src/cli.rs` | CLI and platform paths |
 | `src/config.rs` | defaults, config loading, validation, hot-reload |
 | `src/server.rs` | public MCP tool surface |
-| `src/registry.rs` | tool registry, BM25, hybrid search |
+| `src/registry.rs` | tool registry, three-tier search (BM25 → trigram → fuzzy), IDF terms |
 | `src/cache.rs` | cache restore and persistence |
-| `src/tracker.rs` | recent calls, usage counts, backend latency |
-| `src/resources.rs` | resources and template completion |
+| `src/tracker.rs` | recent calls, usage counts, backend latency, session byte tracking |
+| `src/resources.rs` | resources, template completion, llms.txt generation |
 | `src/prompts.rs` | live prompts driven by registry and tracker |
 | `src/ipc/` | proxy/daemon/socket lifecycle |
 | `src/backend/` | transport implementations and health management |
-| `src/tools/` | meta-tool handlers |
+| `src/tools/` | meta-tool handlers, intent filtering, JSON chunking |
 | `src/sandbox/` | V8 execution bridge |
 | `src/secrets/` | secret providers and resolver |
 
@@ -82,6 +85,16 @@ Prompts:
 - direct mode uses session_id 0
 - pool implementation lives in `src/backend/pool.rs`
 - health checker calls `restart_pool_primary()` instead of `restart_backend()` for dedicated backends
+
+## Context efficiency features
+
+- search has three-tier fallback: BM25 → trigram substring → fuzzy Levenshtein correction
+- search results include `try_also` distinctive terms (IDF-scored) for follow-up queries
+- `call_tool_chain` supports `intent` param for filtering large outputs to relevant sections
+- output truncation uses head 60% + tail 40% split (preserves both beginning and end)
+- `gatemini://stats` shows per-session bytes returned vs processed, savings ratio
+- `gatemini://llms` and `gatemini://llms-full` auto-generate machine-readable tool references
+- JSON chunking utility in `src/tools/json_chunker.rs` for key-path decomposition
 
 ## Important implementation notes
 

@@ -77,6 +77,54 @@ pub fn list_static_resources() -> Vec<Resource> {
         },
         Resource {
             raw: RawResource {
+                uri: "gatemini://stats".to_string(),
+                name: "stats".to_string(),
+                title: Some("Session Statistics".to_string()),
+                description: Some(
+                    "Context savings stats: bytes returned vs processed, savings ratio, per-tool breakdown"
+                        .to_string(),
+                ),
+                mime_type: Some("application/json".to_string()),
+                size: None,
+                icons: None,
+                meta: None,
+            },
+            annotations: None,
+        },
+        Resource {
+            raw: RawResource {
+                uri: "gatemini://llms".to_string(),
+                name: "llms".to_string(),
+                title: Some("llms.txt".to_string()),
+                description: Some(
+                    "Machine-readable gateway reference: tool names, descriptions, naming rules (~3k tokens)"
+                        .to_string(),
+                ),
+                mime_type: Some("text/plain".to_string()),
+                size: None,
+                icons: None,
+                meta: None,
+            },
+            annotations: None,
+        },
+        Resource {
+            raw: RawResource {
+                uri: "gatemini://llms-full".to_string(),
+                name: "llms-full".to_string(),
+                title: Some("llms-full.txt".to_string()),
+                description: Some(
+                    "Complete gateway reference with full input schemas for every tool"
+                        .to_string(),
+                ),
+                mime_type: Some("text/plain".to_string()),
+                size: None,
+                icons: None,
+                meta: None,
+            },
+            annotations: None,
+        },
+        Resource {
+            raw: RawResource {
                 uri: "gatemini://call_tool_chain".to_string(),
                 name: "call_tool_chain".to_string(),
                 title: Some("call_tool_chain Guide".to_string()),
@@ -240,6 +288,14 @@ pub async fn read_resource(
                 })
                 .collect();
             let json = serde_json::to_string_pretty(&infos)
+                .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+            Ok(text_resource(uri, &json))
+        }
+        "llms" => Ok(text_resource(uri, &llms_txt(registry))),
+        "llms-full" => Ok(text_resource(uri, &llms_full_txt(registry))),
+        "stats" => {
+            let stats = tracker.session_stats();
+            let json = serde_json::to_string_pretty(&stats)
                 .map_err(|e| McpError::internal_error(e.to_string(), None))?;
             Ok(text_resource(uri, &json))
         }
@@ -505,6 +561,72 @@ fn call_tool_chain_guide_text() -> String {
      - Hyphens become underscores in sandbox identifiers\n\
      - Backends are top-level variables, NOT on globalThis\n"
         .to_string()
+}
+
+/// Generate compact llms.txt: tool names, one-line descriptions, naming rules.
+fn llms_txt(registry: &ToolRegistry) -> String {
+    let mut text = format!(
+        "# Gatemini\n\n\
+         > Rust MCP gateway aggregating {} tools from {} backends\n\n\
+         ## Meta-Tools\n\n\
+         - search_tools: BM25/trigram/fuzzy search across all tools\n\
+         - tool_info: Get tool details (brief or full schema)\n\
+         - list_tools_meta: Paginated tool list\n\
+         - call_tool_chain: Execute TypeScript with tool access (supports intent filtering)\n\
+         - register_manual: Add backend at runtime\n\
+         - deregister_manual: Remove backend at runtime\n\
+         - get_required_keys_for_tool: Check required env vars\n\n\
+         ## Naming Rules\n\n\
+         - Qualified: `backend.tool_name` (e.g. `exa.web_search_exa`)\n\
+         - Sandbox: hyphens become underscores (`my-backend` → `my_backend`)\n\
+         - Always call `tool_info(detail=\"full\")` before first use of any tool\n\n\
+         ## Backend Tools\n\n",
+        registry.tool_count(),
+        registry.backend_count(),
+    );
+
+    // Group tools by backend
+    let mut backends: std::collections::BTreeMap<String, Vec<(String, String)>> =
+        std::collections::BTreeMap::new();
+    for entry in registry.get_all() {
+        backends
+            .entry(entry.backend_name.clone())
+            .or_default()
+            .push((entry.name.clone(), first_sentence(&entry.description)));
+    }
+
+    for (backend, mut tools) in backends {
+        tools.sort_by(|a, b| a.0.cmp(&b.0));
+        tools.dedup_by(|a, b| a.0 == b.0);
+        text.push_str(&format!("### {} ({} tools)\n\n", backend, tools.len()));
+        for (name, desc) in &tools {
+            text.push_str(&format!("- `{}`: {}\n", name, desc));
+        }
+        text.push('\n');
+    }
+
+    text
+}
+
+/// Generate complete llms-full.txt: includes full input schemas for every tool.
+fn llms_full_txt(registry: &ToolRegistry) -> String {
+    let mut text = llms_txt(registry);
+    text.push_str("---\n\n## Full Tool Schemas\n\n");
+
+    let mut entries = registry.get_all();
+    entries.sort_by(|a, b| a.name.cmp(&b.name));
+    entries.dedup_by(|a, b| a.name == b.name);
+
+    for entry in &entries {
+        text.push_str(&format!("### `{}`\n\n", entry.name));
+        text.push_str(&format!("**Backend:** {}\n\n", entry.backend_name));
+        text.push_str(&format!("**Description:** {}\n\n", entry.description));
+        if let Ok(schema) = serde_json::to_string_pretty(&entry.input_schema) {
+            text.push_str(&format!("**Input Schema:**\n```json\n{}\n```\n\n", schema));
+        }
+    }
+
+    text
 }
 
 fn text_resource(uri: &str, text: &str) -> ReadResourceResult {

@@ -570,6 +570,7 @@ mod tests {
             None,
             &semaphore,
             None,
+            None,
         )
         .await;
         assert!(
@@ -594,6 +595,7 @@ mod tests {
             Some(500), // 500ms timeout
             None,
             &semaphore,
+            None,
             None,
         )
         .await;

@@ -20,6 +20,9 @@ pub struct BriefSearchResult {
     pub description: String,
     /// How to call this tool (backend tools are NOT direct MCP tools).
     pub call: String,
+    /// Distinctive terms from this backend for follow-up searches.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub try_also: Vec<String>,
 }
 
 /// Full tool info returned by tool_info (full mode).
@@ -131,11 +134,13 @@ pub fn handle_search_brief(
                 sanitize_js_name(&e.backend_name),
                 sanitize_js_name(orig)
             );
+            let try_also = registry.get_distinctive_terms(&e.backend_name, 3);
             BriefSearchResult {
                 name: e.name,
                 backend: e.backend_name,
                 description: first_sentence(&e.description),
                 call,
+                try_also,
             }
         })
         .collect()
