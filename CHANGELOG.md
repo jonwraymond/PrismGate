@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.3.2](https://github.com/jonwraymond/PrismGate/compare/v1.3.1...v1.3.2) (2026-03-14)
+
+
+### Bug Fixes
+
+* add actionable hints for common sandbox errors ([d5721ca](https://github.com/jonwraymond/PrismGate/commit/d5721caf6e59d359d985f401102eed4942a8799a))
+* add actionable hints for common sandbox errors ([57c0e31](https://github.com/jonwraymond/PrismGate/commit/57c0e312d6a59614bdb44d955136435e6fa605d6))
+
 ## [1.3.1](https://github.com/jonwraymond/PrismGate/compare/v1.3.0...v1.3.1) (2026-03-13)
 
 
