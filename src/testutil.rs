@@ -571,6 +571,7 @@ mod tests {
             &semaphore,
             None,
             None,
+            &Default::default(),
         )
         .await;
         assert!(
@@ -597,6 +598,7 @@ mod tests {
             &semaphore,
             None,
             None,
+            &Default::default(),
         )
         .await;
         assert!(result.is_err());

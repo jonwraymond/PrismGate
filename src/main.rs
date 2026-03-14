@@ -269,6 +269,7 @@ async fn run_direct(gw: InitializedGateway) -> Result<()> {
         gw.config.max_dynamic_backends,
         sandbox_semaphore,
         Some(0), // direct mode uses session_id 0
+        gw.config.sandbox.output.clone(),
     );
 
     info!("starting MCP stdio server (direct mode)");

@@ -483,6 +483,41 @@ pub struct SandboxConfig {
     /// Max concurrent V8 sandbox executions. Default: 8.
     #[serde(default = "default_max_concurrent_sandboxes")]
     pub max_concurrent_sandboxes: u32,
+
+    /// Output processing defaults. All enabled by default for maximum token savings.
+    #[serde(default)]
+    pub output: OutputConfig,
+}
+
+/// Output processing configuration for call_tool_chain results.
+/// All features are enabled by default for maximum token savings.
+/// Set individual flags to false to disable specific behaviors.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OutputConfig {
+    /// Auto-chunk large JSON outputs (>10KB) into key-path summaries.
+    /// When true, JSON responses exceeding the threshold are replaced with
+    /// a compact summary showing paths, identities, and sizes. Default: true.
+    #[serde(default = "default_true_config")]
+    pub auto_chunk_json: bool,
+
+    /// Use smart head/tail truncation (60% head + 40% tail at line boundaries)
+    /// instead of simple head-only cutoff. Default: true.
+    #[serde(default = "default_true_config")]
+    pub smart_truncation: bool,
+
+    /// Threshold in bytes above which JSON auto-chunking activates. Default: 10240 (10KB).
+    #[serde(default = "default_chunk_threshold")]
+    pub chunk_threshold: usize,
+}
+
+impl Default for OutputConfig {
+    fn default() -> Self {
+        Self {
+            auto_chunk_json: true,
+            smart_truncation: true,
+            chunk_threshold: default_chunk_threshold(),
+        }
+    }
 }
 
 /// Daemon lifecycle configuration.
@@ -586,6 +621,9 @@ fn default_semaphore_timeout() -> Duration {
 fn default_max_concurrent_sandboxes() -> u32 {
     8
 }
+fn default_chunk_threshold() -> usize {
+    10_240 // 10KB
+}
 fn default_max_retries() -> u32 {
     3
 }
@@ -661,6 +699,7 @@ impl Default for SandboxConfig {
             timeout: default_sandbox_timeout(),
             max_output_size: default_max_output_size(),
             max_concurrent_sandboxes: default_max_concurrent_sandboxes(),
+            output: OutputConfig::default(),
         }
     }
 }
