@@ -24,20 +24,14 @@ pub async fn handle_call_tool_chain(
     sandbox_semaphore: &Semaphore,
     session_id: Option<u64>,
     intent: Option<&str>,
+    output_config: &crate::config::OutputConfig,
 ) -> Result<String> {
     let max_output = max_output_size.unwrap_or(200_000);
 
     // Try to parse as a direct tool call (fast path — no V8, no semaphore needed).
     // Pattern: `await manual_name.tool_name({...})` or JSON with tool_name + arguments
     if let Some(result) = try_direct_tool_call(registry, manager, code, session_id).await {
-        return result.map(|v| {
-            let filtered = if let Some(intent) = intent {
-                filter_by_intent(&v, intent)
-            } else {
-                v
-            };
-            truncate_output(&filtered, max_output)
-        });
+        return result.map(|v| process_output(v, intent, output_config, max_output));
     }
 
     // Fall back to full TypeScript sandbox — acquire semaphore first
@@ -65,12 +59,7 @@ pub async fn handle_call_tool_chain(
             session_id,
         )
         .await?;
-        let filtered = if let Some(intent) = intent {
-            filter_by_intent(&result, intent)
-        } else {
-            result
-        };
-        return Ok(truncate_output(&filtered, max_output));
+        return Ok(process_output(result, intent, output_config, max_output));
     }
 
     #[cfg(not(feature = "sandbox"))]
@@ -223,6 +212,61 @@ async fn call_tool_by_dotted_name(
 
     serde_json::to_string_pretty(&value)
         .map_err(|e| anyhow::anyhow!("failed to serialize tool result: {e}"))
+}
+
+/// Apply the full output processing pipeline: intent filter → auto-chunk JSON → truncate.
+///
+/// Each stage is configurable via `OutputConfig`. The pipeline preserves the most
+/// relevant content while minimizing token usage.
+fn process_output(
+    raw: String,
+    intent: Option<&str>,
+    config: &crate::config::OutputConfig,
+    max_output: usize,
+) -> String {
+    // Stage 1: Intent filtering (if intent provided)
+    let after_intent = if let Some(intent) = intent {
+        filter_by_intent(&raw, intent)
+    } else {
+        raw
+    };
+
+    // Stage 2: Auto-chunk large JSON (if enabled and output is parseable JSON above threshold)
+    let after_chunk = if config.auto_chunk_json
+        && after_intent.len() > config.chunk_threshold
+        && after_intent.trim_start().starts_with(['{', '['])
+    {
+        if let Ok(value) = serde_json::from_str::<serde_json::Value>(&after_intent) {
+            let chunks = crate::tools::json_chunker::chunk_json(&value, "");
+            if chunks.len() > 1 {
+                // Replace raw JSON with compact chunk summary
+                crate::tools::json_chunker::chunk_summary(&chunks)
+            } else {
+                after_intent
+            }
+        } else {
+            after_intent
+        }
+    } else {
+        after_intent
+    };
+
+    // Stage 3: Truncation (smart head/tail or simple cutoff based on config)
+    if config.smart_truncation {
+        truncate_output(&after_chunk, max_output)
+    } else {
+        simple_truncate(&after_chunk, max_output)
+    }
+}
+
+/// Simple head-only truncation (legacy behavior, used when smart_truncation=false).
+fn simple_truncate(s: &str, max_size: usize) -> String {
+    if s.len() <= max_size {
+        s.to_string()
+    } else {
+        let boundary = s.floor_char_boundary(max_size);
+        format!("{}\n... [output truncated]", &s[..boundary])
+    }
 }
 
 /// Threshold below which intent filtering is skipped (output is small enough to return raw).

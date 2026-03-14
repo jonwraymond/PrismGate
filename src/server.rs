@@ -117,6 +117,8 @@ pub struct GateminiServer {
     pub sandbox_semaphore: Arc<Semaphore>,
     /// Session ID for dedicated instance pool routing. None for direct mode legacy.
     pub session_id: Option<u64>,
+    /// Output processing configuration (auto-chunking, smart truncation).
+    pub output_config: crate::config::OutputConfig,
     tool_router: ToolRouter<Self>,
 }
 
@@ -131,6 +133,7 @@ impl GateminiServer {
         max_dynamic_backends: usize,
         sandbox_semaphore: Arc<Semaphore>,
         session_id: Option<u64>,
+        output_config: crate::config::OutputConfig,
     ) -> Self {
         Self {
             registry,
@@ -141,6 +144,7 @@ impl GateminiServer {
             max_dynamic_backends,
             sandbox_semaphore,
             session_id,
+            output_config,
             tool_router: Self::tool_router(),
         }
     }
@@ -346,6 +350,7 @@ impl GateminiServer {
             &self.sandbox_semaphore,
             self.session_id,
             params.intent.as_deref(),
+            &self.output_config,
         )
         .await;
 

@@ -113,6 +113,7 @@ pub async fn run(gw: InitializedGateway, bound: BoundSocket) -> Result<()> {
     let sandbox_semaphore = Arc::new(tokio::sync::Semaphore::new(
         gw.config.sandbox.max_concurrent_sandboxes as usize,
     ));
+    let output_config = gw.config.sandbox.output.clone();
     let session_id_gen = Arc::new(AtomicU64::new(1));
     let shutdown_notify = Arc::clone(&gw.shutdown_notify);
 
@@ -160,6 +161,7 @@ pub async fn run(gw: InitializedGateway, bound: BoundSocket) -> Result<()> {
                                 max_dynamic_backends,
                                 Arc::clone(&sandbox_semaphore),
                                 Some(session_id),
+                                output_config.clone(),
                             );
 
                             let notify = Arc::clone(&session_change);
