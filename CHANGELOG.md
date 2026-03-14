@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.4.0](https://github.com/jonwraymond/PrismGate/compare/v1.3.2...v1.4.0) (2026-03-14)
+
+
+### Features
+
+* add context efficiency features inspired by context-mode ([b62a47a](https://github.com/jonwraymond/PrismGate/commit/b62a47aefdde6cffcb486ea569670e86383bee96))
+* context efficiency features (smart truncation, three-tier search, intent filtering, stats, llms.txt) ([5cd7b17](https://github.com/jonwraymond/PrismGate/commit/5cd7b17db5c473596f44ac143c80159123de6ad9))
+
 ## [1.3.2](https://github.com/jonwraymond/PrismGate/compare/v1.3.1...v1.3.2) (2026-03-14)
 
 
