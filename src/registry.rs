@@ -333,6 +333,11 @@ impl ToolRegistry {
     ///
     /// Optional `filter_tags`: if provided, only tools with at least one matching tag are included.
     /// Optional `tracker`: if provided, applies logarithmic usage boost to BM25 scores.
+    /// Three-tier search: BM25 → trigram substring → fuzzy Levenshtein correction.
+    ///
+    /// Tier 1 (BM25) handles exact and stemmed token matches.
+    /// Tier 2 (trigram) catches substring matches like "websrch" → "web_search".
+    /// Tier 3 (fuzzy) corrects typos like "serch" → "search" via Levenshtein distance.
     pub fn search(
         &self,
         query: &str,
@@ -345,40 +350,45 @@ impl ToolRegistry {
             return Vec::new();
         }
 
-        // Build corpus: collect (entry, doc_tokens) for all tools
-        let corpus: Vec<(ToolEntry, Vec<String>)> = self
-            .tools
-            .iter()
-            .filter(|r| {
-                // Apply tag filter if specified
-                if let Some(tags) = filter_tags {
-                    r.value().tags.iter().any(|t| tags.contains(t))
-                } else {
-                    true
-                }
-            })
-            .map(|r| {
-                let entry = r.value().clone();
-                let mut tokens = tokenize(&entry.name);
-                // Name tokens get 2x weight by appearing twice
-                let name_tokens = tokens.clone();
-                tokens.extend(name_tokens);
-                tokens.extend(tokenize(&entry.description));
-                (entry, tokens)
-            })
-            .collect();
+        // Tier 1: BM25
+        let results = self.bm25_search(&query_terms, limit, filter_tags, tracker);
+        if !results.is_empty() {
+            return results;
+        }
 
+        // Tier 2: Trigram substring matching
+        let results = self.trigram_search(query, limit, filter_tags, tracker);
+        if !results.is_empty() {
+            return results;
+        }
+
+        // Tier 3: Fuzzy Levenshtein correction → re-run BM25
+        let corrected = self.fuzzy_correct_query(&query_terms);
+        if corrected != query_terms {
+            return self.bm25_search(&corrected, limit, filter_tags, tracker);
+        }
+
+        Vec::new()
+    }
+
+    /// BM25 scoring with k1=1.2, b=0.75. Name tokens get 2x weight.
+    fn bm25_search(
+        &self,
+        query_terms: &[String],
+        limit: u32,
+        filter_tags: Option<&[String]>,
+        tracker: Option<&crate::tracker::CallTracker>,
+    ) -> Vec<ToolEntry> {
+        let corpus = self.build_corpus(filter_tags);
         let n = corpus.len() as f64;
         if n == 0.0 {
             return Vec::new();
         }
 
-        // Average document length
         let avgdl: f64 = corpus.iter().map(|(_, t)| t.len() as f64).sum::<f64>() / n;
 
-        // Document frequency: how many docs contain each query term
         let mut df: HashMap<&str, f64> = HashMap::new();
-        for term in &query_terms {
+        for term in query_terms {
             let count = corpus
                 .iter()
                 .filter(|(_, tokens)| tokens.iter().any(|t| t == term))
@@ -386,7 +396,6 @@ impl ToolRegistry {
             df.insert(term.as_str(), count as f64);
         }
 
-        // Score each document
         const K1: f64 = 1.2;
         const B: f64 = 0.75;
 
@@ -395,9 +404,8 @@ impl ToolRegistry {
             .filter_map(|(entry, tokens)| {
                 let dl = tokens.len() as f64;
 
-                // Term frequencies in this doc
                 let mut tf: HashMap<&str, f64> = HashMap::new();
-                for term in &query_terms {
+                for term in query_terms {
                     let count = tokens
                         .iter()
                         .filter(|t| t.as_str() == term.as_str())
@@ -406,25 +414,19 @@ impl ToolRegistry {
                 }
 
                 let mut score = 0.0f64;
-                for term in &query_terms {
+                for term in query_terms {
                     let term_freq = tf.get(term.as_str()).copied().unwrap_or(0.0);
                     if term_freq == 0.0 {
                         continue;
                     }
                     let doc_freq = df.get(term.as_str()).copied().unwrap_or(0.0);
-
-                    // IDF: log((N - df + 0.5) / (df + 0.5) + 1)
                     let idf = ((n - doc_freq + 0.5) / (doc_freq + 0.5) + 1.0).ln();
-
-                    // TF component with length normalization
                     let tf_norm =
                         (term_freq * (K1 + 1.0)) / (term_freq + K1 * (1.0 - B + B * dl / avgdl));
-
                     score += idf * tf_norm;
                 }
 
                 if score > 0.0 {
-                    // Apply logarithmic usage boost if tracker is available
                     if let Some(t) = tracker {
                         let usage = t.usage_count(&entry.name) as f64;
                         let boost = 1.0 + 0.3 * (1.0 + usage).ln();
@@ -437,7 +439,6 @@ impl ToolRegistry {
             })
             .collect();
 
-        // Sort by score descending, then by name for stability
         scored.sort_by(|a, b| {
             b.1.partial_cmp(&a.1)
                 .unwrap_or(std::cmp::Ordering::Equal)
@@ -446,6 +447,194 @@ impl ToolRegistry {
 
         scored.truncate(limit as usize);
         scored.into_iter().map(|(entry, _)| entry).collect()
+    }
+
+    /// Build the search corpus: (entry, doc_tokens) for all tools matching tag filter.
+    /// Compute distinctive terms for a backend using IDF scoring.
+    ///
+    /// Returns terms that are uniquely characteristic of this backend's tools
+    /// compared to the full tool corpus. Useful for suggesting follow-up searches.
+    ///
+    /// Score = `ln(total_tools / doc_freq) + length_bonus + identifier_bonus`
+    pub fn get_distinctive_terms(&self, backend_name: &str, max_terms: usize) -> Vec<String> {
+        let all_tools: Vec<ToolEntry> = self.tools.iter().map(|r| r.value().clone()).collect();
+        let total = all_tools.len() as f64;
+        if total == 0.0 {
+            return Vec::new();
+        }
+
+        // Document frequency: how many tools contain each token
+        let mut df: HashMap<String, usize> = HashMap::new();
+        for tool in &all_tools {
+            let mut seen = std::collections::HashSet::new();
+            for token in tokenize(&format!("{} {}", tool.name, tool.description)) {
+                if token.len() >= 3 && seen.insert(token.clone()) {
+                    *df.entry(token).or_default() += 1;
+                }
+            }
+        }
+
+        // Score tokens from this backend's tools
+        let backend_tools = self.get_by_backend(backend_name);
+        if backend_tools.is_empty() {
+            return Vec::new();
+        }
+
+        let mut term_scores: HashMap<String, f64> = HashMap::new();
+        for tool in &backend_tools {
+            for token in tokenize(&format!("{} {}", tool.name, tool.description)) {
+                if token.len() < 3 {
+                    continue;
+                }
+                let doc_freq = *df.get(&token).unwrap_or(&1) as f64;
+                let idf = (total / doc_freq).ln();
+                let len_bonus = (token.len() as f64 - 3.0).max(0.0) * 0.1;
+                let id_bonus = if token.contains('_') || has_mixed_case(&token) {
+                    0.5
+                } else {
+                    0.0
+                };
+                let score = idf + len_bonus + id_bonus;
+                term_scores
+                    .entry(token)
+                    .and_modify(|s| {
+                        if score > *s {
+                            *s = score
+                        }
+                    })
+                    .or_insert(score);
+            }
+        }
+
+        // Sort by score descending, return top N
+        let mut scored: Vec<(String, f64)> = term_scores.into_iter().collect();
+        scored.sort_by(|a, b| {
+            b.1.partial_cmp(&a.1)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| a.0.cmp(&b.0))
+        });
+        scored
+            .into_iter()
+            .take(max_terms)
+            .map(|(term, _)| term)
+            .collect()
+    }
+
+    fn build_corpus(&self, filter_tags: Option<&[String]>) -> Vec<(ToolEntry, Vec<String>)> {
+        self.tools
+            .iter()
+            .filter(|r| {
+                if let Some(tags) = filter_tags {
+                    r.value().tags.iter().any(|t| tags.contains(t))
+                } else {
+                    true
+                }
+            })
+            .map(|r| {
+                let entry = r.value().clone();
+                let mut tokens = tokenize(&entry.name);
+                let name_tokens = tokens.clone();
+                tokens.extend(name_tokens); // 2x weight for name tokens
+                tokens.extend(tokenize(&entry.description));
+                (entry, tokens)
+            })
+            .collect()
+    }
+
+    /// Tier 2: Trigram substring matching. Scores tools by Jaccard similarity
+    /// of character trigram sets between query and (name + description).
+    fn trigram_search(
+        &self,
+        query: &str,
+        limit: u32,
+        filter_tags: Option<&[String]>,
+        tracker: Option<&crate::tracker::CallTracker>,
+    ) -> Vec<ToolEntry> {
+        let query_lower = query.to_lowercase();
+        let query_tris = trigrams(&query_lower);
+        if query_tris.is_empty() {
+            return Vec::new();
+        }
+
+        let corpus = self.build_corpus(filter_tags);
+        let mut scored: Vec<(ToolEntry, f64)> = corpus
+            .into_iter()
+            .filter_map(|(entry, _)| {
+                let doc_text = format!("{} {}", entry.name, entry.description).to_lowercase();
+                let doc_tris = trigrams(&doc_text);
+                if doc_tris.is_empty() {
+                    return None;
+                }
+                let intersection = query_tris.intersection(&doc_tris).count() as f64;
+                let union = query_tris.union(&doc_tris).count() as f64;
+                let score = intersection / union;
+
+                if score > 0.05 {
+                    let mut final_score = score;
+                    if let Some(t) = tracker {
+                        let usage = t.usage_count(&entry.name) as f64;
+                        final_score *= 1.0 + 0.3 * (1.0 + usage).ln();
+                    }
+                    Some((entry, final_score))
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        scored.sort_by(|a, b| {
+            b.1.partial_cmp(&a.1)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| a.0.name.cmp(&b.0.name))
+        });
+
+        scored.truncate(limit as usize);
+        scored.into_iter().map(|(entry, _)| entry).collect()
+    }
+
+    /// Tier 3: Correct each query term against the tool vocabulary using Levenshtein distance.
+    fn fuzzy_correct_query(&self, query_terms: &[String]) -> Vec<String> {
+        // Build vocabulary from all tool names + descriptions
+        let vocabulary: Vec<String> = {
+            let mut vocab = std::collections::HashSet::new();
+            for entry in self.tools.iter() {
+                for token in tokenize(&entry.value().name) {
+                    if token.len() >= 3 {
+                        vocab.insert(token);
+                    }
+                }
+                for token in tokenize(&entry.value().description) {
+                    if token.len() >= 3 {
+                        vocab.insert(token);
+                    }
+                }
+            }
+            vocab.into_iter().collect()
+        };
+
+        query_terms
+            .iter()
+            .map(|term| {
+                if term.len() < 3 {
+                    return term.clone();
+                }
+                let max_dist = max_edit_distance(term.len());
+                let mut best: Option<(String, usize)> = None;
+                for candidate in &vocabulary {
+                    // Skip candidates too different in length
+                    let len_diff = (candidate.len() as isize - term.len() as isize).unsigned_abs();
+                    if len_diff > max_dist {
+                        continue;
+                    }
+                    let dist = levenshtein(term, candidate);
+                    if dist <= max_dist && dist > 0 && best.as_ref().is_none_or(|(_, d)| dist < *d)
+                    {
+                        best = Some((candidate.clone(), dist));
+                    }
+                }
+                best.map(|(w, _)| w).unwrap_or_else(|| term.clone())
+            })
+            .collect()
     }
 
     /// Total number of registered tools.
@@ -593,8 +782,61 @@ impl ToolRegistry {
     }
 }
 
+/// Check if a word has mixed case (camelCase indicator).
+fn has_mixed_case(word: &str) -> bool {
+    let has_lower = word.chars().any(|c| c.is_ascii_lowercase());
+    let has_upper = word.chars().any(|c| c.is_ascii_uppercase());
+    has_lower && has_upper
+}
+
+/// Generate character trigrams from a string.
+fn trigrams(text: &str) -> std::collections::HashSet<[u8; 3]> {
+    let bytes = text.as_bytes();
+    if bytes.len() < 3 {
+        return std::collections::HashSet::new();
+    }
+    bytes.windows(3).map(|w| [w[0], w[1], w[2]]).collect()
+}
+
+/// Levenshtein edit distance between two strings (standard DP).
+fn levenshtein(a: &str, b: &str) -> usize {
+    let a_bytes = a.as_bytes();
+    let b_bytes = b.as_bytes();
+    let m = a_bytes.len();
+    let n = b_bytes.len();
+
+    let mut prev: Vec<usize> = (0..=n).collect();
+    let mut curr = vec![0; n + 1];
+
+    for i in 1..=m {
+        curr[0] = i;
+        for j in 1..=n {
+            let cost = if a_bytes[i - 1] == b_bytes[j - 1] {
+                0
+            } else {
+                1
+            };
+            curr[j] = (prev[j] + 1) // deletion
+                .min(curr[j - 1] + 1) // insertion
+                .min(prev[j - 1] + cost); // substitution
+        }
+        std::mem::swap(&mut prev, &mut curr);
+    }
+    prev[n]
+}
+
+/// Maximum allowed edit distance based on word length.
+/// Short words (≤4 chars) allow 1 edit, medium (5-12) allow 2, long (13+) allow 3.
+fn max_edit_distance(word_len: usize) -> usize {
+    match word_len {
+        0..=4 => 1,
+        5..=12 => 2,
+        _ => 3,
+    }
+}
+
 /// Tokenize text into lowercase terms, splitting on non-alphanumeric characters.
-fn tokenize(text: &str) -> Vec<String> {
+pub(crate) fn tokenize(text: &str) -> Vec<String> {
     text.to_lowercase()
         .split(|c: char| !c.is_alphanumeric())
         .filter(|s| !s.is_empty())
@@ -1487,5 +1729,110 @@ mod tests {
         for tool in &discovered {
             assert!(tool.tags.contains(&"composite".to_string()));
         }
+    }
+
+    // --- Three-tier search tests ---
+
+    #[test]
+    fn test_search_exact_bm25() {
+        let reg = ToolRegistry::new();
+        reg.register_backend_tools(
+            "exa",
+            vec![make_entry(
+                "web_search_exa",
+                "Search the web using Exa",
+                "exa",
+            )],
+        );
+        let results = reg.search("web search", 5, None, None);
+        // Both namespaced (exa.web_search_exa) and bare alias (web_search_exa) match
+        assert!(!results.is_empty());
+        assert!(results.iter().any(|r| r.original_name == "web_search_exa"));
+    }
+
+    #[test]
+    fn test_search_trigram_fallback() {
+        let reg = ToolRegistry::new();
+        reg.register_backend_tools(
+            "exa",
+            vec![make_entry(
+                "web_search_exa",
+                "Search the web using Exa",
+                "exa",
+            )],
+        );
+        // "websrch" has no exact token match but shares trigrams with "web_search"
+        let results = reg.search("websrch", 5, None, None);
+        assert!(
+            !results.is_empty(),
+            "trigram fallback should match 'websrch' to 'web_search_exa'"
+        );
+    }
+
+    #[test]
+    fn test_search_fuzzy_correction() {
+        let reg = ToolRegistry::new();
+        reg.register_backend_tools(
+            "exa",
+            vec![make_entry(
+                "web_search_exa",
+                "Search the web using Exa",
+                "exa",
+            )],
+        );
+        // "serch" is a typo for "search" — Levenshtein distance 1
+        let results = reg.search("serch", 5, None, None);
+        assert!(
+            !results.is_empty(),
+            "fuzzy correction should correct 'serch' to 'search'"
+        );
+    }
+
+    #[test]
+    fn test_search_tier_priority() {
+        let reg = ToolRegistry::new();
+        reg.register_backend_tools(
+            "exa",
+            vec![make_entry("web_search_exa", "Search the web", "exa")],
+        );
+        // Exact BM25 match — should NOT fall through to trigram/fuzzy
+        let results = reg.search("search web", 5, None, None);
+        assert!(!results.is_empty());
+        assert!(results.iter().any(|r| r.original_name == "web_search_exa"));
+    }
+
+    #[test]
+    fn test_levenshtein_distances() {
+        assert_eq!(levenshtein("kitten", "sitting"), 3);
+        assert_eq!(levenshtein("search", "serch"), 1);
+        assert_eq!(levenshtein("abc", "abc"), 0);
+        assert_eq!(levenshtein("", "abc"), 3);
+        assert_eq!(levenshtein("abc", ""), 3);
+    }
+
+    #[test]
+    fn test_edit_distance_thresholds() {
+        assert_eq!(max_edit_distance(3), 1); // short word
+        assert_eq!(max_edit_distance(4), 1);
+        assert_eq!(max_edit_distance(5), 2); // medium
+        assert_eq!(max_edit_distance(12), 2);
+        assert_eq!(max_edit_distance(13), 3); // long
+        assert_eq!(max_edit_distance(20), 3);
+    }
+
+    #[test]
+    fn test_trigram_generation() {
+        let tris = trigrams("search");
+        assert!(tris.contains(b"sea"));
+        assert!(tris.contains(b"ear"));
+        assert!(tris.contains(b"arc"));
+        assert!(tris.contains(b"rch"));
+        assert_eq!(tris.len(), 4);
+    }
+
+    #[test]
+    fn test_trigram_short_string() {
+        assert!(trigrams("ab").is_empty());
+        assert_eq!(trigrams("abc").len(), 1);
     }
 }

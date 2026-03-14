@@ -97,6 +97,11 @@ pub struct CallToolChainParams {
     pub timeout: Option<u64>,
     /// Optional maximum output size in characters (default: 200000).
     pub max_output_size: Option<usize>,
+    /// Optional intent description. When provided and output exceeds 5KB,
+    /// automatically filters to sections matching this intent instead of
+    /// returning the full raw output.
+    #[serde(default)]
+    pub intent: Option<String>,
 }
 
 /// The MCP server exposed to Claude Code over stdio.
@@ -340,6 +345,7 @@ impl GateminiServer {
             params.max_output_size,
             &self.sandbox_semaphore,
             self.session_id,
+            params.intent.as_deref(),
         )
         .await;
 

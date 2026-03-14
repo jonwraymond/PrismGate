@@ -2,6 +2,7 @@
 
 use std::collections::{HashMap, VecDeque};
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use dashmap::DashMap;
@@ -57,6 +58,12 @@ pub struct CallTracker {
     latency: DashMap<String, Mutex<Histogram<u64>>>,
     /// Maximum entries in the recent ring buffer.
     max_recent: usize,
+    /// Per-tool bytes returned to context (after truncation/filtering).
+    bytes_returned: DashMap<String, u64>,
+    /// Total raw bytes processed before truncation/filtering.
+    bytes_processed: AtomicU64,
+    /// Session start time for uptime calculation.
+    session_start: Instant,
 }
 
 impl CallTracker {
@@ -72,6 +79,9 @@ impl CallTracker {
             usage_counts: DashMap::new(),
             latency: DashMap::new(),
             max_recent,
+            bytes_returned: DashMap::new(),
+            bytes_processed: AtomicU64::new(0),
+            session_start: Instant::now(),
         }
     }
 
@@ -185,6 +195,81 @@ impl CallTracker {
             .map(|entry| entry.key().clone())
             .collect()
     }
+
+    /// Record bytes for a tool call (after truncation/filtering).
+    ///
+    /// `returned` = bytes actually sent to context (after truncation).
+    /// `processed` = raw bytes before truncation.
+    pub fn record_bytes(&self, tool_name: &str, returned: u64, processed: u64) {
+        self.bytes_returned
+            .entry(tool_name.to_string())
+            .and_modify(|b| *b += returned)
+            .or_insert(returned);
+        self.bytes_processed.fetch_add(processed, Ordering::Relaxed);
+    }
+
+    /// Get session-level statistics for context savings tracking.
+    pub fn session_stats(&self) -> SessionStats {
+        let total_calls: u64 = self.usage_counts.iter().map(|r| *r.value()).sum();
+        let total_bytes_returned: u64 = self.bytes_returned.iter().map(|r| *r.value()).sum();
+        let total_bytes_processed = self.bytes_processed.load(Ordering::Relaxed);
+        let uptime = self.session_start.elapsed().as_secs_f64();
+
+        let savings_ratio = if total_bytes_returned > 0 {
+            total_bytes_processed as f64 / total_bytes_returned as f64
+        } else {
+            1.0
+        };
+        let reduction_pct = if total_bytes_processed > 0 {
+            (1.0 - total_bytes_returned as f64 / total_bytes_processed as f64) * 100.0
+        } else {
+            0.0
+        };
+
+        let mut per_tool: Vec<ToolByteStat> = self
+            .bytes_returned
+            .iter()
+            .map(|r| ToolByteStat {
+                name: r.key().clone(),
+                calls: self.usage_count(r.key()),
+                bytes_returned: *r.value(),
+            })
+            .collect();
+        per_tool.sort_by(|a, b| b.bytes_returned.cmp(&a.bytes_returned));
+
+        SessionStats {
+            uptime_seconds: uptime,
+            total_calls,
+            total_bytes_returned,
+            total_bytes_processed,
+            savings_ratio,
+            reduction_pct,
+            estimated_tokens_saved: (total_bytes_processed.saturating_sub(total_bytes_returned))
+                / 4,
+            per_tool,
+        }
+    }
+}
+
+/// Session-level statistics for context savings tracking.
+#[derive(Debug, Clone, Serialize)]
+pub struct SessionStats {
+    pub uptime_seconds: f64,
+    pub total_calls: u64,
+    pub total_bytes_returned: u64,
+    pub total_bytes_processed: u64,
+    pub savings_ratio: f64,
+    pub reduction_pct: f64,
+    pub estimated_tokens_saved: u64,
+    pub per_tool: Vec<ToolByteStat>,
+}
+
+/// Per-tool byte tracking statistics.
+#[derive(Debug, Clone, Serialize)]
+pub struct ToolByteStat {
+    pub name: String,
+    pub calls: u64,
+    pub bytes_returned: u64,
 }
 
 #[cfg(test)]
@@ -405,5 +490,48 @@ mod tests {
         assert_eq!(backends.len(), 2);
         assert!(backends.contains(&"backend_1".to_string()));
         assert!(backends.contains(&"backend_2".to_string()));
+    }
+
+    #[test]
+    fn test_record_bytes_per_tool() {
+        let tracker = CallTracker::new();
+        tracker.record_bytes("tool_a", 100, 500);
+        tracker.record_bytes("tool_a", 200, 1000);
+        tracker.record_bytes("tool_b", 50, 300);
+
+        let stats = tracker.session_stats();
+        assert_eq!(stats.total_bytes_returned, 350); // 100+200+50
+        assert_eq!(stats.total_bytes_processed, 1800); // 500+1000+300
+
+        let tool_a = stats.per_tool.iter().find(|t| t.name == "tool_a").unwrap();
+        assert_eq!(tool_a.bytes_returned, 300);
+    }
+
+    #[test]
+    fn test_session_stats_savings() {
+        let tracker = CallTracker::new();
+        tracker.record("tool_a", "b1", Duration::from_millis(1), true);
+        tracker.record_bytes("tool_a", 100, 10_000); // 100 bytes returned from 10KB raw
+
+        let stats = tracker.session_stats();
+        assert_eq!(stats.total_calls, 1);
+        assert_eq!(stats.total_bytes_returned, 100);
+        assert_eq!(stats.total_bytes_processed, 10_000);
+        // Savings ratio: 10000/100 = 100x
+        assert!((stats.savings_ratio - 100.0).abs() < 0.1);
+        // Reduction: (1 - 100/10000) * 100 = 99%
+        assert!((stats.reduction_pct - 99.0).abs() < 0.1);
+        // Tokens saved: (10000 - 100) / 4 = 2475
+        assert_eq!(stats.estimated_tokens_saved, 2475);
+    }
+
+    #[test]
+    fn test_session_stats_no_data() {
+        let tracker = CallTracker::new();
+        let stats = tracker.session_stats();
+        assert_eq!(stats.total_calls, 0);
+        assert_eq!(stats.total_bytes_returned, 0);
+        assert_eq!(stats.savings_ratio, 1.0);
+        assert_eq!(stats.reduction_pct, 0.0);
     }
 }
