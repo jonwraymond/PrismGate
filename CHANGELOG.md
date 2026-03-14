@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.5.0](https://github.com/jonwraymond/PrismGate/compare/v1.4.0...v1.5.0) (2026-03-14)
+
+
+### Features
+
+* default-on output config (auto-chunk, smart truncation) ([c36f044](https://github.com/jonwraymond/PrismGate/commit/c36f0442992ef5b8022cec3278553bfc7be2e13b))
+* make context efficiency features default-on with configurable OutputConfig ([b76c169](https://github.com/jonwraymond/PrismGate/commit/b76c169f6be2a423c78f859aee84a8ef40ee8db9))
+
 ## [1.4.0](https://github.com/jonwraymond/PrismGate/compare/v1.3.2...v1.4.0) (2026-03-14)
 
 
