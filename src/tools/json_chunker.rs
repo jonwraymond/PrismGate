@@ -59,6 +59,64 @@ pub fn chunk_summary(chunks: &[JsonChunk]) -> String {
     summary
 }
 
+/// Detect arrays where all items share the same structure (identical key sets).
+/// Common in loop patterns that call the same tool N times.
+/// Returns a compact summary showing count, keys, first N items, and remaining identities.
+pub fn detect_uniform_array(value: &Value, max_preview: usize) -> Option<String> {
+    let arr = value.as_array()?;
+    if arr.len() <= max_preview {
+        return None; // Not enough items to warrant collapsing
+    }
+
+    // Check if all items are objects with the same key set
+    let first_keys: std::collections::BTreeSet<&String> = arr[0].as_object()?.keys().collect();
+    let all_same = arr.iter().skip(1).all(|item| {
+        item.as_object()
+            .is_some_and(|o| o.keys().collect::<std::collections::BTreeSet<_>>() == first_keys)
+    });
+
+    if !all_same {
+        return None;
+    }
+
+    let preview: Vec<String> = arr
+        .iter()
+        .take(max_preview)
+        .map(|item| serde_json::to_string(item).unwrap_or_default())
+        .collect();
+
+    let identities: Vec<String> = arr
+        .iter()
+        .skip(max_preview)
+        .filter_map(|item| {
+            let id = extract_identity(item);
+            if id.is_empty() { None } else { Some(id) }
+        })
+        .collect();
+
+    let key_list: Vec<&str> = first_keys.iter().take(5).map(|k| k.as_str()).collect();
+    let mut summary = format!(
+        "[Array of {} items with uniform structure ({} keys: {})]\n\nShowing first {}:\n{}",
+        arr.len(),
+        first_keys.len(),
+        key_list.join(", "),
+        max_preview,
+        preview.join(",\n")
+    );
+
+    if !identities.is_empty() {
+        let shown = identities.len().min(20);
+        summary.push_str(&format!(
+            "\n\nRemaining {} items: {}{}",
+            arr.len() - max_preview,
+            identities[..shown].join("; "),
+            if identities.len() > shown { "..." } else { "" }
+        ));
+    }
+
+    Some(summary)
+}
+
 fn walk(value: &Value, path: &str, chunks: &mut Vec<JsonChunk>) {
     match value {
         Value::Object(map) => {
@@ -299,5 +357,34 @@ mod tests {
         let chunks = chunk_json(&value, "val");
         assert_eq!(chunks.len(), 1);
         assert_eq!(chunks[0].path, "val");
+    }
+
+    #[test]
+    fn test_detect_uniform_array() {
+        let items: Vec<Value> = (0..20)
+            .map(|i| json!({"id": i, "name": format!("item-{}", i), "data": "x"}))
+            .collect();
+        let value = Value::Array(items);
+        let result = detect_uniform_array(&value, 3);
+        assert!(result.is_some());
+        let summary = result.unwrap();
+        assert!(summary.contains("Array of 20 items"));
+        assert!(summary.contains("uniform structure"));
+        assert!(summary.contains("Showing first 3"));
+    }
+
+    #[test]
+    fn test_detect_uniform_array_mixed_keys() {
+        let items = vec![
+            json!({"id": 1, "name": "a"}),
+            json!({"id": 2, "extra": "b"}),
+        ];
+        assert!(detect_uniform_array(&Value::Array(items), 1).is_none());
+    }
+
+    #[test]
+    fn test_detect_uniform_array_too_few() {
+        let items = vec![json!({"id": 1}), json!({"id": 2})];
+        assert!(detect_uniform_array(&Value::Array(items), 3).is_none());
     }
 }

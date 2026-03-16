@@ -311,5 +311,44 @@ fn enhance_sandbox_error(
         }
     }
 
+    // Pattern: Backend unavailable — suggest checking resource
+    if msg.contains("Backend '")
+        && msg.contains("is not available")
+        && let Some(start) = msg.find("Backend '")
+    {
+        let rest = &msg[start + 9..];
+        if let Some(end) = rest.find('\'') {
+            let backend = &rest[..end];
+            return anyhow::anyhow!(
+                "sandbox execution error: {msg}\n\n\
+                 HINT: Check backend status: load @gatemini://backend/{backend}\n\
+                 To see all backends: load @gatemini://backends"
+            );
+        }
+    }
+
+    // Pattern: Bare tool name used without backend prefix
+    // e.g., `web_search_exa({})` instead of `exa.web_search_exa({})`
+    if msg.contains("is not defined")
+        && let Some(start) = msg.find("ReferenceError: ")
+    {
+        let rest = &msg[start + 16..];
+        if let Some(end) = rest.find(" is not defined") {
+            let var_name = rest[..end].trim();
+            if !backend_names.contains(var_name)
+                && !backend_names
+                    .iter()
+                    .any(|bn| bn.eq_ignore_ascii_case(var_name))
+            {
+                return anyhow::anyhow!(
+                    "sandbox execution error: {msg}\n\n\
+                     HINT: '{var_name}' is not defined. If this is a tool name, \
+                     call it as `backend_name.{var_name}({{args}})`. \
+                     Use search_tools or @gatemini://tools to find the correct backend."
+                );
+            }
+        }
+    }
+
     anyhow::anyhow!("sandbox execution error: {msg}")
 }
