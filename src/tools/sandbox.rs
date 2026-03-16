@@ -93,16 +93,16 @@ async fn try_direct_tool_call(
         );
     }
 
+    // Try __getToolInterface("backend.tool") — pure registry lookup, no V8 needed
+    if let Some(schema) = try_introspection_call(registry, code) {
+        return Some(Ok(schema));
+    }
+
     // Try to extract `backend.tool(args)` pattern from simple code
-    // Look for pattern: `something.tool_name({...})`
-    let code_clean = code
-        .replace("const result = ", "")
-        .replace("await ", "")
-        .replace("return result;", "")
-        .replace("return result", "")
-        .trim()
-        .trim_start_matches("return ")
-        .to_string();
+    let code_clean = match normalize_simple_call(code) {
+        Some(c) => c,
+        None => return None, // Multi-statement/complex code, needs V8
+    };
 
     // Match: `name.tool({...})` or `name.tool({...});`
     if let Some(dot_pos) = code_clean.find('.') {
@@ -132,6 +132,114 @@ async fn try_direct_tool_call(
     }
 
     None
+}
+
+/// Normalize a simple single-tool call by stripping decorators.
+///
+/// Handles arbitrary variable names (`const r =`, `let x =`), `await`, `return`,
+/// `return await`, and trailing `; return varname;` patterns.
+/// Returns `None` for multi-statement or complex code that needs V8.
+fn normalize_simple_call(code: &str) -> Option<String> {
+    let code = code.trim();
+
+    // Reject multi-line code (definitely needs V8)
+    if code.contains('\n') {
+        return None;
+    }
+
+    let code = code.strip_suffix(';').unwrap_or(code).trim();
+
+    // Strip trailing `; return <ident>` pattern
+    let code = strip_trailing_return(code);
+
+    // Strip optional leading `const/let/var <ident> = `
+    let code = strip_var_assignment(code);
+
+    // Strip `await`
+    let code = code.strip_prefix("await ").unwrap_or(code).trim();
+
+    // Strip `return`
+    let code = code.strip_prefix("return ").unwrap_or(code).trim();
+
+    // Strip `await` again (handles `return await ...`)
+    let code = code.strip_prefix("await ").unwrap_or(code).trim();
+
+    // After stripping, must have no remaining semicolons (single expression)
+    if code.contains(';') {
+        return None;
+    }
+
+    Some(code.to_string())
+}
+
+/// Strip `const/let/var <identifier> = ` from the front of code.
+fn strip_var_assignment(code: &str) -> &str {
+    for prefix in &["const ", "let ", "var "] {
+        if let Some(rest) = code.strip_prefix(prefix)
+            && let Some(eq_pos) = rest.find(" = ")
+        {
+            let ident = rest[..eq_pos].trim();
+            if ident
+                .chars()
+                .all(|c| c.is_alphanumeric() || c == '_' || c == '$')
+            {
+                return rest[eq_pos + 3..].trim();
+            }
+        }
+    }
+    code
+}
+
+/// Strip trailing `; return <identifier>` from the end of code.
+fn strip_trailing_return(code: &str) -> &str {
+    if let Some(semi_pos) = code.rfind(';') {
+        let after_semi = code[semi_pos + 1..].trim();
+        if let Some(rest) = after_semi.strip_prefix("return ") {
+            let ident = rest.trim().trim_end_matches(';');
+            if !ident.is_empty()
+                && ident
+                    .chars()
+                    .all(|c| c.is_alphanumeric() || c == '_' || c == '$')
+            {
+                return code[..semi_pos].trim();
+            }
+        }
+    }
+    code
+}
+
+/// Handle `__getToolInterface("backend.tool")` without V8.
+fn try_introspection_call(registry: &Arc<ToolRegistry>, code: &str) -> Option<String> {
+    let code = code.trim().trim_end_matches(';');
+    let code = code.strip_prefix("return ").unwrap_or(code).trim();
+    let code = strip_var_assignment(code);
+    let code = code.strip_prefix("await ").unwrap_or(code).trim();
+
+    let rest = code.strip_prefix("__getToolInterface(")?;
+    let rest = rest.strip_suffix(')')?;
+    let rest = rest.trim();
+
+    // Extract the string argument (single or double quoted)
+    let name = if (rest.starts_with('"') && rest.ends_with('"'))
+        || (rest.starts_with('\'') && rest.ends_with('\''))
+    {
+        &rest[1..rest.len() - 1]
+    } else {
+        return None;
+    };
+
+    let entry = registry.get_by_name(name)?;
+    let orig = if entry.original_name.is_empty() {
+        &entry.name
+    } else {
+        &entry.original_name
+    };
+    let schema = serde_json::json!({
+        "name": orig,
+        "description": entry.description,
+        "input_schema": entry.input_schema,
+    });
+    serde_json::to_string_pretty(&schema).ok()
 }
 
 /// Call a tool using "backend.tool_name" dotted notation, or just "tool_name".
@@ -224,6 +332,8 @@ fn process_output(
     config: &crate::config::OutputConfig,
     max_output: usize,
 ) -> String {
+    let raw_bytes = raw.len();
+
     // Stage 1: Intent filtering (if intent provided)
     let after_intent = if let Some(intent) = intent {
         filter_by_intent(&raw, intent)
@@ -237,12 +347,16 @@ fn process_output(
         && after_intent.trim_start().starts_with(['{', '['])
     {
         if let Ok(value) = serde_json::from_str::<serde_json::Value>(&after_intent) {
-            let chunks = crate::tools::json_chunker::chunk_json(&value, "");
-            if chunks.len() > 1 {
-                // Replace raw JSON with compact chunk summary
-                crate::tools::json_chunker::chunk_summary(&chunks)
+            // Try uniform array collapse first (common in loop patterns)
+            if let Some(collapsed) = crate::tools::json_chunker::detect_uniform_array(&value, 3) {
+                collapsed
             } else {
-                after_intent
+                let chunks = crate::tools::json_chunker::chunk_json(&value, "");
+                if chunks.len() > 1 {
+                    crate::tools::json_chunker::chunk_summary(&chunks)
+                } else {
+                    after_intent
+                }
             }
         } else {
             after_intent
@@ -252,10 +366,25 @@ fn process_output(
     };
 
     // Stage 3: Truncation (smart head/tail or simple cutoff based on config)
-    if config.smart_truncation {
+    let final_output = if config.smart_truncation {
         truncate_output(&after_chunk, max_output)
     } else {
         simple_truncate(&after_chunk, max_output)
+    };
+
+    // Stage 4: Append size metadata when pipeline reduced output significantly
+    let returned_bytes = final_output.len();
+    if raw_bytes > returned_bytes + 200 {
+        let saved_pct = ((raw_bytes - returned_bytes) as f64 / raw_bytes as f64 * 100.0) as u32;
+        format!(
+            "{}\n\n[Output: {:.1}KB returned, {:.1}KB processed, {}% reduced]",
+            final_output,
+            returned_bytes as f64 / 1024.0,
+            raw_bytes as f64 / 1024.0,
+            saved_pct
+        )
+    } else {
+        final_output
     }
 }
 
@@ -440,6 +569,97 @@ fn truncate_output(s: &str, max_size: usize) -> String {
         tail_count,
         tail_text
     )
+}
+
+#[cfg(test)]
+mod direct_parser_tests {
+    use super::*;
+
+    #[test]
+    fn test_normalize_const_result() {
+        assert_eq!(
+            normalize_simple_call(r#"const result = await exa.search({"q": "x"}); return result;"#),
+            Some(r#"exa.search({"q": "x"})"#.to_string())
+        );
+    }
+
+    #[test]
+    fn test_normalize_arbitrary_var_name() {
+        assert_eq!(
+            normalize_simple_call(r#"const r = await exa.search({"q": "x"}); return r;"#),
+            Some(r#"exa.search({"q": "x"})"#.to_string())
+        );
+    }
+
+    #[test]
+    fn test_normalize_let_var() {
+        assert_eq!(
+            normalize_simple_call(r#"let x = await b.t({"a": 1}); return x;"#),
+            Some(r#"b.t({"a": 1})"#.to_string())
+        );
+    }
+
+    #[test]
+    fn test_normalize_return_await() {
+        assert_eq!(
+            normalize_simple_call(r#"return await exa.search({"q": "x"})"#),
+            Some(r#"exa.search({"q": "x"})"#.to_string())
+        );
+    }
+
+    #[test]
+    fn test_normalize_bare_call() {
+        assert_eq!(
+            normalize_simple_call(r#"exa.search({"q": "x"})"#),
+            Some(r#"exa.search({"q": "x"})"#.to_string())
+        );
+    }
+
+    #[test]
+    fn test_normalize_empty_parens() {
+        assert_eq!(
+            normalize_simple_call("await backend.tool()"),
+            Some("backend.tool()".to_string())
+        );
+    }
+
+    #[test]
+    fn test_normalize_rejects_multiline() {
+        assert!(
+            normalize_simple_call(
+                "const a = await x.t({});\nconst b = await y.t({});\nreturn {a, b};"
+            )
+            .is_none()
+        );
+    }
+
+    #[test]
+    fn test_normalize_rejects_multistatement() {
+        assert!(
+            normalize_simple_call("const a = await x.t({}); const b = await y.t({})").is_none()
+        );
+    }
+
+    #[test]
+    fn test_strip_var_assignment_variants() {
+        assert_eq!(strip_var_assignment("const r = await x.t()"), "await x.t()");
+        assert_eq!(strip_var_assignment("let result = x.t()"), "x.t()");
+        assert_eq!(strip_var_assignment("var foo = x.t()"), "x.t()");
+        assert_eq!(strip_var_assignment("x.t()"), "x.t()");
+    }
+
+    #[test]
+    fn test_strip_trailing_return_variants() {
+        assert_eq!(
+            strip_trailing_return("exa.search({}); return result"),
+            "exa.search({})"
+        );
+        assert_eq!(
+            strip_trailing_return("exa.search({}); return r"),
+            "exa.search({})"
+        );
+        assert_eq!(strip_trailing_return("exa.search({})"), "exa.search({})");
+    }
 }
 
 #[cfg(test)]

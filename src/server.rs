@@ -416,6 +416,13 @@ impl ServerHandler for GateminiServer {
                  - For multi-tool loops, make separate call_tool_chain calls instead of dynamic resolution\n\
                  - Standard JS only: JSON, Math, Array, Object, Promise, async/await, console\n\
                  - If a backend is stopped, the tool call will auto-restart it\n\n\
+                 ## Output Processing (automatic)\n\
+                 - Large JSON responses (>10KB) are auto-chunked into path summaries\n\
+                 - Uniform arrays (same-structure items) are collapsed: first 3 + identity summary\n\
+                 - Use `intent` parameter to filter output by relevance (e.g., intent=\"error handling\")\n\
+                 - Response metadata shows KB returned vs processed when reduction occurs\n\
+                 - Smart truncation preserves head (60%) and tail (40%) of output at line boundaries\n\
+                 - Search supports typos: three-tier fallback (BM25 → trigram → fuzzy Levenshtein)\n\n\
                  ## Example: Find and use a web search tool\n\
                  ```\n\
                  search_tools(\"web search\")           → [{name: \"web_search_exa\", backend: \"exa\", ...}]\n\
