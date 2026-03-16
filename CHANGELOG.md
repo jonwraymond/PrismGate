@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.6.0](https://github.com/jonwraymond/PrismGate/compare/v1.5.0...v1.6.0) (2026-03-16)
+
+
+### Features
+
+* optimize call_tool_chain for 6 common LLM patterns ([8680f01](https://github.com/jonwraymond/PrismGate/commit/8680f019d361bc95cbc6a89a8b7fdb2689433d34))
+* optimize call_tool_chain for common LLM usage patterns ([2f244db](https://github.com/jonwraymond/PrismGate/commit/2f244dbdab9a8063d668b7744350395092cae0a5))
+
 ## [1.5.0](https://github.com/jonwraymond/PrismGate/compare/v1.4.0...v1.5.0) (2026-03-14)
 
 
