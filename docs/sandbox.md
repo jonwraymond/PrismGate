@@ -93,7 +93,7 @@ Each stage is configurable via `OutputConfig` in the sandbox config. All stages 
 
 ### Stage 1: intent filtering
 
-If the caller provides an `intent` parameter in `call_tool_chain`, the output is filtered to lines and sections that match the intent keywords before any other processing. This reduces irrelevant content early, improving the signal-to-noise ratio for downstream stages.
+If the caller provides an `intent` parameter in `call_tool_chain` and the output exceeds 5,000 bytes (`INTENT_SEARCH_THRESHOLD`), the output is split into paragraph-sized chunks and scored against the intent terms. Only chunks where at least 30% of intent terms appear are kept. Outputs below 5 KB bypass this stage entirely.
 
 ### Stage 2: auto-chunk large JSON
 

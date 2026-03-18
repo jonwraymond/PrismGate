@@ -45,10 +45,12 @@ Resources:
 - `gatemini://stats`
 - `gatemini://llms`
 - `gatemini://llms-full`
+- `gatemini://call_tool_chain`
 - `gatemini://tool/{tool_name}`
 - `gatemini://backend/{backend_name}`
 - `gatemini://backend/{backend_name}/tools`
 - `gatemini://recent/{limit}`
+- `gatemini://guide/{topic}`
 
 Prompts:
 

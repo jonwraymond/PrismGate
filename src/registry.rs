@@ -335,7 +335,7 @@ impl ToolRegistry {
     /// Optional `tracker`: if provided, applies logarithmic usage boost to BM25 scores.
     /// Three-tier search: BM25 → trigram substring → fuzzy Levenshtein correction.
     ///
-    /// Tier 1 (BM25) handles exact and stemmed token matches.
+    /// Tier 1 (BM25) handles exact token matches (lowercase, split on non-alphanumeric).
     /// Tier 2 (trigram) catches substring matches like "websrch" → "web_search".
     /// Tier 3 (fuzzy) corrects typos like "serch" → "search" via Levenshtein distance.
     pub fn search(

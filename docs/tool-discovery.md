@@ -28,7 +28,7 @@ The registry implementation lives in `src/registry.rs`.
 
 Search uses a three-tier fallback strategy:
 
-1. **Tier 1 — BM25** handles exact and stemmed token matches.
+1. **Tier 1 — BM25** handles exact token matches (lowercase, split on non-alphanumeric boundaries).
 2. **Tier 2 — trigram substring** catches partial matches like `websrch` → `web_search` when BM25 returns no results.
 3. **Tier 3 — fuzzy Levenshtein** corrects typos like `serch` → `search` when neither earlier tier produces results.
 

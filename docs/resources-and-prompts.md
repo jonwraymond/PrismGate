@@ -27,6 +27,7 @@ Resources are implemented in `src/resources.rs`.
 | `gatemini://backend/{backend_name}` | one backend with status, availability, tool count, and tool names |
 | `gatemini://backend/{backend_name}/tools` | the tools for one backend |
 | `gatemini://recent/{limit}` | the last `N` tool calls |
+| `gatemini://guide/{topic}` | focused guidance for a topic (`call_tool_chain`, `discovery`) |
 
 The resource layer also implements template completion for tool and backend names.
 
