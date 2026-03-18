@@ -11,39 +11,29 @@ use crate::tracker::CallTracker;
 /// Return the list of available prompts.
 pub fn list_prompts() -> Vec<Prompt> {
     vec![
-        Prompt {
-            name: "discover".to_string(),
-            title: Some("Discover Tools".to_string()),
-            description: Some(
-                "Guided workflow for discovering gatemini tools progressively".to_string(),
-            ),
-            arguments: None,
-            icons: None,
-            meta: None,
-        },
-        Prompt {
-            name: "find_tool".to_string(),
-            title: Some("Find Tool".to_string()),
-            description: Some(
-                "Search for tools matching a task and get the top match's schema".to_string(),
-            ),
-            arguments: Some(vec![PromptArgument {
-                name: "task".to_string(),
-                title: Some("Task Description".to_string()),
-                description: Some("What you need to accomplish".to_string()),
-                required: Some(true),
-            }]),
-            icons: None,
-            meta: None,
-        },
-        Prompt {
-            name: "backend_status".to_string(),
-            title: Some("Backend Status".to_string()),
-            description: Some("Health and status of all backends with tool counts".to_string()),
-            arguments: None,
-            icons: None,
-            meta: None,
-        },
+        Prompt::new(
+            "discover",
+            Some("Guided workflow for discovering gatemini tools progressively"),
+            None,
+        )
+        .with_title("Discover Tools"),
+        Prompt::new(
+            "find_tool",
+            Some("Search for tools matching a task and get the top match's schema"),
+            Some(vec![
+                PromptArgument::new("task")
+                    .with_title("Task Description")
+                    .with_description("What you need to accomplish")
+                    .with_required(true),
+            ]),
+        )
+        .with_title("Find Tool"),
+        Prompt::new(
+            "backend_status",
+            Some("Health and status of all backends with tool counts"),
+            None,
+        )
+        .with_title("Backend Status"),
     ]
 }
 
@@ -113,10 +103,11 @@ fn discover_prompt(registry: &ToolRegistry) -> GetPromptResult {
          - Bare tool names may not resolve if the backend is still starting\n"
     );
 
-    GetPromptResult {
-        description: Some("Guided workflow for progressive tool discovery".to_string()),
-        messages: vec![PromptMessage::new_text(PromptMessageRole::Assistant, text)],
-    }
+    GetPromptResult::new(vec![PromptMessage::new_text(
+        PromptMessageRole::Assistant,
+        text,
+    )])
+    .with_description("Guided workflow for progressive tool discovery")
 }
 
 fn find_tool_prompt(task: &str, registry: &ToolRegistry) -> GetPromptResult {
@@ -168,10 +159,11 @@ fn find_tool_prompt(task: &str, registry: &ToolRegistry) -> GetPromptResult {
         }
     }
 
-    GetPromptResult {
-        description: Some(format!("Tools matching: {task}")),
-        messages: vec![PromptMessage::new_text(PromptMessageRole::Assistant, text)],
-    }
+    GetPromptResult::new(vec![PromptMessage::new_text(
+        PromptMessageRole::Assistant,
+        text,
+    )])
+    .with_description(format!("Tools matching: {task}"))
 }
 
 fn backend_status_prompt(
@@ -208,10 +200,11 @@ fn backend_status_prompt(
         ));
     }
 
-    GetPromptResult {
-        description: Some("Health and status of all backends".to_string()),
-        messages: vec![PromptMessage::new_text(PromptMessageRole::Assistant, text)],
-    }
+    GetPromptResult::new(vec![PromptMessage::new_text(
+        PromptMessageRole::Assistant,
+        text,
+    )])
+    .with_description("Health and status of all backends")
 }
 
 fn first_sentence(text: &str) -> String {

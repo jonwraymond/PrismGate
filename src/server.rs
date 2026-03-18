@@ -367,15 +367,15 @@ impl GateminiServer {
 #[tool_handler]
 impl ServerHandler for GateminiServer {
     fn get_info(&self) -> ServerInfo {
-        ServerInfo {
-            protocol_version: ProtocolVersion::V_2025_06_18,
-            capabilities: ServerCapabilities::builder()
+        ServerInfo::new(
+            ServerCapabilities::builder()
                 .enable_tools()
                 .enable_resources()
                 .enable_prompts()
                 .build(),
-            server_info: Implementation::from_build_env(),
-            instructions: Some(
+        )
+        .with_protocol_version(ProtocolVersion::V_2025_06_18)
+        .with_instructions(
                 "gatemini is an MCP gateway that aggregates tools from multiple backend MCP servers.\n\n\
                  IMPORTANT: Backend tools (e.g. firecrawl_search, web_search_exa) are NOT direct MCP tools. \
                  Do NOT call them directly. They MUST be called via call_tool_chain.\n\n\
@@ -430,9 +430,7 @@ impl ServerHandler for GateminiServer {
                  tool_info(\"web_search_exa\", detail=\"full\") → {input_schema: {properties: {...}}}\n\
                  call_tool_chain(`const r = await exa.web_search_exa({query: \"MCP protocol\"}); return r;`)\n\
                  ```"
-                    .into(),
-            ),
-        }
+        )
     }
 
     fn list_resources(

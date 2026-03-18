@@ -147,12 +147,10 @@ impl Backend for HttpBackend {
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("HTTP backend '{}' not started", self.name))?;
 
-        let params = CallToolRequestParams {
-            meta: None,
-            name: tool_name.to_string().into(),
-            arguments: arguments.and_then(|v| v.as_object().cloned()),
-            task: None,
-        };
+        let mut params = CallToolRequestParams::new(tool_name.to_string());
+        if let Some(args) = arguments.and_then(|v| v.as_object().cloned()) {
+            params = params.with_arguments(args);
+        }
 
         debug!(backend = %self.name, tool = %tool_name, "calling tool via HTTP");
 

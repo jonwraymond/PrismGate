@@ -139,17 +139,12 @@ mod tests {
                     let p = peer.clone();
                     call_handles.push(tokio::spawn(async move {
                         let result = p
-                            .call_tool(CallToolRequestParams {
-                                meta: None,
-                                name: "search_tools".to_string().into(),
-                                arguments: Some(
-                                    serde_json::json!({"task_description": format!("client{client_id}_call{call_id}")})
-                                        .as_object()
-                                        .unwrap()
-                                        .clone(),
-                                ),
-                                task: None,
-                            })
+                            .call_tool(CallToolRequestParams::new("search_tools").with_arguments(
+                                serde_json::json!({"task_description": format!("client{client_id}_call{call_id}")})
+                                    .as_object()
+                                    .unwrap()
+                                    .clone(),
+                            ))
                             .await
                             .unwrap();
 
@@ -185,17 +180,14 @@ mod tests {
         let call_handle = {
             let peer = peer_a.clone();
             tokio::spawn(async move {
-                peer.call_tool(CallToolRequestParams {
-                    meta: None,
-                    name: "search_tools".to_string().into(),
-                    arguments: Some(
+                peer.call_tool(
+                    CallToolRequestParams::new("search_tools").with_arguments(
                         serde_json::json!({"task_description": "test"})
                             .as_object()
                             .unwrap()
                             .clone(),
                     ),
-                    task: None,
-                })
+                )
                 .await
             })
         };
