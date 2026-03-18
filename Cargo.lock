@@ -2183,7 +2183,6 @@ dependencies = [
  "futures",
  "futures-util",
  "hdrhistogram",
- "hf-hub",
  "http",
  "libc",
  "model2vec-rs",
