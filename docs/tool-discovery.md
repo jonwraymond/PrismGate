@@ -24,6 +24,16 @@ The registry entries behind those tools are live data derived from configured ba
 
 The registry implementation lives in `src/registry.rs`.
 
+### Three-tier fallback
+
+Search uses a three-tier fallback strategy:
+
+1. **Tier 1 — BM25** handles exact and stemmed token matches.
+2. **Tier 2 — trigram substring** catches partial matches like `websrch` → `web_search` when BM25 returns no results.
+3. **Tier 3 — fuzzy Levenshtein** corrects typos like `serch` → `search` when neither earlier tier produces results.
+
+Each tier is only invoked if the previous tier returns nothing. Within a tier, if a tracker is provided, usage counts apply a logarithmic boost to scores.
+
 ### BM25
 
 Keyword search uses Okapi BM25 with:
@@ -31,7 +41,7 @@ Keyword search uses Okapi BM25 with:
 - `k1 = 1.2`
 - `b = 0.75`
 
-Tool names get extra weight by duplicating the name tokens before description tokens are added.
+Tool names are tokenized by splitting underscores and hyphens (`get_current_time` → `["get", "current", "time"]`). Name tokens get a 2x weight over description tokens.
 
 ### Optional semantic search
 
@@ -64,6 +74,7 @@ Brief search results contain:
 - backend name
 - first sentence of the description
 - a generated call example
+- `try_also` — a list of IDF-scored distinctive terms from the matching backend, useful for follow-up queries
 
 Brief tool info contains:
 
@@ -94,6 +105,10 @@ Resources:
 - `gatemini://backends`
 - `gatemini://tools`
 - `gatemini://recent`
+- `gatemini://stats`
+- `gatemini://llms`
+- `gatemini://llms-full`
+- `gatemini://call_tool_chain`
 - `gatemini://tool/{tool_name}`
 - `gatemini://backend/{backend_name}`
 - `gatemini://backend/{backend_name}/tools`

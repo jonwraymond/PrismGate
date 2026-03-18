@@ -41,6 +41,9 @@ Current defaults from `src/config.rs`:
 | `sandbox.timeout` | `30s` |
 | `sandbox.max_output_size` | `200000` |
 | `sandbox.max_concurrent_sandboxes` | `8` |
+| `sandbox.output.auto_chunk_json` | `true` |
+| `sandbox.output.smart_truncation` | `true` |
+| `sandbox.output.chunk_threshold` | `10240` |
 | `admin.listen` | `127.0.0.1:19999` |
 
 Transport defaults:

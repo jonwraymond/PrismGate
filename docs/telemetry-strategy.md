@@ -7,7 +7,7 @@ This page separates two things:
 
 ## Current in-process observability
 
-The current code already provides three useful layers.
+The current code already provides four useful layers.
 
 ### Structured logging
 
@@ -15,11 +15,20 @@ The current code already provides three useful layers.
 
 ### Call tracking
 
-`src/tracker.rs` already records:
+`src/tracker.rs` (`CallTracker`) already records:
 
-- recent tool calls
+- recent tool calls (ring buffer)
 - per-tool usage counts
-- per-backend latency histograms
+- per-backend latency histograms (HDR histogram, p50/p95/p99, 1 µs–10 min range)
+- per-tool bytes returned after output reduction
+- total bytes processed (raw, before reduction) across the session
+- session start time for uptime tracking
+
+The `record_bytes(tool_name, returned, processed)` method is called after every `call_tool_chain` output pass. `session_stats()` aggregates all of this into a `SessionStats` struct exposed via the `gatemini://stats` resource.
+
+### Output reduction accounting
+
+The output pipeline (smart truncation, JSON auto-chunking, uniform array collapse, intent filtering) feeds directly into byte tracking. This means `gatemini://stats` shows real-time context savings for the current session without any external tooling.
 
 ### Backend health state
 
@@ -36,20 +45,13 @@ The repo does not currently expose:
 
 - OTLP exporters
 - OpenTelemetry spans
-- payload-size histograms for discovery responses
+- payload-size histograms for discovery responses (`search_tools`, `tool_info`, `list_tools_meta`)
 - explicit token counts
 - session-level discovery-depth analytics
 
 ## Practical next step
 
-If you want evidence for discovery efficiency without a full observability stack, the smallest useful addition would be response-size tracking around:
-
-- `search_tools`
-- `tool_info`
-- `list_tools_meta`
-- `read_resource` for `gatemini://tools`
-
-That would let you compare brief and full responses using the actual registry in production rather than documentation examples.
+The output pipeline already feeds byte data into `CallTracker`. The gap is on the discovery side: `search_tools`, `tool_info`, and `list_tools_meta` do not yet call `record_bytes`. Adding that would let you compare brief and full responses using the actual registry in production rather than documentation examples, and it would surface discovery overhead alongside execution overhead in `gatemini://stats`.
 
 ## Proposed OTEL shape
 
@@ -72,10 +74,11 @@ Useful fields would include:
 - backend name
 - discovery mode
 - result count
-- response size
+- response size (bytes_processed, bytes_returned)
+- reduction percentage
 - execution mode
 - backend latency
 
 ## Why this page stays conservative
 
-Older versions of the docs described a telemetry system as if it already existed. It does not. The tracker and health state are real; OTEL export remains future work.
+Older versions of the docs described a telemetry system as if it already existed. It does not. The tracker, byte accounting, and health state are real; OTEL export remains future work.

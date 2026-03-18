@@ -68,8 +68,8 @@ Public tools:
 
 Public resources and prompts are implemented separately:
 
-- `src/resources.rs`
-- `src/prompts.rs`
+- `src/resources.rs`: static and template resources, `gatemini://llms` and `gatemini://llms-full` generation, template completion
+- `src/prompts.rs`: live prompts driven by registry and tracker state
 
 The advertised protocol version is `2025-06-18`.
 
@@ -102,7 +102,7 @@ The health checker keeps extra circuit-breaker timing internally instead of expo
 
 The discovery system is spread across three files:
 
-- `src/registry.rs`: registry storage, BM25 search, optional hybrid RRF search, alias rules
+- `src/registry.rs`: registry storage, three-tier search (BM25 → trigram → fuzzy), optional hybrid RRF search, IDF-scored distinctive terms, alias rules
 - `src/tools/discovery.rs`: tool handlers for search, paging, brief/full views, required keys
 - `src/embeddings.rs`: optional model2vec-powered semantic search when the `semantic` feature is enabled
 
@@ -118,7 +118,8 @@ Design details worth knowing:
 
 `call_tool_chain` is split across:
 
-- `src/tools/sandbox.rs`: routing and fast-path parsing
+- `src/tools/sandbox.rs`: routing, fast-path parsing, and output processing pipeline (intent filter → auto-chunk JSON → truncate)
+- `src/tools/json_chunker.rs`: JSON key-path decomposition and uniform array collapse for large output reduction
 - `src/sandbox/mod.rs`: dedicated V8 thread and runtime bridge
 - `src/sandbox/bridge.rs`: generated JS accessors and introspection helpers
 
@@ -127,6 +128,8 @@ Execution tiers:
 1. direct JSON tool call
 2. simple single-call TypeScript parse
 3. full V8 sandbox
+
+Output is processed through a three-stage pipeline after execution: intent filtering (if `intent` is provided) → auto-chunking large JSON above a configurable threshold → truncation to `max_output_size` using a head-60%/tail-40% split.
 
 The sandbox feature is optional at compile time and enabled by default in this repo.
 
@@ -154,7 +157,7 @@ Hot-reload behavior today:
 Two files own runtime snapshots:
 
 - `src/cache.rs`: tool cache, embedding cache, usage stats cache
-- `src/tracker.rs`: recent tool calls, per-tool usage counts, backend latency histograms
+- `src/tracker.rs`: recent tool calls, per-tool usage counts, backend latency histograms, per-session byte tracking (bytes returned vs. bytes processed before truncation)
 
 Current cache version: `4`
 
@@ -193,4 +196,5 @@ Useful files:
 - `src/ipc/daemon_tests.rs`
 - `src/ipc/proxy_tests.rs`
 - `src/mcp_compliance_tests.rs`
+- `src/integration_inventory.rs`
 - `src/testutil.rs`

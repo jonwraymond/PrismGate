@@ -11,7 +11,7 @@ Naming note:
 
 - [Architecture](architecture.md): daemon/proxy lifecycle, socket coordination, direct mode, restart flow
 - [Codebase Map](codebase-map.md): end-to-end tour of the source tree and runtime ownership
-- [Tool Discovery](tool-discovery.md): the 7 meta-tools, BM25 plus optional semantic search, RRF fusion
+- [Tool Discovery](tool-discovery.md): the 7 meta-tools, three-tier search (BM25 → trigram → fuzzy), optional semantic search
 - [Backend Management](backend-management.md): backend states, transports, health checker, prerequisites, concurrency
 - [Secrets & Config](secrets-and-config.md): `.env` load order, environment interpolation, secretref resolution, hot-reload boundaries
 - [Resources & Prompts](resources-and-prompts.md): live `gatemini://` resources and MCP prompts
