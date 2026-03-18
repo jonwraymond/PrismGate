@@ -327,6 +327,36 @@ fn enhance_sandbox_error(
         }
     }
 
+    // Pattern: Trying to call gatemini meta-tools from inside the sandbox
+    // e.g., `gatemini.search_tools({...})` — meta-tools are NOT available inside call_tool_chain
+    if msg.contains("is not defined")
+        && (msg.contains("gatemini")
+            || msg.contains("search_tools")
+            || msg.contains("tool_info")
+            || msg.contains("list_tools_meta"))
+        && let Some(start) = msg.find("ReferenceError: ")
+    {
+        let rest = &msg[start + 16..];
+        if let Some(end) = rest.find(" is not defined") {
+            let var_name = rest[..end].trim();
+            if var_name == "gatemini"
+                || var_name == "search_tools"
+                || var_name == "tool_info"
+                || var_name == "list_tools_meta"
+            {
+                return anyhow::anyhow!(
+                    "sandbox execution error: {msg}\n\n\
+                     HINT: '{var_name}' is a gatemini meta-tool, NOT a backend. \
+                     Meta-tools (search_tools, tool_info, list_tools_meta, call_tool_chain) \
+                     cannot be called from inside call_tool_chain. \
+                     Inside the sandbox, you can only call backend tools: \
+                     `await backend_name.tool_name({{args}})`.\n\
+                     To discover backends: use search_tools OUTSIDE of call_tool_chain."
+                );
+            }
+        }
+    }
+
     // Pattern: Bare tool name used without backend prefix
     // e.g., `web_search_exa({})` instead of `exa.web_search_exa({})`
     if msg.contains("is not defined")
