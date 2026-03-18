@@ -10,6 +10,7 @@ The most meaningful comparisons are:
 2. `tool_info` brief versus full
 3. `gatemini://tools` versus serializing all full schemas
 4. fixed gateway-tool overhead versus direct exposure of every backend tool
+5. `call_tool_chain` output before versus after the reduction pipeline (visible via `gatemini://stats`)
 
 ## Suggested methodology
 
@@ -37,6 +38,14 @@ Record:
 - server instruction block
 - number of discovery steps needed before the first execution
 
+### Output pipeline savings
+
+After running a representative task:
+
+1. read `gatemini://stats`
+2. record `bytes_returned`, `bytes_processed`, and the reduction percentage
+3. note which tools generated the largest reductions (JSON auto-chunking and uniform array collapse produce the highest ratios for data-heavy backends)
+
 ## Example result template
 
 ```text
@@ -50,6 +59,12 @@ tool_info brief:
 tool_info full:
 gatemini://tools:
 all full schemas:
+
+Session stats (gatemini://stats):
+  bytes_returned:
+  bytes_processed:
+  reduction_pct:
+  top reducing tools:
 ```
 
 ## Interpretation
@@ -59,5 +74,7 @@ You should expect the relative advantage of Gatemini to grow as:
 - backend count grows
 - tool count grows
 - schema size grows
+- backend responses contain large JSON payloads (auto-chunking kicks in above 10 KB)
+- backends return uniform-structure arrays (collapse is most aggressive for repeating-object arrays)
 
-The gateway surface stays fixed while the naive "expose everything" surface expands with every backend you add.
+The gateway surface stays fixed while the naive "expose everything" surface expands with every backend you add. The output reduction pipeline provides an additional layer of savings orthogonal to discovery efficiency.

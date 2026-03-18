@@ -8,12 +8,16 @@ Resources are implemented in `src/resources.rs`.
 
 ### Static resources
 
-| URI | Content |
-|-----|---------|
-| `gatemini://overview` | gateway usage overview |
-| `gatemini://backends` | backend list with status, availability, and live tool counts |
-| `gatemini://tools` | compact tool index |
-| `gatemini://recent` | last 50 recorded tool calls |
+| URI | MIME type | Content |
+|-----|-----------|---------|
+| `gatemini://overview` | `text/plain` | gateway usage overview |
+| `gatemini://backends` | `application/json` | backend list with status, availability, and live tool counts |
+| `gatemini://tools` | `application/json` | compact tool index (~3k tokens vs ~40k for full schemas) |
+| `gatemini://recent` | `application/json` | last 50 recorded tool calls with tool name, backend, duration, and success/failure |
+| `gatemini://stats` | `application/json` | context savings stats: bytes returned vs processed, savings ratio, per-tool breakdown |
+| `gatemini://llms` | `text/plain` | machine-readable gateway reference: tool names, descriptions, naming rules (~3k tokens) |
+| `gatemini://llms-full` | `text/plain` | complete gateway reference with full input schemas for every tool |
+| `gatemini://call_tool_chain` | `text/plain` | execution contract, return semantics, and examples for sandboxed TypeScript tool calls |
 
 ### Resource templates
 
@@ -23,20 +27,21 @@ Resources are implemented in `src/resources.rs`.
 | `gatemini://backend/{backend_name}` | one backend with status, availability, tool count, and tool names |
 | `gatemini://backend/{backend_name}/tools` | the tools for one backend |
 | `gatemini://recent/{limit}` | the last `N` tool calls |
+| `gatemini://guide/{topic}` | focused guidance for a topic (`call_tool_chain`, `discovery`) |
 
 The resource layer also implements template completion for tool and backend names.
 
 ## Prompt surface
 
-Prompts are implemented in `src/prompts.rs`.
+Prompts are implemented in `src/prompts.rs` using the rmcp builder pattern (`Prompt::new(...).with_title(...)`, `PromptArgument::new(...).with_required(true)`).
 
 Available prompts:
 
-| Prompt | What it returns |
-|--------|-----------------|
-| `discover` | live discovery walkthrough using current registry counts |
-| `find_tool` | search results plus the top match schema and example call |
-| `backend_status` | a markdown table with backend state, availability, tool count, and latency stats |
+| Prompt | Arguments | What it returns |
+|--------|-----------|-----------------|
+| `discover` | none | live discovery walkthrough using current registry counts |
+| `find_tool` | `task` (required) | search results plus the top match schema and example call |
+| `backend_status` | none | a markdown table with backend state, availability, tool count, and latency stats |
 
 `backend_status` currently includes:
 
@@ -57,8 +62,9 @@ What is tracked today:
 - bounded recent call history
 - per-tool usage counts
 - per-backend HDR latency histograms
+- per-session and per-tool byte tracking (bytes returned vs bytes processed by the output pipeline)
 
-That is why `gatemini://recent` and `backend_status` can return live operational data without a separate telemetry backend.
+That is why `gatemini://recent`, `gatemini://stats`, and `backend_status` can return live operational data without a separate telemetry backend.
 
 ## Server instructions
 

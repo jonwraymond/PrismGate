@@ -192,6 +192,18 @@ Features:
 
 If `managed: true`, Gatemini records the spawned prerequisite PID and terminates the process group during shutdown.
 
+## Output processing pipeline
+
+Tool call responses pass through a three-stage pipeline before being returned to the client.
+
+Stage 1 — **Intent filtering**: if the caller passes an `intent` string to `call_tool_chain`, the raw output is filtered to sections relevant to that intent before any further processing.
+
+Stage 2 — **Auto-chunk**: if `output_config.auto_chunk_json` is enabled and the output is parseable JSON above `output_config.chunk_threshold`, the response is decomposed. Uniform arrays are collapsed to the first 3 items plus a count summary; non-uniform objects are rendered as a key-path summary.
+
+Stage 3 — **Truncation**: if the output after the previous stages exceeds `max_output_size`, it is truncated using a head-60%/tail-40% split to preserve both the beginning and end of the response.
+
+The tracker records `bytes_returned` (after the pipeline) and `bytes_processed` (raw bytes before) per tool call. These are exposed through `gatemini://stats` as a savings ratio and reduction percentage.
+
 ## Composite tools
 
 Composite tools are not a separate transport. They are registered under the virtual `__composite` backend and executed through the sandbox layer.

@@ -1,15 +1,18 @@
 # Gatemini
 
-> Rust MCP gateway exposing a discovery surface over backend MCP servers
+> Rust MCP gateway (v1.7.1) exposing a discovery surface over backend MCP servers via a shared daemon
 
 ## Docs
 
 - [CLAUDE.md](CLAUDE.md): Project structure, module map, runtime summary
-- [Architecture](docs/architecture.md): Daemon/proxy lifecycle, session identity
-- [Backend Management](docs/backend-management.md): Transports, dedicated pools, health
-- [Tool Discovery](docs/tool-discovery.md): BM25, trigram, fuzzy search fallback
-- [Sandbox](docs/sandbox.md): V8 execution, direct calls, intent filtering
-- [Token Efficiency](docs/token-efficiency.md): Brief mode, progressive disclosure
+- [Architecture](docs/architecture.md): Daemon/proxy lifecycle, session identity, dedicated pools
+- [Backend Management](docs/backend-management.md): Transports (stdio, HTTP, CLI adapter), dedicated pools, health checker
+- [Tool Discovery](docs/tool-discovery.md): Three-tier search (BM25 → trigram → fuzzy), IDF distinctive terms
+- [Sandbox](docs/sandbox.md): V8 execution, direct call parser, intent filtering, output pipeline
+- [Token Efficiency](docs/token-efficiency.md): Smart truncation, auto-chunking, intent filtering, response metadata
+- [Secrets & Config](docs/secrets-and-config.md): YAML config, env vars, BWS integration, hot-reload
+- [Resources & Prompts](docs/resources-and-prompts.md): MCP resources and guided prompts
+- [Codebase Map](docs/codebase-map.md): Module-by-module source guide
 
 ## Dynamic Resources
 
@@ -18,14 +21,33 @@
 - `@gatemini://backends`: Backend health and tool counts
 - `@gatemini://llms`: Machine-readable tool reference (auto-generated)
 - `@gatemini://llms-full`: Complete tool schemas (auto-generated)
-- `@gatemini://stats`: Session context savings statistics
+- `@gatemini://stats`: Session context savings statistics (bytes returned/processed, savings ratio)
 - `@gatemini://recent`: Recent tool calls with timing
+- `@gatemini://call_tool_chain`: Execution contract and examples
 - `@gatemini://tool/{name}`: Full schema for one tool
 - `@gatemini://backend/{name}`: Backend details + tool list
+- `@gatemini://backend/{name}/tools`: All tools for a backend
+- `@gatemini://recent/{limit}`: Recent calls with custom limit
+- `@gatemini://guide/{topic}`: Focused guidance (call_tool_chain, discovery)
 
 ## API
 
 - 7 meta-tools: search_tools, tool_info, list_tools_meta, call_tool_chain, register_manual, deregister_manual, get_required_keys_for_tool
 - Prompts: discover, find_tool, backend_status
-- Search: three-tier fallback (BM25 → trigram → fuzzy Levenshtein)
-- Output: smart truncation (head 60% + tail 40%), intent filtering, JSON chunking
+- Search: three-tier fallback (BM25 → trigram → fuzzy Levenshtein), IDF try_also terms
+- Output pipeline: intent filter → auto-chunk JSON → smart truncate (60/40 head/tail) → size metadata
+- Config: OutputConfig (auto_chunk_json, smart_truncation, chunk_threshold)
+
+## Key Features (v1.3–v1.7)
+
+- Per-session dedicated backend instances with autoscaling pool (instance_mode: dedicated)
+- Three-tier tool search with typo correction
+- Smart output truncation preserving head 60% + tail 40%
+- Auto-chunking large JSON into key-path summaries
+- Uniform array collapse for loop results
+- Intent-driven output filtering
+- Session byte tracking with context savings stats
+- Expanded direct call parser (bypasses V8 for simple calls)
+- 4 actionable sandbox error hints
+- globalThis backend mirrors
+- rmcp 1.2.0 + reqwest 0.13 with rustls crypto provider
