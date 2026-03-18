@@ -310,6 +310,12 @@ async fn run_direct(gw: InitializedGateway) -> Result<()> {
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    // Install the default rustls crypto provider before any TLS usage.
+    // Required since rustls 0.23 when multiple providers (aws-lc-rs + ring) are available.
+    rustls::crypto::aws_lc_rs::default_provider()
+        .install_default()
+        .ok(); // Ignore error if already installed
+
     let cli = cli::Cli::parse();
 
     match (&cli.command, cli.direct) {

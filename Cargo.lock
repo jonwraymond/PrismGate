@@ -2191,6 +2191,7 @@ dependencies = [
  "regex",
  "reqwest 0.13.2",
  "rmcp",
+ "rustls",
  "rustyscript",
  "serde",
  "serde_json",
