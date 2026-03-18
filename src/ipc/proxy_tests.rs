@@ -143,17 +143,14 @@ mod tests {
 
         // Make a tool call through the proxy
         let result = peer
-            .call_tool(rmcp::model::CallToolRequestParams {
-                meta: None,
-                name: "search_tools".to_string().into(),
-                arguments: Some(
+            .call_tool(
+                rmcp::model::CallToolRequestParams::new("search_tools").with_arguments(
                     serde_json::json!({"task_description": "test proxy"})
                         .as_object()
                         .unwrap()
                         .clone(),
                 ),
-                task: None,
-            })
+            )
             .await
             .unwrap();
         assert!(

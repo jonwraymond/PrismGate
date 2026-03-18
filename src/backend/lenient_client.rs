@@ -1,8 +1,9 @@
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use futures_util::{StreamExt, stream::BoxStream};
 use http::header::WWW_AUTHENTICATE;
-use reqwest::header::ACCEPT;
+use reqwest::header::{ACCEPT, HeaderName, HeaderValue};
 use rmcp::{
     model::{ClientJsonRpcMessage, ServerJsonRpcMessage},
     transport::streamable_http_client::{
@@ -44,10 +45,11 @@ impl StreamableHttpClient for LenientClient {
         session_id: Arc<str>,
         last_event_id: Option<String>,
         auth_token: Option<String>,
+        custom_headers: HashMap<HeaderName, HeaderValue>,
     ) -> Result<BoxStream<'static, Result<Sse, SseError>>, StreamableHttpError<Self::Error>> {
         // Delegate directly — get_stream Content-Type strictness is fine
         self.inner
-            .get_stream(uri, session_id, last_event_id, auth_token)
+            .get_stream(uri, session_id, last_event_id, auth_token, custom_headers)
             .await
     }
 
@@ -56,9 +58,12 @@ impl StreamableHttpClient for LenientClient {
         uri: Arc<str>,
         session_id: Arc<str>,
         auth_token: Option<String>,
+        custom_headers: HashMap<HeaderName, HeaderValue>,
     ) -> Result<(), StreamableHttpError<Self::Error>> {
         // Delegate directly
-        self.inner.delete_session(uri, session_id, auth_token).await
+        self.inner
+            .delete_session(uri, session_id, auth_token, custom_headers)
+            .await
     }
 
     async fn post_message(
@@ -67,6 +72,7 @@ impl StreamableHttpClient for LenientClient {
         message: ClientJsonRpcMessage,
         session_id: Option<Arc<str>>,
         auth_token: Option<String>,
+        custom_headers: HashMap<HeaderName, HeaderValue>,
     ) -> Result<StreamableHttpPostResponse, StreamableHttpError<Self::Error>> {
         let mut request = self
             .inner
@@ -77,6 +83,9 @@ impl StreamableHttpClient for LenientClient {
         }
         if let Some(session_id) = session_id {
             request = request.header(HEADER_SESSION_ID, session_id.as_ref());
+        }
+        for (name, value) in custom_headers {
+            request = request.header(name, value);
         }
         let response = request.json(&message).send().await?;
 

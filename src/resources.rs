@@ -12,207 +12,129 @@ use crate::tracker::CallTracker;
 /// Return the static resources available for @-mention discovery.
 pub fn list_static_resources() -> Vec<Resource> {
     vec![
-        Resource {
-            raw: RawResource {
-                uri: "gatemini://overview".to_string(),
-                name: "overview".to_string(),
-                title: Some("Gatemini Overview".to_string()),
-                description: Some(
-                    "Gateway guide: what gatemini is, how to discover tools, when to use resources vs tools"
-                        .to_string(),
-                ),
-                mime_type: Some("text/plain".to_string()),
-                size: None,
-                icons: None,
-                meta: None,
-            },
-            annotations: None,
-        },
-        Resource {
-            raw: RawResource {
-                uri: "gatemini://backends".to_string(),
-                name: "backends".to_string(),
-                title: Some("Backend List".to_string()),
-                description: Some(
-                    "JSON list of all backends with name, tool count, and status".to_string(),
-                ),
-                mime_type: Some("application/json".to_string()),
-                size: None,
-                icons: None,
-                meta: None,
-            },
-            annotations: None,
-        },
-        Resource {
-            raw: RawResource {
-                uri: "gatemini://tools".to_string(),
-                name: "tools".to_string(),
-                title: Some("Compact Tool Index".to_string()),
-                description: Some(
-                    "All tools with name, backend, and one-line description (~3k tokens vs ~40k for full schemas)"
-                        .to_string(),
-                ),
-                mime_type: Some("application/json".to_string()),
-                size: None,
-                icons: None,
-                meta: None,
-            },
-            annotations: None,
-        },
-        Resource {
-            raw: RawResource {
-                uri: "gatemini://recent".to_string(),
-                name: "recent".to_string(),
-                title: Some("Recent Tool Calls".to_string()),
-                description: Some(
-                    "Last 50 tool calls with tool name, backend, duration, and success/failure"
-                        .to_string(),
-                ),
-                mime_type: Some("application/json".to_string()),
-                size: None,
-                icons: None,
-                meta: None,
-            },
-            annotations: None,
-        },
-        Resource {
-            raw: RawResource {
-                uri: "gatemini://stats".to_string(),
-                name: "stats".to_string(),
-                title: Some("Session Statistics".to_string()),
-                description: Some(
-                    "Context savings stats: bytes returned vs processed, savings ratio, per-tool breakdown"
-                        .to_string(),
-                ),
-                mime_type: Some("application/json".to_string()),
-                size: None,
-                icons: None,
-                meta: None,
-            },
-            annotations: None,
-        },
-        Resource {
-            raw: RawResource {
-                uri: "gatemini://llms".to_string(),
-                name: "llms".to_string(),
-                title: Some("llms.txt".to_string()),
-                description: Some(
-                    "Machine-readable gateway reference: tool names, descriptions, naming rules (~3k tokens)"
-                        .to_string(),
-                ),
-                mime_type: Some("text/plain".to_string()),
-                size: None,
-                icons: None,
-                meta: None,
-            },
-            annotations: None,
-        },
-        Resource {
-            raw: RawResource {
-                uri: "gatemini://llms-full".to_string(),
-                name: "llms-full".to_string(),
-                title: Some("llms-full.txt".to_string()),
-                description: Some(
-                    "Complete gateway reference with full input schemas for every tool"
-                        .to_string(),
-                ),
-                mime_type: Some("text/plain".to_string()),
-                size: None,
-                icons: None,
-                meta: None,
-            },
-            annotations: None,
-        },
-        Resource {
-            raw: RawResource {
-                uri: "gatemini://call_tool_chain".to_string(),
-                name: "call_tool_chain".to_string(),
-                title: Some("call_tool_chain Guide".to_string()),
-                description: Some(
-                    "Execution contract, return semantics, and examples for sandboxed TypeScript tool calls"
-                        .to_string(),
-                ),
-                mime_type: Some("text/plain".to_string()),
-                size: None,
-                icons: None,
-                meta: None,
-            },
-            annotations: None,
-        },
+        Annotated::new(
+            RawResource::new("gatemini://overview", "overview")
+                .with_title("Gatemini Overview")
+                .with_description(
+                    "Gateway guide: what gatemini is, how to discover tools, when to use resources vs tools",
+                )
+                .with_mime_type("text/plain"),
+            None,
+        ),
+        Annotated::new(
+            RawResource::new("gatemini://backends", "backends")
+                .with_title("Backend List")
+                .with_description(
+                    "JSON list of all backends with name, tool count, and status",
+                )
+                .with_mime_type("application/json"),
+            None,
+        ),
+        Annotated::new(
+            RawResource::new("gatemini://tools", "tools")
+                .with_title("Compact Tool Index")
+                .with_description(
+                    "All tools with name, backend, and one-line description (~3k tokens vs ~40k for full schemas)",
+                )
+                .with_mime_type("application/json"),
+            None,
+        ),
+        Annotated::new(
+            RawResource::new("gatemini://recent", "recent")
+                .with_title("Recent Tool Calls")
+                .with_description(
+                    "Last 50 tool calls with tool name, backend, duration, and success/failure",
+                )
+                .with_mime_type("application/json"),
+            None,
+        ),
+        Annotated::new(
+            RawResource::new("gatemini://stats", "stats")
+                .with_title("Session Statistics")
+                .with_description(
+                    "Context savings stats: bytes returned vs processed, savings ratio, per-tool breakdown",
+                )
+                .with_mime_type("application/json"),
+            None,
+        ),
+        Annotated::new(
+            RawResource::new("gatemini://llms", "llms")
+                .with_title("llms.txt")
+                .with_description(
+                    "Machine-readable gateway reference: tool names, descriptions, naming rules (~3k tokens)",
+                )
+                .with_mime_type("text/plain"),
+            None,
+        ),
+        Annotated::new(
+            RawResource::new("gatemini://llms-full", "llms-full")
+                .with_title("llms-full.txt")
+                .with_description(
+                    "Complete gateway reference with full input schemas for every tool",
+                )
+                .with_mime_type("text/plain"),
+            None,
+        ),
+        Annotated::new(
+            RawResource::new("gatemini://call_tool_chain", "call_tool_chain")
+                .with_title("call_tool_chain Guide")
+                .with_description(
+                    "Execution contract, return semantics, and examples for sandboxed TypeScript tool calls",
+                )
+                .with_mime_type("text/plain"),
+            None,
+        ),
     ]
 }
 
 /// Return resource templates for on-demand tool/backend lookups.
 pub fn list_resource_templates() -> Vec<ResourceTemplate> {
     vec![
-        ResourceTemplate {
-            raw: RawResourceTemplate {
-                uri_template: "gatemini://tool/{tool_name}".to_string(),
-                name: "tool".to_string(),
-                title: Some("Tool Schema".to_string()),
-                description: Some(
-                    "Full schema + description for a specific tool (on-demand, ~200-10k tokens)"
-                        .to_string(),
-                ),
-                mime_type: Some("application/json".to_string()),
-                icons: None,
-            },
-            annotations: None,
-        },
-        ResourceTemplate {
-            raw: RawResourceTemplate {
-                uri_template: "gatemini://backend/{backend_name}".to_string(),
-                name: "backend".to_string(),
-                title: Some("Backend Details".to_string()),
-                description: Some(
-                    "Backend details: name, status, tool count, list of tool names".to_string(),
-                ),
-                mime_type: Some("application/json".to_string()),
-                icons: None,
-            },
-            annotations: None,
-        },
-        ResourceTemplate {
-            raw: RawResourceTemplate {
-                uri_template: "gatemini://backend/{backend_name}/tools".to_string(),
-                name: "backend-tools".to_string(),
-                title: Some("Backend Tools".to_string()),
-                description: Some(
-                    "All tools for a specific backend with brief descriptions".to_string(),
-                ),
-                mime_type: Some("application/json".to_string()),
-                icons: None,
-            },
-            annotations: None,
-        },
-        ResourceTemplate {
-            raw: RawResourceTemplate {
-                uri_template: "gatemini://recent/{limit}".to_string(),
-                name: "recent-limited".to_string(),
-                title: Some("Recent Tool Calls (Custom Limit)".to_string()),
-                description: Some(
-                    "Last N tool calls (customizable limit) with tool name, backend, duration, success"
-                        .to_string(),
-                ),
-                mime_type: Some("application/json".to_string()),
-                icons: None,
-            },
-            annotations: None,
-        },
-        ResourceTemplate {
-            raw: RawResourceTemplate {
-                uri_template: "gatemini://guide/{topic}".to_string(),
-                name: "guide".to_string(),
-                title: Some("Guide".to_string()),
-                description: Some(
-                    "Focused guidance for gateway concepts such as call_tool_chain return semantics and discovery workflow"
-                        .to_string(),
-                ),
-                mime_type: Some("text/plain".to_string()),
-                icons: None,
-            },
-            annotations: None,
-        },
+        Annotated::new(
+            RawResourceTemplate::new("gatemini://tool/{tool_name}", "tool")
+                .with_title("Tool Schema")
+                .with_description(
+                    "Full schema + description for a specific tool (on-demand, ~200-10k tokens)",
+                )
+                .with_mime_type("application/json"),
+            None,
+        ),
+        Annotated::new(
+            RawResourceTemplate::new("gatemini://backend/{backend_name}", "backend")
+                .with_title("Backend Details")
+                .with_description(
+                    "Backend details: name, status, tool count, list of tool names",
+                )
+                .with_mime_type("application/json"),
+            None,
+        ),
+        Annotated::new(
+            RawResourceTemplate::new("gatemini://backend/{backend_name}/tools", "backend-tools")
+                .with_title("Backend Tools")
+                .with_description(
+                    "All tools for a specific backend with brief descriptions",
+                )
+                .with_mime_type("application/json"),
+            None,
+        ),
+        Annotated::new(
+            RawResourceTemplate::new("gatemini://recent/{limit}", "recent-limited")
+                .with_title("Recent Tool Calls (Custom Limit)")
+                .with_description(
+                    "Last N tool calls (customizable limit) with tool name, backend, duration, success",
+                )
+                .with_mime_type("application/json"),
+            None,
+        ),
+        Annotated::new(
+            RawResourceTemplate::new("gatemini://guide/{topic}", "guide")
+                .with_title("Guide")
+                .with_description(
+                    "Focused guidance for gateway concepts such as call_tool_chain return semantics and discovery workflow",
+                )
+                .with_mime_type("text/plain"),
+            None,
+        ),
     ]
 }
 
@@ -422,14 +344,10 @@ pub fn complete(
                     .filter(|n| n.starts_with(prefix))
                     .take(CompletionInfo::MAX_VALUES)
                     .collect();
-                let total = values.len() as u32;
-                Ok(CompleteResult {
-                    completion: CompletionInfo {
-                        values,
-                        total: Some(total),
-                        has_more: Some(false),
-                    },
-                })
+                Ok(CompleteResult::new(
+                    CompletionInfo::with_all_values(values)
+                        .map_err(|e| McpError::internal_error(e, None))?,
+                ))
             } else if uri.contains("backend/{backend_name}") || uri.contains("backend/") {
                 // Complete backend names
                 let prefix = &request.argument.value;
@@ -439,14 +357,10 @@ pub fn complete(
                     .filter(|n| n.starts_with(prefix))
                     .take(CompletionInfo::MAX_VALUES)
                     .collect();
-                let total = values.len() as u32;
-                Ok(CompleteResult {
-                    completion: CompletionInfo {
-                        values,
-                        total: Some(total),
-                        has_more: Some(false),
-                    },
-                })
+                Ok(CompleteResult::new(
+                    CompletionInfo::with_all_values(values)
+                        .map_err(|e| McpError::internal_error(e, None))?,
+                ))
             } else if uri.contains("guide/{topic}") || uri.contains("guide/") {
                 let prefix = &request.argument.value;
                 let values: Vec<String> = ["call_tool_chain", "discovery"]
@@ -454,14 +368,10 @@ pub fn complete(
                     .filter(|topic| topic.starts_with(prefix))
                     .map(str::to_string)
                     .collect();
-                let total = values.len() as u32;
-                Ok(CompleteResult {
-                    completion: CompletionInfo {
-                        values,
-                        total: Some(total),
-                        has_more: Some(false),
-                    },
-                })
+                Ok(CompleteResult::new(
+                    CompletionInfo::with_all_values(values)
+                        .map_err(|e| McpError::internal_error(e, None))?,
+                ))
             } else {
                 Ok(CompleteResult::default())
             }
@@ -630,12 +540,8 @@ fn llms_full_txt(registry: &ToolRegistry) -> String {
 }
 
 fn text_resource(uri: &str, text: &str) -> ReadResourceResult {
-    ReadResourceResult {
-        contents: vec![ResourceContents::TextResourceContents {
-            uri: uri.to_string(),
-            mime_type: Some("text/plain".to_string()),
-            text: text.to_string(),
-            meta: None,
-        }],
-    }
+    ReadResourceResult::new(vec![ResourceContents::text(
+        text.to_string(),
+        uri.to_string(),
+    )])
 }

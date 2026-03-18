@@ -201,17 +201,14 @@ mod tests {
         let (peer, _, _) = setup_mcp_client().await;
 
         let result = peer
-            .call_tool(CallToolRequestParams {
-                meta: None,
-                name: "search_tools".to_string().into(),
-                arguments: Some(
+            .call_tool(
+                CallToolRequestParams::new("search_tools".to_string()).with_arguments(
                     serde_json::json!({"task_description": "echo"})
                         .as_object()
                         .unwrap()
                         .clone(),
                 ),
-                task: None,
-            })
+            )
             .await
             .unwrap();
 
@@ -227,17 +224,14 @@ mod tests {
         let (peer, _, _) = setup_mcp_client().await;
 
         let result = peer
-            .call_tool(CallToolRequestParams {
-                meta: None,
-                name: "tool_info".to_string().into(),
-                arguments: Some(
+            .call_tool(
+                CallToolRequestParams::new("tool_info".to_string()).with_arguments(
                     serde_json::json!({"tool_name": "echo_tool"})
                         .as_object()
                         .unwrap()
                         .clone(),
                 ),
-                task: None,
-            })
+            )
             .await
             .unwrap();
 
@@ -256,17 +250,14 @@ mod tests {
         let (peer, _, _) = setup_mcp_client().await;
 
         let result = peer
-            .call_tool(CallToolRequestParams {
-                meta: None,
-                name: "tool_info".to_string().into(),
-                arguments: Some(
+            .call_tool(
+                CallToolRequestParams::new("tool_info".to_string()).with_arguments(
                     serde_json::json!({"tool_name": "echo_tool", "detail": "full"})
                         .as_object()
                         .unwrap()
                         .clone(),
                 ),
-                task: None,
-            })
+            )
             .await
             .unwrap();
 
@@ -286,12 +277,10 @@ mod tests {
 
         // Call tool_info without required tool_name param
         let result = peer
-            .call_tool(CallToolRequestParams {
-                meta: None,
-                name: "tool_info".to_string().into(),
-                arguments: Some(serde_json::Map::new()),
-                task: None,
-            })
+            .call_tool(
+                CallToolRequestParams::new("tool_info".to_string())
+                    .with_arguments(serde_json::Map::new()),
+            )
             .await;
 
         // Should either return an error result or a protocol error
@@ -306,17 +295,14 @@ mod tests {
         let (peer, _, _) = setup_mcp_client().await;
 
         let result = peer
-            .call_tool(CallToolRequestParams {
-                meta: None,
-                name: "tool_info".to_string().into(),
-                arguments: Some(
+            .call_tool(
+                CallToolRequestParams::new("tool_info".to_string()).with_arguments(
                     serde_json::json!({"tool_name": "does_not_exist"})
                         .as_object()
                         .unwrap()
                         .clone(),
                 ),
-                task: None,
-            })
+            )
             .await
             .unwrap();
 
@@ -378,10 +364,7 @@ mod tests {
         let (peer, _, _) = setup_mcp_client().await;
 
         let result = peer
-            .read_resource(ReadResourceRequestParams {
-                meta: None,
-                uri: "gatemini://overview".to_string(),
-            })
+            .read_resource(ReadResourceRequestParams::new("gatemini://overview"))
             .await
             .unwrap();
 
@@ -411,10 +394,9 @@ mod tests {
         let (peer, _, _) = setup_mcp_client().await;
 
         let result = peer
-            .read_resource(ReadResourceRequestParams {
-                meta: None,
-                uri: "gatemini://guide/call_tool_chain".to_string(),
-            })
+            .read_resource(ReadResourceRequestParams::new(
+                "gatemini://guide/call_tool_chain",
+            ))
             .await
             .unwrap();
 
@@ -450,15 +432,11 @@ mod tests {
         let (peer, _, _) = setup_mcp_client().await;
 
         let result = peer
-            .get_prompt(GetPromptRequestParams {
-                meta: None,
-                name: "find_tool".to_string(),
-                arguments: Some({
-                    let mut args = serde_json::Map::new();
-                    args.insert("task".to_string(), serde_json::json!("search web"));
-                    args
-                }),
-            })
+            .get_prompt(GetPromptRequestParams::new("find_tool").with_arguments({
+                let mut args = serde_json::Map::new();
+                args.insert("task".to_string(), serde_json::json!("search web"));
+                args
+            }))
             .await
             .unwrap();
 
@@ -479,11 +457,7 @@ mod tests {
         let (peer, _, _) = setup_mcp_client().await;
 
         let result = peer
-            .get_prompt(GetPromptRequestParams {
-                meta: None,
-                name: "discover".to_string(),
-                arguments: None,
-            })
+            .get_prompt(GetPromptRequestParams::new("discover"))
             .await
             .unwrap();
 
@@ -499,11 +473,7 @@ mod tests {
         let (peer, _, _) = setup_mcp_client().await;
 
         let result = peer
-            .get_prompt(GetPromptRequestParams {
-                meta: None,
-                name: "nonexistent_prompt".to_string(),
-                arguments: None,
-            })
+            .get_prompt(GetPromptRequestParams::new("nonexistent_prompt"))
             .await;
 
         assert!(result.is_err(), "nonexistent prompt should return error");
