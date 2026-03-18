@@ -1,5 +1,55 @@
 # Changelog
 
+## [2.0.0](https://github.com/jonwraymond/PrismGate/compare/v1.7.1...v2.0.0) (2026-03-18)
+
+
+### ⚠ BREAKING CHANGES
+
+* Add cli-adapter transport type for wrapping arbitrary CLI tools as MCP tool providers. This introduces a new backend type alongside stdio and streamable-http, marking the transition to 1.0.0.
+
+### Features
+
+* add __backends map for dynamic dispatch in sandbox ([#33](https://github.com/jonwraymond/PrismGate/issues/33)) ([3486fbd](https://github.com/jonwraymond/PrismGate/commit/3486fbd3f2de555f09a6dcffe4155e051abd8135))
+* add CLI adapter backend for wrapping CLIs as MCP tools ([#15](https://github.com/jonwraymond/PrismGate/issues/15)) ([ae9d2a4](https://github.com/jonwraymond/PrismGate/commit/ae9d2a424f10224225fa3857f719e4744a5defc6))
+* add container builds for PRs and releases ([442dd4e](https://github.com/jonwraymond/PrismGate/commit/442dd4e6b94867f1f9a6b4010f07853195b84e54))
+* add context efficiency features inspired by context-mode ([b62a47a](https://github.com/jonwraymond/PrismGate/commit/b62a47aefdde6cffcb486ea569670e86383bee96))
+* add per-session dedicated backend instances with autoscaling pool ([bae33ac](https://github.com/jonwraymond/PrismGate/commit/bae33ac28fdd031e9de37599ad45b7278ae25919))
+* automated semantic releases with release-please ([#8](https://github.com/jonwraymond/PrismGate/issues/8)) ([11d1972](https://github.com/jonwraymond/PrismGate/commit/11d19727c4a6caa8c6d7d3132b86f1b00fdfb4e6))
+* context efficiency features (smart truncation, three-tier search, intent filtering, stats, llms.txt) ([5cd7b17](https://github.com/jonwraymond/PrismGate/commit/5cd7b17db5c473596f44ac143c80159123de6ad9))
+* default-on output config (auto-chunk, smart truncation) ([c36f044](https://github.com/jonwraymond/PrismGate/commit/c36f0442992ef5b8022cec3278553bfc7be2e13b))
+* make context efficiency features default-on with configurable OutputConfig ([b76c169](https://github.com/jonwraymond/PrismGate/commit/b76c169f6be2a423c78f859aee84a8ef40ee8db9))
+* migrate rmcp 0.15 → 1.2.0, reqwest 0.12 → 0.13 ([6c0254f](https://github.com/jonwraymond/PrismGate/commit/6c0254fb0ed1a103c630bd2815c969ccc6f711c2))
+* migrate rmcp 0.15 → 1.2.0, reqwest 0.12 → 0.13 ([e816dff](https://github.com/jonwraymond/PrismGate/commit/e816dfffe5dd67d7ddcb3be1cf88fb6ce0d93dae)), closes [#58](https://github.com/jonwraymond/PrismGate/issues/58)
+* optimize call_tool_chain for 6 common LLM patterns ([8680f01](https://github.com/jonwraymond/PrismGate/commit/8680f019d361bc95cbc6a89a8b7fdb2689433d34))
+* optimize call_tool_chain for common LLM usage patterns ([2f244db](https://github.com/jonwraymond/PrismGate/commit/2f244dbdab9a8063d668b7744350395092cae0a5))
+* per-session dedicated backend instances with autoscaling pool ([d86444f](https://github.com/jonwraymond/PrismGate/commit/d86444f9455af2218ed20c1c6d0c1597c7edc459))
+* resilient proxy with session replay and graceful daemon handoff ([644e721](https://github.com/jonwraymond/PrismGate/commit/644e721310083f654b66b4b9ff0dfd8809969055))
+
+
+### Bug Fixes
+
+* ad-hoc codesign binary on macOS during make install ([#21](https://github.com/jonwraymond/PrismGate/issues/21)) ([5a91f9f](https://github.com/jonwraymond/PrismGate/commit/5a91f9f8254e6444ee97608afd0371eda5a592b4))
+* ad-hoc codesign macOS release binaries in CI ([#23](https://github.com/jonwraymond/PrismGate/issues/23)) ([60f85f9](https://github.com/jonwraymond/PrismGate/commit/60f85f90de7c855cb0b14284ba6c3eeb3e23d646))
+* add .trim_start_matches("return ") after existing stripping. ([05784b6](https://github.com/jonwraymond/PrismGate/commit/05784b688f1b4dfa4c13bd5032f5df70f207ae29))
+* add actionable hints for common sandbox errors ([d5721ca](https://github.com/jonwraymond/PrismGate/commit/d5721caf6e59d359d985f401102eed4942a8799a))
+* add actionable hints for common sandbox errors ([57c0e31](https://github.com/jonwraymond/PrismGate/commit/57c0e312d6a59614bdb44d955136435e6fa605d6))
+* auto-restart daemon on make install for seamless updates ([#35](https://github.com/jonwraymond/PrismGate/issues/35)) ([3727a82](https://github.com/jonwraymond/PrismGate/commit/3727a82e52c8f58a327f83dff0a7a2459849df10))
+* clarify call_tool_chain return semantics ([6067047](https://github.com/jonwraymond/PrismGate/commit/6067047f0305847eabe4d0d59a84ff37363c52bd))
+* document naming conventions in server instructions and prompts ([#26](https://github.com/jonwraymond/PrismGate/issues/26)) ([e5dca3b](https://github.com/jonwraymond/PrismGate/commit/e5dca3b01e5856b6133155d76ecb852752efe2a3))
+* document that sandbox backends are not on globalThis ([#31](https://github.com/jonwraymond/PrismGate/issues/31)) ([b96960d](https://github.com/jonwraymond/PrismGate/commit/b96960d75bbec7450a189f1e85bdbda43e2360a0))
+* emphasize schema lookup before first tool call in instructions ([#39](https://github.com/jonwraymond/PrismGate/issues/39)) ([72838f4](https://github.com/jonwraymond/PrismGate/commit/72838f4adea3437109c00b71f99d2df557b05122))
+* install rustls crypto provider for reqwest 0.13 ([e4fdcf7](https://github.com/jonwraymond/PrismGate/commit/e4fdcf7bde0e9a04e9269625308ae325b144d5ad))
+* install rustls crypto provider for reqwest 0.13 ([b170e61](https://github.com/jonwraymond/PrismGate/commit/b170e6174eb9275701c7576101791d7533ad2553))
+* mirror backend variables onto globalThis in sandbox ([8d9d01b](https://github.com/jonwraymond/PrismGate/commit/8d9d01ba997b5e93a408cc1639113e0f81029b9c))
+* mirror backend variables onto globalThis in sandbox ([6e415a3](https://github.com/jonwraymond/PrismGate/commit/6e415a346c361ae5877aa69c0038f8280912a4e7))
+* move futures/futures-util to general deps and nix to unix-only ([1d4b9a4](https://github.com/jonwraymond/PrismGate/commit/1d4b9a4d3f1a0684aba79245bd6bf1ee47ae82a5))
+* rewrite overview resource as comprehensive agent instruction guide ([#37](https://github.com/jonwraymond/PrismGate/issues/37)) ([2e72dcd](https://github.com/jonwraymond/PrismGate/commit/2e72dcd33b0423c23257f6dae24125aedd62e7e2))
+* set deterministic cwd when spawning daemon process ([#17](https://github.com/jonwraymond/PrismGate/issues/17)) ([ca04c7d](https://github.com/jonwraymond/PrismGate/commit/ca04c7de825ad898a50698c969ba1ddf563e0696))
+* skip bare-name aliases for cached tools until backend is healthy ([#19](https://github.com/jonwraymond/PrismGate/issues/19)) ([bc00d14](https://github.com/jonwraymond/PrismGate/commit/bc00d140fa6ec1a739b5a46cbef7e361757709a8))
+* strip bare return prefix in direct tool call parser ([#43](https://github.com/jonwraymond/PrismGate/issues/43)) ([05784b6](https://github.com/jonwraymond/PrismGate/commit/05784b688f1b4dfa4c13bd5032f5df70f207ae29))
+* use ~/.prismgate/gatemini.yaml as default config path ([#41](https://github.com/jonwraymond/PrismGate/issues/41)) ([c051ae4](https://github.com/jonwraymond/PrismGate/commit/c051ae4deda7a4a7a3816b4e0eb031ad70c74c33))
+* use GitHub App token for release-please to trigger release builds ([#11](https://github.com/jonwraymond/PrismGate/issues/11)) ([f9cdd09](https://github.com/jonwraymond/PrismGate/commit/f9cdd0943578055e810b8e1a52aa513df2452515))
+
 ## [1.7.1](https://github.com/jonwraymond/PrismGate/compare/v1.7.0...v1.7.1) (2026-03-18)
 
 
