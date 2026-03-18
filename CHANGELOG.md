@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.7.2](https://github.com/jonwraymond/PrismGate/compare/v1.7.1...v1.7.2) (2026-03-18)
+
+
+### Bug Fixes
+
+* add specific error hint when LLMs call meta-tools inside sandbox ([061a195](https://github.com/jonwraymond/PrismGate/commit/061a19581182b23be9e617df034da648d8ff88cc))
+* add specific error hint when LLMs try to call meta-tools inside sandbox ([723cdcf](https://github.com/jonwraymond/PrismGate/commit/723cdcfa1306ad45d1cfcc33295c8b99aba61b0b))
+
 ## [1.7.1](https://github.com/jonwraymond/PrismGate/compare/v1.7.0...v1.7.1) (2026-03-18)
 
 
