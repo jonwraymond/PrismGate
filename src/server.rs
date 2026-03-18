@@ -390,6 +390,9 @@ impl ServerHandler for GateminiServer {
                  - list_tools_meta: Paginated tool list. cursor + page_size (default 50)\n\
                  - call_tool_chain: Execute TypeScript with tools as `backend.tool_name(args)`. Use __interfaces for introspection\n\n\
                  IMPORTANT: Never guess parameter names. Always call tool_info(detail=\"full\") or __getToolInterface(\"backend.tool\") before first use of any tool.\n\n\
+                 IMPORTANT: Inside call_tool_chain you can ONLY call backend tools (e.g. `exa.web_search_exa`). \
+                 You CANNOT call gatemini meta-tools (search_tools, tool_info, list_tools_meta) from inside the sandbox. \
+                 Use meta-tools as separate MCP tool calls OUTSIDE of call_tool_chain.\n\n\
                  ## Resources (load on-demand via @ mention)\n\
                  - @gatemini://overview → gateway guide with live tool/backend counts\n\
                  - @gatemini://backends → all backends with status and tool counts\n\
