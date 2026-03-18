@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.7.1](https://github.com/jonwraymond/PrismGate/compare/v1.7.0...v1.7.1) (2026-03-18)
+
+
+### Bug Fixes
+
+* install rustls crypto provider for reqwest 0.13 ([e4fdcf7](https://github.com/jonwraymond/PrismGate/commit/e4fdcf7bde0e9a04e9269625308ae325b144d5ad))
+* install rustls crypto provider for reqwest 0.13 ([b170e61](https://github.com/jonwraymond/PrismGate/commit/b170e6174eb9275701c7576101791d7533ad2553))
+
 ## [1.7.0](https://github.com/jonwraymond/PrismGate/compare/v1.6.0...v1.7.0) (2026-03-18)
 
 
