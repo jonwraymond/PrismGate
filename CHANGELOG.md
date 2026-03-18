@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.7.0](https://github.com/jonwraymond/PrismGate/compare/v1.6.0...v1.7.0) (2026-03-18)
+
+
+### Features
+
+* migrate rmcp 0.15 → 1.2.0, reqwest 0.12 → 0.13 ([6c0254f](https://github.com/jonwraymond/PrismGate/commit/6c0254fb0ed1a103c630bd2815c969ccc6f711c2))
+* migrate rmcp 0.15 → 1.2.0, reqwest 0.12 → 0.13 ([e816dff](https://github.com/jonwraymond/PrismGate/commit/e816dfffe5dd67d7ddcb3be1cf88fb6ce0d93dae)), closes [#58](https://github.com/jonwraymond/PrismGate/issues/58)
+
 ## [1.6.0](https://github.com/jonwraymond/PrismGate/compare/v1.5.0...v1.6.0) (2026-03-16)
 
 
