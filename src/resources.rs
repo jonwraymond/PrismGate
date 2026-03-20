@@ -163,6 +163,8 @@ struct BackendDetail {
     available: bool,
     tool_count: usize,
     tools: Vec<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    recent_stderr: Vec<String>,
 }
 
 /// Extract the first sentence from a description.
@@ -303,6 +305,9 @@ pub async fn read_resource(
                         .get_all_status()
                         .into_iter()
                         .find(|s| s.name == backend_name);
+                    let recent_stderr = backend_manager
+                        .get_backend_stderr(backend_name, 50)
+                        .unwrap_or_default();
                     let detail = BackendDetail {
                         name: backend_name.to_string(),
                         status: status
@@ -312,6 +317,7 @@ pub async fn read_resource(
                         available: status.as_ref().is_some_and(|s| s.available),
                         tool_count: tools.len(),
                         tools: tools.into_iter().map(|t| t.name).collect(),
+                        recent_stderr,
                     };
                     let json = serde_json::to_string_pretty(&detail)
                         .map_err(|e| McpError::internal_error(e.to_string(), None))?;
