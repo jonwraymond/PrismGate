@@ -111,22 +111,39 @@ pub async fn ensure_prerequisite(
     Ok(Some(pid))
 }
 
-/// Stop a managed prerequisite process by sending SIGTERM to its process group.
+/// Stop a managed prerequisite process. Sends SIGTERM, waits up to 5s, then SIGKILL.
 pub async fn stop_prerequisite(backend_name: &str, pid: u32) {
     #[cfg(unix)]
     {
         use nix::sys::signal::{self, Signal};
         use nix::unistd::Pid;
 
-        // Send SIGTERM to the process group (negative PID)
         let pgid = Pid::from_raw(-(pid as i32));
         match signal::kill(pgid, Signal::SIGTERM) {
             Ok(()) => {
                 info!(
                     backend = %backend_name,
                     pid,
-                    "sent SIGTERM to prerequisite process group"
+                    "sent SIGTERM to prerequisite process group, waiting up to 5s"
                 );
+
+                // Poll for exit up to 5s
+                for _ in 0..50 {
+                    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                    // Check if process group is gone (kill with signal 0 = existence check)
+                    if signal::kill(pgid, None).is_err() {
+                        info!(backend = %backend_name, pid, "prerequisite exited gracefully");
+                        return;
+                    }
+                }
+
+                // Still alive — SIGKILL
+                warn!(
+                    backend = %backend_name,
+                    pid,
+                    "prerequisite didn't exit within 5s, sending SIGKILL"
+                );
+                let _ = signal::kill(pgid, Signal::SIGKILL);
             }
             Err(e) => {
                 warn!(
@@ -139,7 +156,41 @@ pub async fn stop_prerequisite(backend_name: &str, pid: u32) {
         }
     }
 
-    #[cfg(not(unix))]
+    #[cfg(windows)]
+    {
+        // Graceful tree kill first
+        let _ = std::process::Command::new("taskkill")
+            .args(["/T", "/PID", &pid.to_string()])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status();
+
+        // Wait up to 5s
+        for _ in 0..50 {
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+            // Check if process still exists by trying to open it
+            let check = std::process::Command::new("tasklist")
+                .args(["/FI", &format!("PID eq {}", pid), "/NH"])
+                .output();
+            if let Ok(output) = check {
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                if !stdout.contains(&pid.to_string()) {
+                    info!(backend = %backend_name, pid, "prerequisite exited gracefully");
+                    return;
+                }
+            }
+        }
+
+        // Force kill
+        warn!(backend = %backend_name, pid, "prerequisite didn't exit within 5s, force killing");
+        let _ = std::process::Command::new("taskkill")
+            .args(["/F", "/T", "/PID", &pid.to_string()])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status();
+    }
+
+    #[cfg(not(any(unix, windows)))]
     {
         warn!(
             backend = %backend_name,
