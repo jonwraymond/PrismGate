@@ -31,6 +31,7 @@ pub struct StdioBackend {
     state: AtomicU8,
     child: RwLock<Option<tokio::process::Child>>,
     stderr_buffer: Arc<std::sync::Mutex<std::collections::VecDeque<String>>>,
+    pid: std::sync::atomic::AtomicU32,
 }
 
 impl StdioBackend {
@@ -44,6 +45,7 @@ impl StdioBackend {
             stderr_buffer: Arc::new(std::sync::Mutex::new(
                 std::collections::VecDeque::with_capacity(STDERR_BUFFER_SIZE),
             )),
+            pid: std::sync::atomic::AtomicU32::new(0),
         }
     }
 
@@ -160,6 +162,9 @@ impl Backend for StdioBackend {
             .with_context(|| format!("failed to spawn backend '{}'", self.name))?;
 
         let pid = child.id();
+        if let Some(p) = pid {
+            self.pid.store(p, Ordering::Release);
+        }
         debug!(backend = %self.name, pid = ?pid, "spawned child process");
 
         let stdout = child.stdout.take().ok_or_else(|| {
@@ -305,5 +310,10 @@ impl Backend for StdioBackend {
     fn recent_stderr(&self, limit: usize) -> Vec<String> {
         let buffer = self.stderr_buffer.lock().unwrap_or_else(|e| e.into_inner());
         buffer.iter().rev().take(limit).rev().cloned().collect()
+    }
+
+    fn pid(&self) -> Option<u32> {
+        let p = self.pid.load(Ordering::Acquire);
+        if p > 0 { Some(p) } else { None }
     }
 }

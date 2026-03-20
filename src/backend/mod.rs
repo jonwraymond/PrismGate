@@ -5,6 +5,7 @@ pub mod composite;
 pub mod health;
 pub mod http;
 pub mod lenient_client;
+pub mod memory;
 pub mod pool;
 pub mod prerequisite;
 pub mod stdio;
@@ -167,6 +168,11 @@ pub trait Backend: Send + Sync {
     fn recent_stderr(&self, _limit: usize) -> Vec<String> {
         Vec::new()
     }
+
+    /// Get the PID of the backend's child process (if applicable).
+    fn pid(&self) -> Option<u32> {
+        None
+    }
 }
 
 /// RAII guard that tracks in-flight calls for graceful drain on shutdown.
@@ -231,6 +237,8 @@ pub struct BackendManager {
     tracker: Option<Arc<crate::tracker::CallTracker>>,
     /// Per-backend dedicated instance pools (instance_mode: dedicated).
     dedicated_pools: DashMap<String, Arc<pool::InstancePool>>,
+    /// Per-backend memory statistics from RSS sampling.
+    memory_stats: DashMap<String, memory::MemoryStats>,
 }
 
 impl BackendManager {
@@ -249,6 +257,7 @@ impl BackendManager {
             drain_timeout: Duration::from_secs(10),
             tracker: None,
             dedicated_pools: DashMap::new(),
+            memory_stats: DashMap::new(),
         })
     }
 
@@ -271,6 +280,7 @@ impl BackendManager {
             drain_timeout: health_config.drain_timeout,
             tracker,
             dedicated_pools: DashMap::new(),
+            memory_stats: DashMap::new(),
         })
     }
 
@@ -1025,6 +1035,24 @@ impl BackendManager {
     /// Number of dynamically registered backends.
     pub async fn dynamic_count(&self) -> usize {
         self.dynamic_backends.read().await.len()
+    }
+
+    /// Update memory stats for a backend.
+    pub fn update_memory_stats(&self, name: &str, stats: memory::MemoryStats) {
+        self.memory_stats.insert(name.to_string(), stats);
+    }
+
+    /// Get memory stats for a backend.
+    pub fn get_memory_stats(&self, name: &str) -> Option<memory::MemoryStats> {
+        self.memory_stats.get(name).map(|r| r.value().clone())
+    }
+
+    /// Get all memory stats.
+    pub fn get_all_memory_stats(&self) -> Vec<(String, memory::MemoryStats)> {
+        self.memory_stats
+            .iter()
+            .map(|r| (r.key().clone(), r.value().clone()))
+            .collect()
     }
 }
 
