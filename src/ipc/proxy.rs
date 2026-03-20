@@ -23,6 +23,9 @@ const RECONNECT_TIMEOUT: Duration = Duration::from_secs(60);
 
 const BUF_SIZE: usize = 8192;
 
+/// How often to check if the parent process is still alive.
+const ORPHAN_CHECK_INTERVAL: Duration = Duration::from_secs(5);
+
 // ── Handshake cache ────────────────────────────────────────────────────────
 
 /// Cached MCP handshake messages for session replay on reconnect.
@@ -42,6 +45,8 @@ enum BridgeOutcome {
     StdinClosed,
     /// Daemon socket closed or errored — attempt reconnect
     DaemonDisconnected,
+    /// Parent process died (orphaned proxy) — exit immediately
+    ParentDied,
 }
 
 // ── Public entry point ─────────────────────────────────────────────────────
@@ -118,8 +123,8 @@ where
 
     loop {
         match bridge_phase(&mut stream, &mut stdin, &mut stdout).await {
-            BridgeOutcome::StdinClosed => {
-                debug!("stdin closed, proxy exiting cleanly");
+            BridgeOutcome::StdinClosed | BridgeOutcome::ParentDied => {
+                debug!("proxy exiting (stdin closed or parent died)");
                 return Ok(());
             }
             BridgeOutcome::DaemonDisconnected => {
@@ -282,8 +287,8 @@ where
 
     loop {
         match bridge_phase(&mut stream, &mut stdin, &mut stdout).await {
-            BridgeOutcome::StdinClosed => {
-                debug!("stdin closed, proxy exiting cleanly");
+            BridgeOutcome::StdinClosed | BridgeOutcome::ParentDied => {
+                debug!("proxy exiting (stdin closed or parent died)");
                 return Ok(());
             }
             BridgeOutcome::DaemonDisconnected => {
@@ -329,8 +334,8 @@ where
 /// Uses explicit read/write_all with 8KB buffers (no io::copy) to avoid
 /// lost bytes from internal BufReader buffering on cancel.
 ///
-/// Returns when either stdin closes (StdinClosed) or the daemon socket
-/// closes/errors (DaemonDisconnected).
+/// Returns when stdin closes (StdinClosed), the daemon socket closes/errors
+/// (DaemonDisconnected), or the parent process dies (ParentDied).
 #[cfg(unix)]
 async fn bridge_phase<R, W>(stream: &mut UnixStream, stdin: &mut R, stdout: &mut W) -> BridgeOutcome
 where
@@ -340,6 +345,12 @@ where
     let (mut sock_read, mut sock_write) = stream.split();
     let mut stdin_buf = [0u8; BUF_SIZE];
     let mut sock_buf = [0u8; BUF_SIZE];
+
+    // Record parent PID at bridge start. If it changes (reparented to init/launchd),
+    // the parent Claude Code process has exited and this proxy is orphaned.
+    let original_ppid = std::os::unix::process::parent_id();
+    let mut orphan_check = tokio::time::interval(ORPHAN_CHECK_INTERVAL);
+    orphan_check.tick().await; // consume immediate first tick
 
     loop {
         tokio::select! {
@@ -368,6 +379,18 @@ where
                         }
                     }
                     Err(_) => return BridgeOutcome::StdinClosed,
+                }
+            }
+
+            _ = orphan_check.tick() => {
+                let current_ppid = std::os::unix::process::parent_id();
+                if current_ppid != original_ppid {
+                    warn!(
+                        original_ppid,
+                        current_ppid,
+                        "parent process died, proxy is orphaned — exiting"
+                    );
+                    return BridgeOutcome::ParentDied;
                 }
             }
         }
