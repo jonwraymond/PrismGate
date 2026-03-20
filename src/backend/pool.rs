@@ -38,6 +38,7 @@ pub struct InstancePool {
     min_idle: u32,
     max_instances: u32,
     acquire_timeout: Duration,
+    replenish_delay: Duration,
     next_instance_id: AtomicU32,
 }
 
@@ -64,6 +65,7 @@ impl InstancePool {
             min_idle,
             max_instances,
             acquire_timeout,
+            replenish_delay: config.pool.replenish_delay,
             next_instance_id: AtomicU32::new(0),
         };
 
@@ -291,6 +293,11 @@ impl InstancePool {
         // Release capacity
         self.capacity.add_permits(1);
 
+        // Wait for OS to reclaim memory from stopped process before spawning replacement
+        if !self.replenish_delay.is_zero() {
+            tokio::time::sleep(self.replenish_delay).await;
+        }
+
         // Replenish idle pool if below min_idle
         let idle_count = self.idle.lock().await.len();
         if (idle_count as u32) < self.min_idle
@@ -488,6 +495,7 @@ mod tests {
                 min_idle: 0,
                 max_instances: 5,
                 acquire_timeout: Duration::from_secs(1),
+                replenish_delay: Duration::from_secs(2),
             },
             ..default_backend_config()
         }
@@ -517,6 +525,8 @@ mod tests {
             health_check: None,
             instance_mode: InstanceMode::Shared,
             pool: PoolConfig::default(),
+            shutdown_grace_period: Duration::from_secs(5),
+            max_memory_mb: None,
         }
     }
 
@@ -533,6 +543,7 @@ mod tests {
                 min_idle,
                 max_instances,
                 acquire_timeout: Duration::from_millis(200),
+                replenish_delay: Duration::from_secs(2),
             },
             ..test_config()
         };
@@ -550,6 +561,7 @@ mod tests {
             min_idle,
             max_instances,
             acquire_timeout: Duration::from_millis(200),
+            replenish_delay: Duration::ZERO, // no delay in tests
             next_instance_id: AtomicU32::new(0),
         };
 

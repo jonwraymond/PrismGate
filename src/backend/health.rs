@@ -20,6 +20,7 @@ struct BackendHealth {
     restart_count: u32,
     restart_window_start: Option<Instant>,
     circuit_open_since: Option<Instant>,
+    last_memory_restart: Option<Instant>,
 }
 
 impl BackendHealth {
@@ -32,6 +33,7 @@ impl BackendHealth {
             restart_count: 0,
             restart_window_start: None,
             circuit_open_since: None,
+            last_memory_restart: None,
         }
     }
 
@@ -458,6 +460,80 @@ pub async fn run_health_checker(
                     );
                     health.restart_count += 1;
                     health.last_restart = Some(Instant::now());
+                }
+            }
+        }
+
+        // Phase 4: Memory sampling and limit enforcement
+        {
+            let mut pids_to_check: Vec<(String, u32)> = Vec::new();
+            for status in &statuses {
+                if let Some(backend) = manager.backends.get(&status.name)
+                    && let Some(pid) = backend.value().pid()
+                {
+                    pids_to_check.push((status.name.clone(), pid));
+                }
+            }
+
+            if !pids_to_check.is_empty() {
+                let pid_list: Vec<u32> = pids_to_check.iter().map(|(_, p)| *p).collect();
+                if let Ok(rss_map) = crate::backend::memory::sample_rss(&pid_list).await {
+                    let mut needs_restart: Vec<String> = Vec::new();
+
+                    for (name, pid) in &pids_to_check {
+                        if let Some(&rss_kb) = rss_map.get(pid) {
+                            let existing_peak = manager
+                                .get_memory_stats(name)
+                                .map(|s| s.peak_rss_kb)
+                                .unwrap_or(0);
+                            manager.update_memory_stats(
+                                name,
+                                crate::backend::memory::MemoryStats {
+                                    pid: *pid,
+                                    rss_kb,
+                                    peak_rss_kb: rss_kb.max(existing_peak),
+                                    sampled_at: std::time::Instant::now(),
+                                },
+                            );
+
+                            if let Some(limit_mb) = manager
+                                .get_backend_config(name)
+                                .await
+                                .and_then(|c| c.max_memory_mb)
+                            {
+                                let rss_mb = rss_kb / 1024;
+                                if rss_mb > limit_mb {
+                                    let health = health_map
+                                        .entry(name.clone())
+                                        .or_insert_with(|| BackendHealth::new(name.clone()));
+                                    let can_restart = health
+                                        .last_memory_restart
+                                        .map(|t| t.elapsed() > config.memory_restart_cooldown)
+                                        .unwrap_or(true);
+                                    if can_restart {
+                                        warn!(backend = %name, rss_mb, limit_mb, "RSS exceeds memory limit, scheduling restart");
+                                        health.last_memory_restart = Some(Instant::now());
+                                        needs_restart.push(name.clone());
+                                    }
+                                } else if rss_mb > limit_mb * 80 / 100 {
+                                    warn!(backend = %name, rss_mb, limit_mb, "RSS at 80% of memory limit");
+                                }
+                            }
+                        }
+                    }
+
+                    // Perform restarts outside the sampling loop
+                    for name in &needs_restart {
+                        info!(backend = %name, "restarting backend due to memory limit");
+                        let result = if manager.is_dedicated(name) {
+                            manager.restart_pool_primary(name, &registry).await
+                        } else {
+                            manager.restart_backend(name, &registry).await
+                        };
+                        if let Err(e) = result {
+                            error!(backend = %name, error = %e, "memory-triggered restart failed");
+                        }
+                    }
                 }
             }
         }

@@ -236,6 +236,18 @@ pub async fn run(gw: InitializedGateway, bound: BoundSocket) -> Result<()> {
 
     // Graceful shutdown: stop accepting, drain clients with timeout, stop backends, clean up files.
     info!("shutting down daemon");
+
+    /// Ensures socket/PID/lock files are cleaned up even if stop_all() panics.
+    struct CleanupGuard<'a> {
+        path: &'a std::path::Path,
+    }
+    impl Drop for CleanupGuard<'_> {
+        fn drop(&mut self) {
+            socket::cleanup_files(self.path);
+        }
+    }
+    let _cleanup = CleanupGuard { path: &socket_path };
+
     let client_drain_timeout = gw.config.daemon.client_drain_timeout;
     client_tracker.close();
     match tokio::time::timeout(client_drain_timeout, client_tracker.wait()).await {
@@ -249,7 +261,6 @@ pub async fn run(gw: InitializedGateway, bound: BoundSocket) -> Result<()> {
     }
     shutdown_notify.notify_waiters();
     gw.backend_manager.stop_all().await;
-    socket::cleanup_files(&socket_path);
     info!("daemon stopped");
 
     Ok(())

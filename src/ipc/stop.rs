@@ -30,7 +30,7 @@ pub fn run() -> Result<()> {
 
     // Wait briefly for the daemon to exit.
     let start = std::time::Instant::now();
-    let timeout = std::time::Duration::from_secs(5);
+    let timeout = std::time::Duration::from_secs(35); // Match daemon drain timeout (30s) + buffer
     while start.elapsed() < timeout {
         if !socket::is_daemon_alive(&socket_path) {
             println!("Daemon stopped.");
@@ -42,7 +42,7 @@ pub fn run() -> Result<()> {
     }
 
     println!(
-        "Daemon did not stop within 5s. You may need to kill PID {} manually.",
+        "Daemon did not stop within 35s. You may need to kill PID {} manually.",
         pid
     );
     Ok(())

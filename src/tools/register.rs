@@ -160,6 +160,8 @@ pub async fn handle_register(
             .map(String::from),
         instance_mode: Default::default(),
         pool: Default::default(),
+        shutdown_grace_period: std::time::Duration::from_secs(5),
+        max_memory_mb: None,
     };
 
     let tool_count = manager.add_backend(&name, config, registry).await?;

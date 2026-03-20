@@ -76,6 +76,15 @@ pub fn list_static_resources() -> Vec<Resource> {
             None,
         ),
         Annotated::new(
+            RawResource::new("gatemini://health", "health")
+                .with_title("Backend Health & Memory")
+                .with_description(
+                    "Per-backend PID, RSS, peak RSS, memory limit, status, and recent stderr",
+                )
+                .with_mime_type("application/json"),
+            None,
+        ),
+        Annotated::new(
             RawResource::new("gatemini://call_tool_chain", "call_tool_chain")
                 .with_title("call_tool_chain Guide")
                 .with_description(
@@ -163,6 +172,8 @@ struct BackendDetail {
     available: bool,
     tool_count: usize,
     tools: Vec<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    recent_stderr: Vec<String>,
 }
 
 /// Extract the first sentence from a description.
@@ -215,6 +226,35 @@ pub async fn read_resource(
         }
         "llms" => Ok(text_resource(uri, &llms_txt(registry))),
         "llms-full" => Ok(text_resource(uri, &llms_full_txt(registry))),
+        "health" => {
+            let statuses = backend_manager.get_all_status();
+            let health: Vec<serde_json::Value> = statuses
+                .iter()
+                .map(|s| {
+                    let mem = backend_manager.get_memory_stats(&s.name);
+                    let stderr = backend_manager
+                        .get_backend_stderr(&s.name, 10)
+                        .unwrap_or_default();
+                    let pid = mem.as_ref().map(|m| m.pid);
+                    serde_json::json!({
+                        "name": s.name,
+                        "state": format!("{:?}", s.state),
+                        "available": s.available,
+                        "pid": pid,
+                        "memory": mem.map(|m| serde_json::json!({
+                            "rss_kb": m.rss_kb,
+                            "rss_mb": m.rss_kb / 1024,
+                            "peak_rss_kb": m.peak_rss_kb,
+                            "peak_rss_mb": m.peak_rss_kb / 1024,
+                        })),
+                        "recent_stderr": stderr,
+                    })
+                })
+                .collect();
+            let json = serde_json::to_string_pretty(&health)
+                .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+            Ok(text_resource(uri, &json))
+        }
         "stats" => {
             let stats = tracker.session_stats();
             let json = serde_json::to_string_pretty(&stats)
@@ -303,6 +343,9 @@ pub async fn read_resource(
                         .get_all_status()
                         .into_iter()
                         .find(|s| s.name == backend_name);
+                    let recent_stderr = backend_manager
+                        .get_backend_stderr(backend_name, 50)
+                        .unwrap_or_default();
                     let detail = BackendDetail {
                         name: backend_name.to_string(),
                         status: status
@@ -312,6 +355,7 @@ pub async fn read_resource(
                         available: status.as_ref().is_some_and(|s| s.available),
                         tool_count: tools.len(),
                         tools: tools.into_iter().map(|t| t.name).collect(),
+                        recent_stderr,
                     };
                     let json = serde_json::to_string_pretty(&detail)
                         .map_err(|e| McpError::internal_error(e.to_string(), None))?;

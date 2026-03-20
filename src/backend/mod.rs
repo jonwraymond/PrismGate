@@ -5,6 +5,7 @@ pub mod composite;
 pub mod health;
 pub mod http;
 pub mod lenient_client;
+pub mod memory;
 pub mod pool;
 pub mod prerequisite;
 pub mod stdio;
@@ -162,6 +163,16 @@ pub trait Backend: Send + Sync {
     async fn wait_for_exit(&self) -> Option<std::process::ExitStatus> {
         None
     }
+
+    /// Recent stderr lines from the backend process. Only available for stdio backends.
+    fn recent_stderr(&self, _limit: usize) -> Vec<String> {
+        Vec::new()
+    }
+
+    /// Get the PID of the backend's child process (if applicable).
+    fn pid(&self) -> Option<u32> {
+        None
+    }
 }
 
 /// RAII guard that tracks in-flight calls for graceful drain on shutdown.
@@ -226,6 +237,8 @@ pub struct BackendManager {
     tracker: Option<Arc<crate::tracker::CallTracker>>,
     /// Per-backend dedicated instance pools (instance_mode: dedicated).
     dedicated_pools: DashMap<String, Arc<pool::InstancePool>>,
+    /// Per-backend memory statistics from RSS sampling.
+    memory_stats: DashMap<String, memory::MemoryStats>,
 }
 
 impl BackendManager {
@@ -244,6 +257,7 @@ impl BackendManager {
             drain_timeout: Duration::from_secs(10),
             tracker: None,
             dedicated_pools: DashMap::new(),
+            memory_stats: DashMap::new(),
         })
     }
 
@@ -266,6 +280,7 @@ impl BackendManager {
             drain_timeout: health_config.drain_timeout,
             tracker,
             dedicated_pools: DashMap::new(),
+            memory_stats: DashMap::new(),
         })
     }
 
@@ -831,6 +846,13 @@ impl BackendManager {
         self.backends.get(name).map(|r| r.value().state())
     }
 
+    /// Get recent stderr lines from a backend (if available).
+    pub fn get_backend_stderr(&self, name: &str, limit: usize) -> Option<Vec<String>> {
+        self.backends
+            .get(name)
+            .map(|b| b.value().recent_stderr(limit))
+    }
+
     /// Get the config for a backend (used by get_required_keys_for_tool).
     pub async fn get_backend_config(&self, name: &str) -> Option<BackendConfig> {
         let configs = self.configs.read().await;
@@ -887,8 +909,12 @@ impl BackendManager {
         let mut join_set = tokio::task::JoinSet::new();
         for (name, backend) in backends {
             join_set.spawn(async move {
-                if let Err(e) = backend.stop().await {
-                    warn!(backend = %name, error = %e, "error stopping backend");
+                // Use shutdown_grace_period + 2s buffer for the stop timeout
+                let timeout = std::time::Duration::from_secs(7); // 5s grace + 2s buffer
+                match tokio::time::timeout(timeout, backend.stop()).await {
+                    Ok(Ok(())) => {}
+                    Ok(Err(e)) => warn!(backend = %name, error = %e, "error stopping backend"),
+                    Err(_) => warn!(backend = %name, "backend stop timed out"),
                 }
             });
         }
@@ -1015,6 +1041,24 @@ impl BackendManager {
     /// Number of dynamically registered backends.
     pub async fn dynamic_count(&self) -> usize {
         self.dynamic_backends.read().await.len()
+    }
+
+    /// Update memory stats for a backend.
+    pub fn update_memory_stats(&self, name: &str, stats: memory::MemoryStats) {
+        self.memory_stats.insert(name.to_string(), stats);
+    }
+
+    /// Get memory stats for a backend.
+    pub fn get_memory_stats(&self, name: &str) -> Option<memory::MemoryStats> {
+        self.memory_stats.get(name).map(|r| r.value().clone())
+    }
+
+    /// Get all memory stats.
+    pub fn get_all_memory_stats(&self) -> Vec<(String, memory::MemoryStats)> {
+        self.memory_stats
+            .iter()
+            .map(|r| (r.key().clone(), r.value().clone()))
+            .collect()
     }
 }
 
