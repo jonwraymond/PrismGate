@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.9.0](https://github.com/jonwraymond/PrismGate/compare/v1.8.1...v1.9.0) (2026-03-20)
+
+
+### Features
+
+* process supervision overhaul — graceful kill, stderr capture, memory tracking ([906d107](https://github.com/jonwraymond/PrismGate/commit/906d107e002131e9bb44f884fccabb1e9d17ad77))
+
 ## [1.8.1](https://github.com/jonwraymond/PrismGate/compare/v1.8.0...v1.8.1) (2026-03-20)
 
 
