@@ -235,12 +235,20 @@ fn run_sandbox(
         })
         .collect();
 
-    // Wrap user code in an async main function if not already exported
+    // Wrap user code in an async main function if not already exported.
+    // The inner try/catch converts thrown errors into return values so that
+    // `throw new Error(result)` (a common LLM pattern to surface data)
+    // returns as a success result instead of a tool failure.
     let full_code =
         if code.contains("export default") || code.contains("export async function main") {
             format!("{preamble}\n{code}")
         } else {
-            format!("{preamble}\nexport default async function main() {{\n{code}\n}}",)
+            format!(
+                "{preamble}\nexport default async function main() {{\n\
+                 try {{\n{code}\n}} catch (__e) {{\n\
+                 return (typeof __e?.message === 'string') ? __e.message : String(__e);\n\
+                 }}\n}}",
+            )
         };
 
     let module = Module::new("sandbox.ts", &full_code);
