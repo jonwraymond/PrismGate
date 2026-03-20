@@ -59,24 +59,73 @@ impl StdioBackend {
         cmd
     }
 
-    /// Kill the child's entire process group (unix only).
-    /// Falls back to killing just the child on non-unix or if PID is unavailable.
+    /// Kill the child's entire process group with a configurable grace period.
+    ///
+    /// Phase 1: Request graceful shutdown (SIGTERM on unix, taskkill /T on windows).
+    /// Phase 2: Poll for exit up to `shutdown_grace_period`.
+    /// Phase 3: Force kill if the child hasn't exited.
     async fn kill_child(&self, child: &mut tokio::process::Child) {
+        let grace = self.config.shutdown_grace_period;
+
+        // Phase 1: Request graceful shutdown
         #[cfg(unix)]
         if let Some(pid) = child.id() {
-            // Send SIGTERM to the entire process group (negative PID = group)
-            // Safety: libc::kill is safe to call with any PID value
             let ret = unsafe { libc::kill(-(pid as i32), libc::SIGTERM) };
             if ret == 0 {
-                debug!(backend = %self.name, pid, "sent SIGTERM to process group");
-                // Give the group a moment to exit gracefully
-                tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+                debug!(backend = %self.name, pid, grace_secs = grace.as_secs(), "sent SIGTERM to process group");
             } else {
-                warn!(backend = %self.name, pid, "failed to signal process group, killing child directly");
+                warn!(backend = %self.name, pid, "failed to signal process group");
             }
         }
 
-        // Ensure the child is dead regardless
+        #[cfg(windows)]
+        if let Some(pid) = child.id() {
+            let _ = std::process::Command::new("taskkill")
+                .args(["/T", "/PID", &pid.to_string()])
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status();
+            debug!(backend = %self.name, pid, "sent taskkill /T");
+        }
+
+        // Phase 2: Poll for exit up to grace period
+        let deadline = tokio::time::Instant::now() + grace;
+        loop {
+            match child.try_wait() {
+                Ok(Some(status)) => {
+                    info!(backend = %self.name, ?status, "child exited gracefully");
+                    return;
+                }
+                Ok(None) => {
+                    if tokio::time::Instant::now() >= deadline {
+                        break;
+                    }
+                    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                }
+                Err(e) => {
+                    warn!(backend = %self.name, error = %e, "error checking child status");
+                    break;
+                }
+            }
+        }
+
+        // Phase 3: Force kill
+        warn!(backend = %self.name, grace_secs = grace.as_secs(), "child didn't exit within grace period, force killing");
+
+        #[cfg(unix)]
+        if let Some(pid) = child.id() {
+            unsafe { libc::kill(-(pid as i32), libc::SIGKILL) };
+        }
+
+        #[cfg(windows)]
+        if let Some(pid) = child.id() {
+            let _ = std::process::Command::new("taskkill")
+                .args(["/F", "/T", "/PID", &pid.to_string()])
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status();
+        }
+
         let _ = child.kill().await;
     }
 }
