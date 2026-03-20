@@ -848,7 +848,9 @@ impl BackendManager {
 
     /// Get recent stderr lines from a backend (if available).
     pub fn get_backend_stderr(&self, name: &str, limit: usize) -> Option<Vec<String>> {
-        self.backends.get(name).map(|b| b.value().recent_stderr(limit))
+        self.backends
+            .get(name)
+            .map(|b| b.value().recent_stderr(limit))
     }
 
     /// Get the config for a backend (used by get_required_keys_for_tool).

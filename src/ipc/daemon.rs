@@ -246,9 +246,7 @@ pub async fn run(gw: InitializedGateway, bound: BoundSocket) -> Result<()> {
             socket::cleanup_files(self.path);
         }
     }
-    let _cleanup = CleanupGuard {
-        path: &socket_path,
-    };
+    let _cleanup = CleanupGuard { path: &socket_path };
 
     let client_drain_timeout = gw.config.daemon.client_drain_timeout;
     client_tracker.close();

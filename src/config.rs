@@ -475,7 +475,10 @@ pub struct HealthConfig {
     pub memory_check_interval: Duration,
 
     /// Min time between memory-triggered restarts per backend. Default: 60s.
-    #[serde(default = "default_memory_restart_cooldown", with = "humantime_duration")]
+    #[serde(
+        default = "default_memory_restart_cooldown",
+        with = "humantime_duration"
+    )]
     pub memory_restart_cooldown: Duration,
 }
 

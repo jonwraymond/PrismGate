@@ -44,8 +44,7 @@ pub async fn sample_rss(pids: &[u32]) -> Result<HashMap<u32, u64>> {
         for line in stdout.lines() {
             let parts: Vec<&str> = line.split_whitespace().collect();
             if parts.len() >= 2
-                && let (Ok(pid), Ok(rss)) =
-                    (parts[0].parse::<u32>(), parts[1].parse::<u64>())
+                && let (Ok(pid), Ok(rss)) = (parts[0].parse::<u32>(), parts[1].parse::<u64>())
             {
                 result.insert(pid, rss);
             }
