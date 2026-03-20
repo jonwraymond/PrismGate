@@ -907,8 +907,12 @@ impl BackendManager {
         let mut join_set = tokio::task::JoinSet::new();
         for (name, backend) in backends {
             join_set.spawn(async move {
-                if let Err(e) = backend.stop().await {
-                    warn!(backend = %name, error = %e, "error stopping backend");
+                // Use shutdown_grace_period + 2s buffer for the stop timeout
+                let timeout = std::time::Duration::from_secs(7); // 5s grace + 2s buffer
+                match tokio::time::timeout(timeout, backend.stop()).await {
+                    Ok(Ok(())) => {}
+                    Ok(Err(e)) => warn!(backend = %name, error = %e, "error stopping backend"),
+                    Err(_) => warn!(backend = %name, "backend stop timed out"),
                 }
             });
         }
