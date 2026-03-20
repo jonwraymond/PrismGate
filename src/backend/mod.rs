@@ -162,6 +162,11 @@ pub trait Backend: Send + Sync {
     async fn wait_for_exit(&self) -> Option<std::process::ExitStatus> {
         None
     }
+
+    /// Recent stderr lines from the backend process. Only available for stdio backends.
+    fn recent_stderr(&self, _limit: usize) -> Vec<String> {
+        Vec::new()
+    }
 }
 
 /// RAII guard that tracks in-flight calls for graceful drain on shutdown.

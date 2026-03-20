@@ -2,10 +2,13 @@ use anyhow::{Context, Result};
 use rmcp::{ServiceExt, model::*, service::RunningService};
 use serde_json::Value;
 use std::process::Stdio;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicU8, Ordering};
 use tokio::process::Command;
 use tokio::sync::RwLock;
 use tracing::{debug, error, info, warn};
+
+const STDERR_BUFFER_SIZE: usize = 200;
 
 use super::{Backend, BackendState, STATE_HEALTHY, STATE_STARTING, STATE_STOPPED};
 use super::{
@@ -27,6 +30,7 @@ pub struct StdioBackend {
     service: RwLock<Option<RunningService<rmcp::RoleClient, ()>>>,
     state: AtomicU8,
     child: RwLock<Option<tokio::process::Child>>,
+    stderr_buffer: Arc<std::sync::Mutex<std::collections::VecDeque<String>>>,
 }
 
 impl StdioBackend {
@@ -37,6 +41,9 @@ impl StdioBackend {
             service: RwLock::new(None),
             state: AtomicU8::new(STATE_STARTING),
             child: RwLock::new(None),
+            stderr_buffer: Arc::new(std::sync::Mutex::new(
+                std::collections::VecDeque::with_capacity(STDERR_BUFFER_SIZE),
+            )),
         }
     }
 
@@ -142,7 +149,7 @@ impl Backend for StdioBackend {
         let mut cmd = self.build_command();
         cmd.stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::null());
+            .stderr(Stdio::piped());
 
         // Each child in its own process group for clean kill-group cleanup
         #[cfg(unix)]
@@ -161,6 +168,24 @@ impl Backend for StdioBackend {
         let stdin = child.stdin.take().ok_or_else(|| {
             anyhow::anyhow!("failed to capture stdin from backend '{}'", self.name)
         })?;
+
+        if let Some(stderr) = child.stderr.take() {
+            let buf = Arc::clone(&self.stderr_buffer);
+            let name = self.name.clone();
+            tokio::spawn(async move {
+                use tokio::io::{AsyncBufReadExt, BufReader};
+                let reader = BufReader::new(stderr);
+                let mut lines = reader.lines();
+                while let Ok(Some(line)) = lines.next_line().await {
+                    let mut buffer = buf.lock().unwrap_or_else(|e| e.into_inner());
+                    if buffer.len() >= STDERR_BUFFER_SIZE {
+                        buffer.pop_front();
+                    }
+                    buffer.push_back(line);
+                }
+                debug!(backend = %name, "stderr reader finished");
+            });
+        }
 
         // rmcp accepts (AsyncRead, AsyncWrite) tuples as IntoTransport
         let service = ()
@@ -275,5 +300,10 @@ impl Backend for StdioBackend {
         } else {
             None
         }
+    }
+
+    fn recent_stderr(&self, limit: usize) -> Vec<String> {
+        let buffer = self.stderr_buffer.lock().unwrap_or_else(|e| e.into_inner());
+        buffer.iter().rev().take(limit).rev().cloned().collect()
     }
 }
