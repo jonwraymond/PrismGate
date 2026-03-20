@@ -488,6 +488,7 @@ mod tests {
                 min_idle: 0,
                 max_instances: 5,
                 acquire_timeout: Duration::from_secs(1),
+                replenish_delay: Duration::from_secs(2),
             },
             ..default_backend_config()
         }
@@ -517,6 +518,8 @@ mod tests {
             health_check: None,
             instance_mode: InstanceMode::Shared,
             pool: PoolConfig::default(),
+            shutdown_grace_period: Duration::from_secs(5),
+            max_memory_mb: None,
         }
     }
 
@@ -533,6 +536,7 @@ mod tests {
                 min_idle,
                 max_instances,
                 acquire_timeout: Duration::from_millis(200),
+                replenish_delay: Duration::from_secs(2),
             },
             ..test_config()
         };

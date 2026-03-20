@@ -787,6 +787,8 @@ mod tests {
             health_check: None,
             instance_mode: Default::default(),
             pool: Default::default(),
+            shutdown_grace_period: Duration::from_secs(5),
+            max_memory_mb: None,
         };
 
         let result = CliAdapterBackend::new("empty".to_string(), config);

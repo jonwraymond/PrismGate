@@ -273,6 +273,14 @@ pub struct BackendConfig {
     /// Pool configuration for dedicated instance mode.
     #[serde(default)]
     pub pool: PoolConfig,
+
+    /// Time to wait after SIGTERM before SIGKILL. Default: 5s.
+    #[serde(default = "default_shutdown_grace_period", with = "humantime_duration")]
+    pub shutdown_grace_period: Duration,
+
+    /// Auto-restart backend if RSS exceeds this (MB). None = no limit.
+    #[serde(default)]
+    pub max_memory_mb: Option<u64>,
 }
 
 /// Per-backend retry configuration for transient failures (Starting state).
@@ -373,6 +381,10 @@ pub struct PoolConfig {
     /// Timeout waiting for an available instance. Default: 30s.
     #[serde(default = "default_pool_acquire_timeout", with = "humantime_duration")]
     pub acquire_timeout: Duration,
+
+    /// Delay after stopping an instance before spawning replacement. Default: 2s.
+    #[serde(default = "default_replenish_delay", with = "humantime_duration")]
+    pub replenish_delay: Duration,
 }
 
 impl Default for PoolConfig {
@@ -381,6 +393,7 @@ impl Default for PoolConfig {
             min_idle: default_pool_min_idle(),
             max_instances: default_pool_max_instances(),
             acquire_timeout: default_pool_acquire_timeout(),
+            replenish_delay: default_replenish_delay(),
         }
     }
 }
@@ -456,6 +469,14 @@ pub struct HealthConfig {
     /// Maximum time to wait for in-flight calls to drain during shutdown. Default: 10s.
     #[serde(default = "default_drain_timeout", with = "humantime_duration")]
     pub drain_timeout: Duration,
+
+    /// How often to sample child process RSS. Default: 30s.
+    #[serde(default = "default_memory_check_interval", with = "humantime_duration")]
+    pub memory_check_interval: Duration,
+
+    /// Min time between memory-triggered restarts per backend. Default: 60s.
+    #[serde(default = "default_memory_restart_cooldown", with = "humantime_duration")]
+    pub memory_restart_cooldown: Duration,
 }
 
 /// Admin API configuration.
@@ -663,6 +684,18 @@ fn default_pool_max_instances() -> u32 {
 fn default_pool_acquire_timeout() -> Duration {
     Duration::from_secs(30)
 }
+fn default_shutdown_grace_period() -> Duration {
+    Duration::from_secs(5)
+}
+fn default_replenish_delay() -> Duration {
+    Duration::from_secs(2)
+}
+fn default_memory_check_interval() -> Duration {
+    Duration::from_secs(30)
+}
+fn default_memory_restart_cooldown() -> Duration {
+    Duration::from_secs(60)
+}
 
 // --- Default impls ---
 
@@ -679,6 +712,8 @@ impl Default for HealthConfig {
             restart_timeout: default_restart_timeout(),
             recovery_multiplier: default_recovery_multiplier(),
             drain_timeout: default_drain_timeout(),
+            memory_check_interval: default_memory_check_interval(),
+            memory_restart_cooldown: default_memory_restart_cooldown(),
         }
     }
 }
