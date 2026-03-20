@@ -99,10 +99,23 @@ Prompts:
 - `gatemini://llms` and `gatemini://llms-full` auto-generate machine-readable tool references
 - JSON chunking utility in `src/tools/json_chunker.rs` for key-path decomposition
 
+## Process supervision
+
+- `shutdown_grace_period` (default 5s) controls SIGTERM → poll → SIGKILL window per backend
+- backend stderr captured in ring buffer (200 lines), exposed via `gatemini://backend/{name}`
+- `gatemini://health` shows per-backend PID, RSS, peak RSS, memory limit, and recent stderr
+- `max_memory_mb` auto-restarts backends exceeding RSS limit (with 60s cooldown)
+- pool `replenish_delay` (default 2s) prevents memory spike when recycling dedicated instances
+- prerequisite cleanup sends SIGTERM, waits 5s, then SIGKILL
+- `stop_all()` enforces per-backend timeout (grace period + 2s buffer)
+- `gatemini stop` waits 35s (matching daemon drain) instead of 5s
+- daemon socket cleanup guaranteed via Drop guard even on panic
+- Windows: `taskkill /T` for graceful, `taskkill /F /T` for force kill
+
 ## Important implementation notes
 
 - transport names are `stdio`, `streamable-http`, and `cli-adapter`
-- backend stderr is currently discarded with `Stdio::null()` for stdio backends
+- backend stderr captured in 200-line ring buffer per stdio backend (piped, not null)
 - cache version is `4` and defaults to the platform cache directory
 - composite tool changes are detected by the watcher but require restart
 - `admin.allowed_cidrs` exists in config but is not enforced in the current admin routes

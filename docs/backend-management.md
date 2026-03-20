@@ -170,6 +170,8 @@ Current defaults from `src/config.rs`:
 | `health.restart_timeout` | `30s` |
 | `health.recovery_multiplier` | `3` |
 | `health.drain_timeout` | `10s` |
+| `health.memory_check_interval` | `30s` |
+| `health.memory_restart_cooldown` | `60s` |
 
 Internal circuit-breaker behavior:
 
@@ -191,6 +193,30 @@ Features:
 - startup delay before backend connect
 
 If `managed: true`, Gatemini records the spawned prerequisite PID and terminates the process group during shutdown.
+
+## Process supervision
+
+Backend child processes are supervised with configurable shutdown behavior and memory monitoring.
+
+### Graceful shutdown
+
+When a stdio backend is stopped, Gatemini sends SIGTERM to the process group (or `taskkill /T` on Windows), then polls `try_wait()` every 100ms for up to `shutdown_grace_period` (default 5s). If the child hasn't exited by the deadline, SIGKILL is sent (or `taskkill /F /T` on Windows).
+
+Prerequisite processes follow the same pattern with a fixed 5s grace period.
+
+### Stderr capture
+
+Backend stderr is piped to a 200-line ring buffer per backend. Recent lines are exposed in `gatemini://backend/{name}` and `gatemini://health`. When a backend exits unexpectedly, the last stderr lines are logged at `warn` level.
+
+### Memory monitoring
+
+The health checker samples RSS for all backends every `memory_check_interval` (default 30s) via a single `ps` call. Stats are exposed in `gatemini://health`. If a backend's RSS exceeds `max_memory_mb`, it is restarted with a cooldown of `memory_restart_cooldown` (default 60s). A warning is logged at 80% of the limit.
+
+| Setting | Default |
+|---------|---------|
+| `shutdown_grace_period` | `5s` |
+| `max_memory_mb` | none |
+| `pool.replenish_delay` | `2s` |
 
 ## Output processing pipeline
 
