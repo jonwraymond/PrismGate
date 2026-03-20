@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.8.1](https://github.com/jonwraymond/PrismGate/compare/v1.8.0...v1.8.1) (2026-03-20)
+
+
+### Bug Fixes
+
+* convert thrown errors to return values in sandbox ([41d36d4](https://github.com/jonwraymond/PrismGate/commit/41d36d442f7fa7dd0e2b4855167d1b2091b5060c))
+* convert thrown errors to return values in sandbox ([0544192](https://github.com/jonwraymond/PrismGate/commit/0544192e7da5be75734b78a849a4b43ff75221d9))
+
 ## [1.8.0](https://github.com/jonwraymond/PrismGate/compare/v1.7.2...v1.8.0) (2026-03-20)
 
 
