@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.8.0](https://github.com/jonwraymond/PrismGate/compare/v1.7.2...v1.8.0) (2026-03-20)
+
+
+### Features
+
+* detect orphaned proxy processes and exit automatically ([df03019](https://github.com/jonwraymond/PrismGate/commit/df030199eb89b2364524c0ed3499a3a373d90d2e))
+* detect orphaned proxy processes and exit automatically ([ee9d472](https://github.com/jonwraymond/PrismGate/commit/ee9d472dae51c0ceb07f5a436298d0fa72806797))
+
 ## [1.7.2](https://github.com/jonwraymond/PrismGate/compare/v1.7.1...v1.7.2) (2026-03-18)
 
 
