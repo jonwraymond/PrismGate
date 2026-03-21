@@ -1,0 +1,107 @@
+direction: down
+
+title: Dedicated Instance Pool {
+  shape: text
+  near: top-center
+  style.font-size: 28
+  style.bold: true
+}
+
+session: Proxy session connects {
+  style.fill: "#DBEAFE"
+  style.stroke: "#2563EB"
+  style.border-radius: 12
+  style.shadow: true
+}
+
+acquire: pool.acquire(session_id) {
+  style.fill: "#ECFDF5"
+  style.stroke: "#16A34A"
+  style.border-radius: 12
+}
+
+check: Already assigned? {
+  shape: diamond
+  style.fill: "#F0FDF4"
+  style.stroke: "#22C55E"
+}
+
+idle: Pop from idle queue {
+  style.fill: "#E0F2FE"
+  style.stroke: "#0284C7"
+  style.border-radius: 12
+}
+
+spawn: Spawn new instance {
+  style.fill: "#E0E7FF"
+  style.stroke: "#6366F1"
+  style.border-radius: 12
+}
+
+wait: Wait (acquire_timeout) {
+  style.fill: "#FFF7ED"
+  style.stroke: "#EA580C"
+  style.border-radius: 12
+}
+
+assigned: Assigned to session {
+  style.fill: "#DCFCE7"
+  style.stroke: "#16A34A"
+  style.border-radius: 12
+  style.shadow: true
+}
+
+disconnect: Session disconnects {
+  style.fill: "#FEF2F2"
+  style.stroke: "#DC2626"
+  style.border-radius: 12
+}
+
+release: pool.release(session_id) {
+  style.fill: "#FEF9C3"
+  style.stroke: "#CA8A04"
+  style.border-radius: 12
+}
+
+release_steps: |md
+  1. stop instance (grace period)
+  2. release capacity permit
+  3. wait `replenish_delay`
+  4. spawn replacement if < min_idle
+| {
+  shape: page
+  style.fill: "#FEFCE8"
+  style.stroke: "#EAB308"
+  style.font-size: 12
+}
+
+config: |md
+  Config:
+
+  - `min_idle` (default 1)
+  - `max_instances` (default 20)
+  - `acquire_timeout` (default 30s)
+  - `replenish_delay` (default 2s)
+| {
+  shape: page
+  style.fill: "#F8FAFC"
+  style.stroke: "#475569"
+  style.font-size: 12
+}
+
+session -> acquire
+acquire -> check
+check -> assigned: yes, reuse
+check -> idle: no, try idle
+idle -> assigned: found healthy
+idle -> spawn: idle empty + capacity available
+spawn -> assigned
+idle -> wait: at capacity
+wait -> idle: notified
+wait -> "pool exhausted error": timeout {
+  style.stroke: "#DC2626"
+}
+assigned -> disconnect: session ends
+disconnect -> release
+release -> release_steps
+acquire -> config

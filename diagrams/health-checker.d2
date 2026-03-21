@@ -35,6 +35,13 @@ phase3: Phase 3 {
   style.border-radius: 12
 }
 
+phase4: Phase 4 {
+  label: "Phase 4: memory sampling + limit enforcement"
+  style.fill: "#FEF2F2"
+  style.stroke: "#DC2626"
+  style.border-radius: 12
+}
+
 phase1_detail: |md
   - stagger pings
   - timeout each ping
@@ -69,6 +76,19 @@ phase3_detail: |md
   style.font-size: 12
 }
 
+phase4_detail: |md
+  - sample RSS via `ps` (batch)
+  - update peak RSS tracking
+  - check `max_memory_mb` limit
+  - auto-restart with 60s cooldown
+  - warn at 80% of limit
+| {
+  shape: page
+  style.fill: "#FEF2F2"
+  style.stroke: "#EF4444"
+  style.font-size: 12
+}
+
 settings: |md
   Defaults:
 
@@ -77,6 +97,8 @@ settings: |md
   - threshold `3`
   - restart window `60s`
   - backoff `1s` to `30s`
+  - memory check `30s`
+  - memory cooldown `60s`
 | {
   shape: page
   style.fill: "#FEFCE8"
@@ -84,8 +106,9 @@ settings: |md
   style.font-size: 12
 }
 
-loop -> phase1 -> phase2 -> phase3
+loop -> phase1 -> phase2 -> phase3 -> phase4
 phase1 -> phase1_detail
 phase2 -> phase2_detail
 phase3 -> phase3_detail
+phase4 -> phase4_detail
 phase2 -> settings
