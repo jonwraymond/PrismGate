@@ -55,6 +55,11 @@ Transport defaults:
 - `pool.min_idle` defaults to `1`
 - `pool.max_instances` defaults to `20`
 - `pool.acquire_timeout` defaults to `30s`
+- `pool.replenish_delay` defaults to `2s`
+- `shutdown_grace_period` defaults to `5s`
+- `max_memory_mb` defaults to none (no limit)
+- `health.memory_check_interval` defaults to `30s`
+- `health.memory_restart_cooldown` defaults to `60s`
 
 ## Supported transports
 

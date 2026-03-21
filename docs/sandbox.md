@@ -150,13 +150,14 @@ When a tool exists in the cache but its backend has not reconnected yet, the san
 
 ### Error hints
 
-The `enhance_sandbox_error` function in `src/sandbox/mod.rs` intercepts V8 errors and appends actionable hints for four common LLM coding mistakes:
+The `enhance_sandbox_error` function in `src/sandbox/mod.rs` intercepts V8 errors and appends actionable hints for five common LLM coding mistakes:
 
 | Pattern | V8 error | Hint |
 |---------|----------|------|
 | Variable shadowing | `ReferenceError: Cannot access 'X' before initialization` | `X` is a backend name; use a different variable like `xResult` |
 | Misspelled backend | `ReferenceError: X is not defined` with close name match | Suggests the correct backend name |
 | Backend unavailable | `Backend 'X' is not available` | Load `@gatemini://backend/X` to check status |
+| Meta-tool in sandbox | `ReferenceError: gatemini is not defined` (or `search_tools`, `tool_info`, `list_tools_meta`) | Meta-tools cannot be called inside `call_tool_chain`; use them as separate MCP tool calls |
 | Bare tool name | `ReferenceError: X is not defined` with no backend match | `X` may be a tool; call it as `backend_name.X({args})` |
 
 ## Security model

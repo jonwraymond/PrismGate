@@ -17,6 +17,7 @@ Resources are implemented in `src/resources.rs`.
 | `gatemini://stats` | `application/json` | context savings stats: bytes returned vs processed, savings ratio, per-tool breakdown |
 | `gatemini://llms` | `text/plain` | machine-readable gateway reference: tool names, descriptions, naming rules (~3k tokens) |
 | `gatemini://llms-full` | `text/plain` | complete gateway reference with full input schemas for every tool |
+| `gatemini://health` | `application/json` | per-backend PID, RSS, peak RSS, memory limit, status, and recent stderr |
 | `gatemini://call_tool_chain` | `text/plain` | execution contract, return semantics, and examples for sandboxed TypeScript tool calls |
 
 ### Resource templates

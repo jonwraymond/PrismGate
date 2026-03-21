@@ -22,6 +22,7 @@
 - `@gatemini://llms`: Machine-readable tool reference (auto-generated)
 - `@gatemini://llms-full`: Complete tool schemas (auto-generated)
 - `@gatemini://stats`: Session context savings statistics (bytes returned/processed, savings ratio)
+- `@gatemini://health`: Per-backend PID, RSS, peak RSS, memory limit, and recent stderr
 - `@gatemini://recent`: Recent tool calls with timing
 - `@gatemini://call_tool_chain`: Execution contract and examples
 - `@gatemini://tool/{name}`: Full schema for one tool
@@ -38,7 +39,7 @@
 - Output pipeline: intent filter → auto-chunk JSON → smart truncate (60/40 head/tail) → size metadata
 - Config: OutputConfig (auto_chunk_json, smart_truncation, chunk_threshold)
 
-## Key Features (v1.3–v1.7)
+## Key Features (v1.3–v1.9)
 
 - Per-session dedicated backend instances with autoscaling pool (instance_mode: dedicated)
 - Three-tier tool search with typo correction
@@ -48,6 +49,11 @@
 - Intent-driven output filtering
 - Session byte tracking with context savings stats
 - Expanded direct call parser (bypasses V8 for simple calls)
-- 4 actionable sandbox error hints
+- 5 actionable sandbox error hints (shadowing, misspelled, unavailable, meta-tool, bare name)
 - globalThis backend mirrors
 - rmcp 1.2.0 + reqwest 0.13 with rustls crypto provider
+- Configurable shutdown grace period (SIGTERM → poll → SIGKILL)
+- Backend stderr capture in 200-line ring buffer
+- Per-backend RSS memory tracking with auto-restart on limit
+- Orphaned proxy detection (auto-exit when parent dies)
+- Socket cleanup guard (Drop-based, panic-safe)

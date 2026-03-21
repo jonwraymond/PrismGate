@@ -73,7 +73,7 @@ Prompts:
 | `src/resources.rs` | resources, template completion, llms.txt generation |
 | `src/prompts.rs` | live prompts driven by registry and tracker |
 | `src/ipc/` | proxy/daemon/socket lifecycle |
-| `src/backend/` | transport implementations and health management |
+| `src/backend/` | transport implementations, health management, memory tracking, instance pools |
 | `src/tools/` | meta-tool handlers, intent filtering, JSON chunking |
 | `src/sandbox/` | V8 execution bridge |
 | `src/secrets/` | secret providers and resolver |

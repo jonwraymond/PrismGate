@@ -106,6 +106,7 @@ Resources:
 - `gatemini://tools`
 - `gatemini://recent`
 - `gatemini://stats`
+- `gatemini://health`
 - `gatemini://llms`
 - `gatemini://llms-full`
 - `gatemini://call_tool_chain`

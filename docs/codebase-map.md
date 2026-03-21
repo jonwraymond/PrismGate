@@ -86,6 +86,7 @@ Files:
 - `src/backend/prerequisite.rs`: prerequisite process dedup and lifecycle
 - `src/backend/health.rs`: health checker, restart windows, internal circuit-breaker timing
 - `src/backend/pool.rs`: per-session dedicated instance pool for stateful backends
+- `src/backend/memory.rs`: per-backend RSS sampling via `ps` (Unix) or `tasklist` (Windows), memory limit enforcement
 - `src/backend/composite.rs`: virtual backend for composite tools
 - `src/backend/lenient_client.rs`: HTTP client wrapper for servers with imperfect content-type behavior
 
