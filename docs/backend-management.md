@@ -40,7 +40,7 @@ Child process backends communicate over stdin/stdout using rmcp.
 Key details from `src/backend/stdio.rs`:
 
 - stdin and stdout are piped
-- stderr is set to `Stdio::null()`
+- stderr is piped to a 200-line ring buffer (exposed via `gatemini://backend/{name}` and `gatemini://health`)
 - Unix builds place the child in a new process group
 - a reaper task watches for unexpected exit and marks the backend stopped
 
