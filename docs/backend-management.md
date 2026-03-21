@@ -117,6 +117,8 @@ backends:
       acquire_timeout: 30s
 ```
 
+![Pool lifecycle](diagrams/pool-lifecycle.svg){ .diagram-wide }
+
 Pool behavior:
 
 - pre-warms `min_idle` instances at startup (default: 1)

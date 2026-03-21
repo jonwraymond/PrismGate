@@ -69,10 +69,41 @@ introspection_note: |md
   style.font-size: 12
 }
 
+output: Output pipeline {
+  style.fill: "#FEF9C3"
+  style.stroke: "#CA8A04"
+  style.border-radius: 12
+}
+
+output_detail: |md
+  1. intent filter (>5KB + intent)
+  2. auto-chunk JSON (>10KB)
+  3. smart truncate (60/40 split)
+  4. size metadata footer
+| {
+  shape: page
+  style.fill: "#FEFCE8"
+  style.stroke: "#EAB308"
+  style.font-size: 12
+}
+
+trycatch: try/catch wrapper {
+  label: "Thrown errors → return values"
+  style.fill: "#FEF2F2"
+  style.stroke: "#DC2626"
+  style.border-radius: 12
+  style.font-size: 12
+}
+
 input -> tier1: matches JSON shape
 input -> tier2: matches simple TS call
 input -> tier3: otherwise
 tier3 -> bridge
+tier3 -> trycatch: wraps user code
 bridge -> bridge_note
 bridge -> introspection
 introspection -> introspection_note
+tier1 -> output: raw result
+tier2 -> output: raw result
+tier3 -> output: raw result
+output -> output_detail
