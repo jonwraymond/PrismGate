@@ -35,3 +35,4 @@ If you are reading code and docs side by side, start with:
 - `src/server.rs` for the public MCP surface
 - `src/backend/` for transport implementations and lifecycle management
 - `src/config.rs` for defaults and hot-reload behavior
+
