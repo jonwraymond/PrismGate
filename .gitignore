@@ -20,5 +20,7 @@ config/test-*.yaml
 # Git backup from repo init
 .git-backup/
 
-# Python/uv caches (from D2 diagram rendering)
+# Python virtual environments and caches
+.venv/
 ~/.cache/
+site/
