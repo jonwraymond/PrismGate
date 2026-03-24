@@ -1,8 +1,24 @@
+import { useDashboardData } from "./api";
+import Header from "./components/Header";
+
 export default function App() {
+  const { topology, backends, stats, recent, connected } = useDashboardData();
+
   return (
-    <div className="min-h-screen p-6">
-      <h1 className="text-2xl font-bold text-accent">Gatemini Dashboard</h1>
-      <p className="text-text-muted mt-2">Loading...</p>
+    <div className="min-h-screen flex flex-col">
+      <Header
+        daemon={topology?.daemon ?? null}
+        stats={stats}
+        connected={connected}
+      />
+      <main className="flex-1 p-6 space-y-6">
+        {/* Topology, BackendGrid, RecentCalls, StatsFooter go here */}
+        <p className="text-text-muted font-mono text-sm">
+          {connected
+            ? `Monitoring ${topology?.daemon.total_backends ?? 0} backends...`
+            : "Connecting to gatemini daemon..."}
+        </p>
+      </main>
     </div>
   );
 }
