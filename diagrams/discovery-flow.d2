@@ -1,0 +1,41 @@
+direction: right
+
+title: Discovery Flow {
+  shape: text
+  near: top-center
+  style.font-size: 28
+  style.bold: true
+}
+
+search: search_tools {
+  style.fill: "#DBEAFE"
+  style.stroke: "#2563EB"
+  style.border-radius: 10
+}
+
+brief: brief results {
+  style.fill: "#EFF6FF"
+  style.stroke: "#60A5FA"
+  style.border-radius: 10
+}
+
+info: tool_info {
+  style.fill: "#E0E7FF"
+  style.stroke: "#6366F1"
+  style.border-radius: 10
+}
+
+full: full schema when needed {
+  style.fill: "#F5F3FF"
+  style.stroke: "#7C3AED"
+  style.border-radius: 10
+}
+
+call: call_tool_chain {
+  style.fill: "#DCFCE7"
+  style.stroke: "#16A34A"
+  style.border-radius: 10
+}
+
+search -> brief -> info -> full -> call
+info -> call: skip full when brief is enough
