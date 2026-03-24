@@ -27,7 +27,7 @@ export function useDashboardData(): DashboardData & { connected: boolean } {
     recent: null,
   });
   const [connected, setConnected] = useState(false);
-  const intervalRef = useRef<ReturnType<typeof setInterval>>();
+  const intervalRef = useRef<ReturnType<typeof setInterval>>(undefined);
 
   useEffect(() => {
     async function poll() {
