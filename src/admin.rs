@@ -36,7 +36,7 @@ pub mod api {
                 .not_found_service(ServeFile::new(assets_dir.join("index.html")))
         } else {
             // web/dist not built — serve legacy single-file dashboard
-            ServeDir::new(".")
+            ServeDir::new(manifest_dir)
                 .not_found_service(ServeFile::new(manifest_dir.join("web/dashboard.html")))
         };
 

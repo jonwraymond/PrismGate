@@ -4,12 +4,14 @@ interface LatencySparklineProps {
   p50: number | null;
   p95: number | null;
   calls: number;
+  id: string;
 }
 
 export default function LatencySparkline({
   p50,
   p95,
   calls,
+  id,
 }: LatencySparklineProps) {
   if (p50 === null || calls === 0) {
     return (
@@ -30,7 +32,7 @@ export default function LatencySparkline({
     <ResponsiveContainer width="100%" height={32}>
       <AreaChart data={points}>
         <defs>
-          <linearGradient id="sparkGrad" x1="0" y1="0" x2="0" y2="1">
+          <linearGradient id={`sparkGrad-${id}`} x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stopColor="var(--color-accent)" stopOpacity={0.3} />
             <stop offset="100%" stopColor="var(--color-accent)" stopOpacity={0} />
           </linearGradient>
@@ -40,7 +42,7 @@ export default function LatencySparkline({
           dataKey="v"
           stroke="var(--color-accent)"
           strokeWidth={1.5}
-          fill="url(#sparkGrad)"
+          fill={`url(#sparkGrad-${id})`}
           dot={false}
           isAnimationActive={false}
         />

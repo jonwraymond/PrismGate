@@ -113,7 +113,7 @@ export default function BackendCard({ backend }: BackendCardProps) {
 
           <div>
             <span className="text-xs text-text-dim block mb-1">Latency trend</span>
-            <LatencySparkline p50={b.p50_ms} p95={b.p95_ms} calls={b.calls} />
+            <LatencySparkline p50={b.p50_ms} p95={b.p95_ms} calls={b.calls} id={b.name} />
           </div>
 
           {b.recent_stderr.length > 0 && (
