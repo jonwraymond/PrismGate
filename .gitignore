@@ -24,3 +24,7 @@ config/test-*.yaml
 .venv/
 ~/.cache/
 site/
+
+# React dashboard build artifacts
+web/node_modules/
+web/dist/
