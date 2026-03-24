@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gatemini Dashboard</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{--bg:#0f172a;--surface:#1e293b;--surface2:#334155;--border:#475569;--text:#e2e8f0;--muted:#94a3b8;--green:#22c55e;--yellow:#eab308;--red:#ef4444;--blue:#3b82f6;--purple:#8b5cf6;--teal:#14b8a6;--orange:#f97316}
+body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;overflow-x:hidden}
+a{color:var(--blue);text-decoration:none}
+
+/* Header */
+.header{background:var(--surface);border-bottom:1px solid var(--border);padding:12px 24px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:50}
+.header h1{font-size:18px;font-weight:600;display:flex;align-items:center;gap:8px}
+.header .dot{width:8px;height:8px;border-radius:50%;display:inline-block}
+.header .dot.healthy{background:var(--green);box-shadow:0 0 8px var(--green)}
+.header .dot.degraded{background:var(--yellow);box-shadow:0 0 8px var(--yellow)}
+.header .meta{font-size:13px;color:var(--muted);display:flex;gap:16px}
+.header .meta span{display:flex;align-items:center;gap:4px}
+
+/* Topology */
+.topology{background:var(--surface);border:1px solid var(--border);border-radius:12px;margin:16px;padding:16px;min-height:280px;position:relative;overflow:hidden}
+.topology h2{font-size:14px;color:var(--muted);margin-bottom:12px;text-transform:uppercase;letter-spacing:1px}
+.topo-svg{width:100%;height:240px}
+.topo-node{cursor:default}
+.topo-node rect{rx:8;ry:8;stroke-width:1.5}
+.topo-node text{font-size:11px;fill:var(--text);font-family:inherit}
+.topo-node .label{font-weight:600;font-size:12px}
+.topo-node .sublabel{font-size:10px;fill:var(--muted)}
+.topo-edge{stroke:var(--border);stroke-width:1.5;fill:none}
+.topo-edge.active{stroke:var(--teal);stroke-width:2}
+
+/* Animated particles */
+@keyframes flowRight{from{offset-distance:0%}to{offset-distance:100%}}
+.particle{width:6px;height:6px;border-radius:50%;background:var(--teal);position:absolute;offset-rotate:0deg;animation:flowRight 1.5s linear;opacity:0.9;box-shadow:0 0 6px var(--teal);pointer-events:none}
+
+/* Grid */
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:12px;padding:0 16px 16px}
+
+/* Backend cards */
+.card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px;transition:border-color 0.2s}
+.card:hover{border-color:var(--blue)}
+.card-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+.card-header h3{font-size:14px;font-weight:600;display:flex;align-items:center;gap:6px}
+.card-header .badge{font-size:10px;padding:2px 8px;border-radius:99px;font-weight:500;text-transform:uppercase;letter-spacing:0.5px}
+.badge.healthy{background:rgba(34,197,94,0.15);color:var(--green)}
+.badge.starting{background:rgba(59,130,246,0.15);color:var(--blue)}
+.badge.unhealthy{background:rgba(239,68,68,0.15);color:var(--red)}
+.badge.stopped{background:rgba(148,163,184,0.15);color:var(--muted)}
+
+.card-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:10px}
+.stat{text-align:center}
+.stat .val{font-size:16px;font-weight:700;color:var(--text)}
+.stat .lbl{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px}
+
+/* Memory bar */
+.mem-bar{height:4px;background:var(--surface2);border-radius:2px;overflow:hidden;margin-top:6px}
+.mem-bar .fill{height:100%;border-radius:2px;transition:width 0.5s}
+.mem-bar .fill.low{background:var(--green)}
+.mem-bar .fill.mid{background:var(--yellow)}
+.mem-bar .fill.high{background:var(--red)}
+
+/* Stderr */
+.stderr{margin-top:8px;max-height:80px;overflow-y:auto;font-family:'SF Mono',Consolas,monospace;font-size:10px;color:var(--orange);background:rgba(0,0,0,0.3);border-radius:6px;padding:6px 8px;line-height:1.5}
+.stderr:empty{display:none}
+
+/* Recent calls */
+.recent{background:var(--surface);border:1px solid var(--border);border-radius:10px;margin:0 16px 16px;padding:14px}
+.recent h2{font-size:14px;color:var(--muted);margin-bottom:10px;text-transform:uppercase;letter-spacing:1px}
+.recent table{width:100%;border-collapse:collapse;font-size:12px}
+.recent th{text-align:left;color:var(--muted);font-weight:500;padding:4px 8px;border-bottom:1px solid var(--border)}
+.recent td{padding:4px 8px;border-bottom:1px solid rgba(71,85,105,0.3)}
+.recent .ok{color:var(--green)}
+.recent .fail{color:var(--red)}
+.recent .dur{color:var(--blue)}
+.recent .ago{color:var(--muted);font-size:10px}
+
+/* Stats bar */
+.stats-bar{display:flex;gap:12px;padding:0 16px 12px;flex-wrap:wrap}
+.stats-bar .chip{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:8px 14px;font-size:12px;display:flex;align-items:center;gap:6px}
+.stats-bar .chip .v{font-weight:700;font-size:14px}
+
+/* Responsive */
+@media(max-width:640px){.grid{grid-template-columns:1fr}.header{flex-direction:column;gap:8px}}
+</style>
+</head>
+<body>
+
+<div class="header" id="header">
+  <h1><span class="dot" id="statusDot"></span> Gatemini</h1>
+  <div class="meta" id="headerMeta"></div>
+</div>
+
+<div class="stats-bar" id="statsBar"></div>
+
+<div class="topology">
+  <h2>Live Topology</h2>
+  <svg class="topo-svg" id="topoSvg"></svg>
+</div>
+
+<div class="grid" id="backendGrid"></div>
+
+<div class="recent">
+  <h2>Recent Calls</h2>
+  <table>
+    <thead><tr><th>Tool</th><th>Backend</th><th>Duration</th><th>Status</th><th>When</th></tr></thead>
+    <tbody id="recentBody"></tbody>
+  </table>
+</div>
+
+<script>
+const POLL_MS = 2000;
+let prevCalls = [];
+
+async function fetchJson(url) {
+  try { const r = await fetch(url); return r.ok ? r.json() : null; } catch { return null; }
+}
+
+function formatUptime(s) {
+  if (s < 60) return `${Math.floor(s)}s`;
+  if (s < 3600) return `${Math.floor(s/60)}m ${Math.floor(s%60)}s`;
+  return `${Math.floor(s/3600)}h ${Math.floor((s%3600)/60)}m`;
+}
+
+function stateClass(state) {
+  const s = state.toLowerCase();
+  if (s === 'healthy') return 'healthy';
+  if (s === 'starting') return 'starting';
+  if (s === 'unhealthy') return 'unhealthy';
+  return 'stopped';
+}
+
+// ── Topology SVG ──────────────────────────────────────────────────
+
+function renderTopology(data) {
+  const svg = document.getElementById('topoSvg');
+  const w = svg.clientWidth || 900;
+  const h = 240;
+  svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
+
+  const backends = data.backends.filter(b => b.available || b.state !== 'Stopped');
+  const cols = Math.min(backends.length, 6);
+  const rows = Math.ceil(backends.length / cols);
+
+  // Daemon node center
+  const dx = w / 2, dy = 50;
+  // Backend positions
+  const bw = 120, bh = 50;
+  const startX = (w - cols * (bw + 20)) / 2 + 10;
+  const startY = 130;
+
+  let svgContent = '';
+
+  // Daemon node
+  svgContent += `
+    <g class="topo-node">
+      <rect x="${dx-70}" y="${dy-20}" width="140" height="40" fill="#1e293b" stroke="${data.daemon.status==='healthy'?'#22c55e':'#eab308'}"/>
+      <text x="${dx}" y="${dy-2}" text-anchor="middle" class="label">gatemini daemon</text>
+      <text x="${dx}" y="${dy+12}" text-anchor="middle" class="sublabel">${data.daemon.total_tools} tools · ${data.daemon.total_backends} backends</text>
+    </g>`;
+
+  // Backend nodes + edges
+  backends.forEach((b, i) => {
+    const col = i % cols;
+    const row = Math.floor(i / cols);
+    const bx = startX + col * (bw + 20);
+    const by = startY + row * (bh + 16);
+    const cx = bx + bw/2;
+    const cy = by + bh/2;
+
+    const color = b.available ? '#22c55e' : (b.state === 'Starting' ? '#3b82f6' : '#ef4444');
+    const isActive = data.recent_calls.some(c => c.backend_name === b.name && c.seconds_ago < 5);
+
+    // Edge
+    svgContent += `<path class="topo-edge${isActive?' active':''}" d="M${dx},${dy+20} Q${dx},${by-10} ${cx},${by}" id="edge-${i}"/>`;
+
+    // Node
+    svgContent += `
+      <g class="topo-node">
+        <rect x="${bx}" y="${by}" width="${bw}" height="${bh}" fill="#1e293b" stroke="${color}"/>
+        <text x="${cx}" y="${by+18}" text-anchor="middle" class="label">${b.name.length>14?b.name.slice(0,12)+'…':b.name}</text>
+        <text x="${cx}" y="${by+32}" text-anchor="middle" class="sublabel">${b.tool_count} tools${b.rss_mb?' · '+b.rss_mb+'MB':''}</text>
+        <text x="${cx}" y="${by+43}" text-anchor="middle" class="sublabel">${b.calls} calls</text>
+      </g>`;
+  });
+
+  svg.innerHTML = svgContent;
+}
+
+// ── Backend Cards ─────────────────────────────────────────────────
+
+function renderBackends(backends) {
+  const grid = document.getElementById('backendGrid');
+  grid.innerHTML = backends.map(b => {
+    const sc = stateClass(b.state);
+    const memPct = b.rss_mb && b.peak_rss_mb ? Math.min((b.rss_mb / Math.max(b.peak_rss_mb, 1)) * 100, 100) : 0;
+    const memClass = memPct > 80 ? 'high' : memPct > 50 ? 'mid' : 'low';
+    const stderr = (b.recent_stderr || []).slice(-5).map(l => `<div>${escHtml(l)}</div>`).join('');
+    return `
+      <div class="card">
+        <div class="card-header">
+          <h3><span class="dot ${sc}"></span> ${escHtml(b.name)}</h3>
+          <span class="badge ${sc}">${b.state}</span>
+        </div>
+        <div class="card-stats">
+          <div class="stat"><div class="val">${b.tool_count}</div><div class="lbl">Tools</div></div>
+          <div class="stat"><div class="val">${b.calls}</div><div class="lbl">Calls</div></div>
+          <div class="stat"><div class="val">${b.p50_ms != null ? b.p50_ms.toFixed(0)+'ms' : '—'}</div><div class="lbl">p50</div></div>
+        </div>
+        ${b.rss_mb != null ? `
+        <div style="font-size:10px;color:var(--muted)">RSS: ${b.rss_mb} MB${b.peak_rss_mb ? ' / peak '+b.peak_rss_mb+' MB':''}${b.pid?' · PID '+b.pid:''}</div>
+        <div class="mem-bar"><div class="fill ${memClass}" style="width:${memPct}%"></div></div>
+        ` : ''}
+        <div class="stderr">${stderr}</div>
+      </div>`;
+  }).join('');
+}
+
+// ── Recent Calls ──────────────────────────────────────────────────
+
+function renderRecent(calls) {
+  const body = document.getElementById('recentBody');
+  body.innerHTML = calls.slice(0, 20).map(c => `
+    <tr>
+      <td>${escHtml(c.tool_name)}</td>
+      <td>${escHtml(c.backend_name)}</td>
+      <td class="dur">${c.duration_ms}ms</td>
+      <td class="${c.success?'ok':'fail'}">${c.success?'✓':'✗'}</td>
+      <td class="ago">${c.seconds_ago < 60 ? Math.floor(c.seconds_ago)+'s ago' : Math.floor(c.seconds_ago/60)+'m ago'}</td>
+    </tr>
+  `).join('');
+}
+
+// ── Stats Bar ─────────────────────────────────────────────────────
+
+function renderStats(stats) {
+  const bar = document.getElementById('statsBar');
+  bar.innerHTML = `
+    <div class="chip"><span class="v">${stats.total_calls}</span> calls</div>
+    <div class="chip"><span class="v">${(stats.total_bytes_returned/1024).toFixed(1)}KB</span> returned</div>
+    <div class="chip"><span class="v">${(stats.total_bytes_processed/1024).toFixed(1)}KB</span> processed</div>
+    <div class="chip"><span class="v">${stats.reduction_pct.toFixed(0)}%</span> saved</div>
+    <div class="chip"><span class="v">${stats.estimated_tokens_saved}</span> tokens saved</div>
+  `;
+}
+
+// ── Poll Loop ─────────────────────────────────────────────────────
+
+async function poll() {
+  const [topo, backends, stats] = await Promise.all([
+    fetchJson('/api/topology'),
+    fetchJson('/api/backends'),
+    fetchJson('/api/stats'),
+  ]);
+
+  if (topo) {
+    // Header
+    const dot = document.getElementById('statusDot');
+    dot.className = 'dot ' + (topo.daemon.status === 'healthy' ? 'healthy' : 'degraded');
+    document.getElementById('headerMeta').innerHTML = `
+      <span>${topo.daemon.total_backends} backends</span>
+      <span>${topo.daemon.total_tools} tools</span>
+      <span>uptime ${formatUptime(topo.daemon.uptime_seconds)}</span>
+    `;
+
+    renderTopology(topo);
+    renderRecent(topo.recent_calls);
+  }
+
+  if (backends) renderBackends(backends);
+  if (stats) renderStats(stats);
+}
+
+function escHtml(s) {
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+// Start
+poll();
+setInterval(poll, POLL_MS);
+</script>
+</body>
+</html>
