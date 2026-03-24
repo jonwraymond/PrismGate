@@ -1,5 +1,6 @@
 import { useDashboardData } from "./api";
 import Header from "./components/Header";
+import Topology from "./components/Topology";
 
 export default function App() {
   const { topology, backends, stats, recent, connected } = useDashboardData();
@@ -13,6 +14,15 @@ export default function App() {
       />
       <main className="flex-1 p-6 space-y-6">
         {/* Topology, BackendGrid, RecentCalls, StatsFooter go here */}
+        {topology && (
+          <Topology
+            backends={topology.backends}
+            recentCalls={topology.recent_calls}
+            onSelectBackend={(name) => {
+              document.getElementById(`backend-${name}`)?.scrollIntoView({ behavior: "smooth" });
+            }}
+          />
+        )}
         <p className="text-text-muted font-mono text-sm">
           {connected
             ? `Monitoring ${topology?.daemon.total_backends ?? 0} backends...`
