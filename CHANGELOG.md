@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.10.0](https://github.com/jonwraymond/PrismGate/compare/v1.9.0...v1.10.0) (2026-03-24)
+
+
+### Features
+
+* add realtime admin dashboard with topology view and backend cards ([61e1fc1](https://github.com/jonwraymond/PrismGate/commit/61e1fc117f645d12564ed81ae29da8172d7b8842))
+* realtime admin dashboard with topology view and backend cards ([b94b567](https://github.com/jonwraymond/PrismGate/commit/b94b567d21abd83b251f6f59a4913bb2c91df9da))
+
 ## [1.9.0](https://github.com/jonwraymond/PrismGate/compare/v1.8.1...v1.9.0) (2026-03-20)
 
 
