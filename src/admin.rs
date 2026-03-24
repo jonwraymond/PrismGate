@@ -3,12 +3,13 @@
 
 #[cfg(feature = "admin")]
 pub mod api {
-    use axum::{Json, Router, extract::State, response::Html, routing::get};
+    use axum::{Json, Router, extract::State, routing::get};
     use serde::Serialize;
     use serde_json::Value;
     use std::sync::Arc;
     use tokio::net::TcpListener;
     use tokio::sync::Notify;
+    use tower_http::services::{ServeDir, ServeFile};
     use tracing::info;
 
     use crate::backend::BackendManager;
@@ -27,16 +28,26 @@ pub mod api {
         listen: &str,
         shutdown: Arc<Notify>,
     ) -> anyhow::Result<()> {
+        let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let assets_dir = manifest_dir.join("web/dist");
+        let serve_dir = if assets_dir.exists() {
+            // SPA: serve static files, fallback unmatched paths to index.html
+            ServeDir::new(&assets_dir)
+                .not_found_service(ServeFile::new(assets_dir.join("index.html")))
+        } else {
+            // web/dist not built — serve legacy single-file dashboard
+            ServeDir::new(".")
+                .not_found_service(ServeFile::new(manifest_dir.join("web/dashboard.html")))
+        };
+
         let app = Router::new()
-            // Dashboard UI
-            .route("/", get(dashboard))
-            // Data APIs
             .route("/api/health", get(health))
             .route("/api/backends", get(backends))
             .route("/api/discovery", get(discovery))
             .route("/api/recent", get(recent))
             .route("/api/stats", get(stats))
             .route("/api/topology", get(topology))
+            .fallback_service(serve_dir)
             .with_state(state);
 
         let listener = TcpListener::bind(listen).await?;
@@ -46,12 +57,6 @@ pub mod api {
             .await?;
         info!("admin API stopped");
         Ok(())
-    }
-
-    // ── Dashboard HTML ──────────────────────────────────────────────────
-
-    async fn dashboard() -> Html<&'static str> {
-        Html(include_str!("../web/dashboard.html"))
     }
 
     // ── API endpoints ───────────────────────────────────────────────────
