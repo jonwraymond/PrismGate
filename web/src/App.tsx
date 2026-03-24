@@ -3,6 +3,7 @@ import Header from "./components/Header";
 import Topology from "./components/Topology";
 import BackendGrid from "./components/BackendGrid";
 import RecentCalls from "./components/RecentCalls";
+import StatsFooter from "./components/StatsFooter";
 
 export default function App() {
   const { topology, backends, stats, recent, connected } = useDashboardData();
@@ -27,6 +28,7 @@ export default function App() {
         )}
         {backends && <BackendGrid backends={backends} />}
         {recent && <RecentCalls calls={recent} />}
+        {stats && <StatsFooter stats={stats} />}
         <p className="text-text-muted font-mono text-sm">
           {connected
             ? `Monitoring ${topology?.daemon.total_backends ?? 0} backends...`
