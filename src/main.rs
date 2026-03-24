@@ -235,6 +235,7 @@ pub async fn initialize(config_path: &Path) -> Result<InitializedGateway> {
         let admin_state = admin::api::AdminState {
             registry: Arc::clone(&registry),
             backend_manager: Arc::clone(&backend_manager),
+            tracker: Arc::clone(&tracker),
         };
         let listen = config.admin.listen.clone();
         let shutdown_admin = Arc::clone(&shutdown_notify);
