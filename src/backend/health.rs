@@ -204,8 +204,7 @@ pub async fn run_health_checker(
                     // state so we go straight to restart instead of probing a dead
                     // process.  Half-open probes only make sense for Unhealthy
                     // backends whose process is still running.
-                    if status.state == BackendState::Stopped
-                        && health.circuit_open_since.is_some()
+                    if status.state == BackendState::Stopped && health.circuit_open_since.is_some()
                     {
                         debug!(
                             backend = %status.name,
