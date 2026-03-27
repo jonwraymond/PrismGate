@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.11.1](https://github.com/jonwraymond/PrismGate/compare/v1.11.0...v1.11.1) (2026-03-27)
+
+
+### Bug Fixes
+
+* **supervision:** circuit breaker recovery, ghost tool cleanup, retry budget ([#78](https://github.com/jonwraymond/PrismGate/issues/78)) ([7844c9b](https://github.com/jonwraymond/PrismGate/commit/7844c9b7ffc207f5ce44d44823789e05c352c5b9))
+
 ## [1.10.0](https://github.com/jonwraymond/PrismGate/compare/v1.9.0...v1.10.0) (2026-03-24)
 
 
