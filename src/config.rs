@@ -649,13 +649,13 @@ fn default_chunk_threshold() -> usize {
     10_240 // 10KB
 }
 fn default_max_retries() -> u32 {
-    3
+    5
 }
 fn default_retry_initial_delay() -> Duration {
-    Duration::from_millis(500)
+    Duration::from_secs(1)
 }
 fn default_retry_max_delay() -> Duration {
-    Duration::from_secs(2)
+    Duration::from_secs(5)
 }
 fn default_backoff_multiplier() -> f64 {
     2.0
@@ -1545,19 +1545,23 @@ backends:
     #[test]
     fn test_retry_config_defaults() {
         let retry = RetryConfig::default();
-        // Defaults must match the old hardcoded RETRY_DELAYS = [500ms, 1s, 2s]
-        assert_eq!(retry.max_retries, 3);
-        assert_eq!(retry.initial_delay, Duration::from_millis(500));
-        assert_eq!(retry.max_delay, Duration::from_secs(2));
+        // Generous defaults for heavy backends (Playwright, etc.)
+        assert_eq!(retry.max_retries, 5);
+        assert_eq!(retry.initial_delay, Duration::from_secs(1));
+        assert_eq!(retry.max_delay, Duration::from_secs(5));
         assert_eq!(retry.backoff_multiplier, 2.0);
 
-        // Verify the sequence: 500ms, 1s, 2s (matches old constants)
+        // Verify the sequence: 1s, 2s, 4s, 5s, 5s (~17s total budget)
         let mut delay = retry.initial_delay;
-        assert_eq!(delay, Duration::from_millis(500));
-        delay = delay.mul_f64(retry.backoff_multiplier).min(retry.max_delay);
         assert_eq!(delay, Duration::from_secs(1));
         delay = delay.mul_f64(retry.backoff_multiplier).min(retry.max_delay);
         assert_eq!(delay, Duration::from_secs(2));
+        delay = delay.mul_f64(retry.backoff_multiplier).min(retry.max_delay);
+        assert_eq!(delay, Duration::from_secs(4));
+        delay = delay.mul_f64(retry.backoff_multiplier).min(retry.max_delay);
+        assert_eq!(delay, Duration::from_secs(5));
+        delay = delay.mul_f64(retry.backoff_multiplier).min(retry.max_delay);
+        assert_eq!(delay, Duration::from_secs(5));
     }
 
     #[test]

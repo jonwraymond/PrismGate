@@ -200,6 +200,19 @@ pub async fn run_health_checker(
                 BackendState::Stopped | BackendState::Unhealthy => {
                     let health = health_map.get_mut(&status.name).unwrap();
 
+                    // If backend process is Stopped (crashed/exited), clear circuit
+                    // state so we go straight to restart instead of probing a dead
+                    // process.  Half-open probes only make sense for Unhealthy
+                    // backends whose process is still running.
+                    if status.state == BackendState::Stopped && health.circuit_open_since.is_some()
+                    {
+                        debug!(
+                            backend = %status.name,
+                            "clearing circuit state for stopped backend"
+                        );
+                        health.circuit_open_since = None;
+                    }
+
                     // If circuit is open, try half-open probe before restarting
                     if let Some(opened) = health.circuit_open_since {
                         let recovery_window = config.interval * config.recovery_multiplier;
@@ -344,6 +357,8 @@ pub async fn run_health_checker(
                             restarts = health.restart_count,
                             "max restarts exceeded, not restarting"
                         );
+                        // Remove cached tools so search doesn't return uncallable results
+                        registry.remove_backend_tools(&status.name);
                     }
                 }
 
@@ -373,6 +388,8 @@ pub async fn run_health_checker(
                     restarts = health.restart_count,
                     "pending backend: max restarts exceeded, not retrying"
                 );
+                // Remove cached tools so search doesn't return uncallable results
+                registry.remove_backend_tools(name);
                 continue;
             }
 
