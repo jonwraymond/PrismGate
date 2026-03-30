@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.11.2](https://github.com/jonwraymond/PrismGate/compare/v1.11.1...v1.11.2) (2026-03-30)
+
+
+### Bug Fixes
+
+* **proxy:** add 5-minute idle timeout to prevent zombie proxy accumulation ([#79](https://github.com/jonwraymond/PrismGate/issues/79)) ([2e570e3](https://github.com/jonwraymond/PrismGate/commit/2e570e33823d9196e8eea6f926582fccac7d6193))
+
 ## [1.11.1](https://github.com/jonwraymond/PrismGate/compare/v1.11.0...v1.11.1) (2026-03-27)
 
 
