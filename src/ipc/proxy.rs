@@ -26,6 +26,11 @@ const BUF_SIZE: usize = 8192;
 /// How often to check if the parent process is still alive.
 const ORPHAN_CHECK_INTERVAL: Duration = Duration::from_secs(5);
 
+/// If no data flows in either direction for this long, the proxy exits.
+/// Defends against MCP clients that keep stdin open after conversations end
+/// (e.g. Codex, Cursor extensions). MCP keepalive/ping traffic resets the timer.
+const IDLE_TIMEOUT: Duration = Duration::from_secs(300); // 5 minutes
+
 // ── Handshake cache ────────────────────────────────────────────────────────
 
 /// Cached MCP handshake messages for session replay on reconnect.
@@ -47,6 +52,8 @@ enum BridgeOutcome {
     DaemonDisconnected,
     /// Parent process died (orphaned proxy) — exit immediately
     ParentDied,
+    /// No data in either direction for IDLE_TIMEOUT — exit to free resources
+    IdleTimeout,
 }
 
 // ── Public entry point ─────────────────────────────────────────────────────
@@ -123,8 +130,8 @@ where
 
     loop {
         match bridge_phase(&mut stream, &mut stdin, &mut stdout).await {
-            BridgeOutcome::StdinClosed | BridgeOutcome::ParentDied => {
-                debug!("proxy exiting (stdin closed or parent died)");
+            BridgeOutcome::StdinClosed | BridgeOutcome::ParentDied | BridgeOutcome::IdleTimeout => {
+                debug!("proxy exiting (stdin closed, parent died, or idle timeout)");
                 return Ok(());
             }
             BridgeOutcome::DaemonDisconnected => {
@@ -287,8 +294,8 @@ where
 
     loop {
         match bridge_phase(&mut stream, &mut stdin, &mut stdout).await {
-            BridgeOutcome::StdinClosed | BridgeOutcome::ParentDied => {
-                debug!("proxy exiting (stdin closed or parent died)");
+            BridgeOutcome::StdinClosed | BridgeOutcome::ParentDied | BridgeOutcome::IdleTimeout => {
+                debug!("proxy exiting (stdin closed, parent died, or idle timeout)");
                 return Ok(());
             }
             BridgeOutcome::DaemonDisconnected => {
@@ -352,6 +359,11 @@ where
     let mut orphan_check = tokio::time::interval(ORPHAN_CHECK_INTERVAL);
     orphan_check.tick().await; // consume immediate first tick
 
+    // Idle timeout: exit if no data flows in either direction.
+    // Defends against MCP clients that hold stdin open after conversations end.
+    let idle_sleep = tokio::time::sleep(IDLE_TIMEOUT);
+    tokio::pin!(idle_sleep);
+
     loop {
         tokio::select! {
             // Bias toward draining daemon responses first (avoids backpressure)
@@ -365,6 +377,8 @@ where
                             // stdout broken (Claude Code crashed) — treat as stdin close
                             return BridgeOutcome::StdinClosed;
                         }
+                        // Reset idle timer — data flowing
+                        idle_sleep.as_mut().reset(tokio::time::Instant::now() + IDLE_TIMEOUT);
                     }
                     Err(_) => return BridgeOutcome::DaemonDisconnected,
                 }
@@ -377,6 +391,8 @@ where
                         if sock_write.write_all(&stdin_buf[..n]).await.is_err() {
                             return BridgeOutcome::DaemonDisconnected;
                         }
+                        // Reset idle timer — data flowing
+                        idle_sleep.as_mut().reset(tokio::time::Instant::now() + IDLE_TIMEOUT);
                     }
                     Err(_) => return BridgeOutcome::StdinClosed,
                 }
@@ -392,6 +408,11 @@ where
                     );
                     return BridgeOutcome::ParentDied;
                 }
+            }
+
+            () = &mut idle_sleep => {
+                warn!("no MCP traffic for {:?}, exiting idle proxy", IDLE_TIMEOUT);
+                return BridgeOutcome::IdleTimeout;
             }
         }
     }
