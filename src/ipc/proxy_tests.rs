@@ -13,7 +13,7 @@ mod tests {
 
     use rmcp::ServiceExt;
     use tokio::io::{AsyncReadExt, AsyncWriteExt, DuplexStream};
-    use tokio::net::UnixStream;
+    use tokio::net::{UnixListener, UnixStream};
 
     use crate::InitializedGateway;
     use crate::backend::BackendManager;
@@ -43,12 +43,25 @@ mod tests {
         Arc<MockBackend>,
         tempfile::TempDir,
     ) {
+        spawn_test_daemon_with_mock("proxy-test", idle_timeout, Duration::from_millis(50)).await
+    }
+
+    async fn spawn_test_daemon_with_mock(
+        backend_name: &str,
+        idle_timeout: Duration,
+        call_delay: Duration,
+    ) -> (
+        PathBuf,
+        tokio::task::JoinHandle<anyhow::Result<()>>,
+        Arc<MockBackend>,
+        tempfile::TempDir,
+    ) {
         let tmp_dir = tempfile::tempdir().unwrap();
         let socket_path = tmp_dir.path().join("test.sock");
 
         let manager = BackendManager::new();
         let registry = ToolRegistry::new();
-        let mock = MockBackend::new("proxy-test", Duration::from_millis(50));
+        let mock = MockBackend::new(backend_name, call_delay);
         insert_mock(&manager, &registry, &mock).await;
 
         let config = test_config(idle_timeout);
@@ -76,6 +89,135 @@ mod tests {
         assert!(socket_path.exists(), "daemon socket not created");
 
         (socket_path, handle, mock, tmp_dir)
+    }
+
+    async fn read_proxy_line(reader: &mut DuplexStream, label: &str) -> serde_json::Value {
+        let line = tokio::time::timeout(
+            Duration::from_secs(5),
+            crate::ipc::mcp_framing::read_line(reader),
+        )
+        .await
+        .unwrap_or_else(|_| panic!("timeout reading {label}"))
+        .unwrap_or_else(|e| panic!("failed reading {label}: {e}"));
+
+        assert!(!line.is_empty(), "EOF reading {label}");
+        serde_json::from_slice(&line).unwrap_or_else(|e| {
+            panic!(
+                "failed to parse {label} as JSON: {e}; line={}",
+                String::from_utf8_lossy(&line)
+            )
+        })
+    }
+
+    async fn raw_handshake(client_write: &mut DuplexStream, client_read: &mut DuplexStream) {
+        let init_req = r#"{"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}"#;
+        client_write
+            .write_all(format!("{}\n", init_req).as_bytes())
+            .await
+            .unwrap();
+
+        let init_response = read_proxy_line(client_read, "initialize response").await;
+        assert!(
+            init_response.get("result").is_some(),
+            "initialize should return result: {init_response}"
+        );
+
+        let init_notif = r#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#;
+        client_write
+            .write_all(format!("{}\n", init_notif).as_bytes())
+            .await
+            .unwrap();
+    }
+
+    async fn fake_daemon_handshake(stream: &mut UnixStream, server_name: &str) {
+        let init_request = crate::ipc::mcp_framing::read_line(stream)
+            .await
+            .expect("fake daemon failed reading initialize");
+        let init: serde_json::Value =
+            serde_json::from_slice(&init_request).expect("fake daemon init JSON");
+        let id = init.get("id").cloned().unwrap_or(serde_json::Value::Null);
+        let response = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": id,
+            "result": {
+                "protocolVersion": "2024-11-05",
+                "capabilities": { "tools": {} },
+                "serverInfo": { "name": server_name, "version": "1.0.0" }
+            }
+        });
+        stream
+            .write_all(format!("{}\n", response).as_bytes())
+            .await
+            .expect("fake daemon failed writing initialize response");
+
+        let initialized = crate::ipc::mcp_framing::read_line(stream)
+            .await
+            .expect("fake daemon failed reading initialized notification");
+        assert!(
+            String::from_utf8_lossy(&initialized).contains("notifications/initialized"),
+            "fake daemon expected initialized notification"
+        );
+    }
+
+    fn spawn_fake_daemon_that_drops_next_request(
+        socket_path: PathBuf,
+        ready: tokio::sync::oneshot::Sender<()>,
+        request_seen: tokio::sync::oneshot::Sender<()>,
+    ) -> tokio::task::JoinHandle<()> {
+        tokio::spawn(async move {
+            let _ = std::fs::remove_file(&socket_path);
+            let listener = UnixListener::bind(&socket_path).expect("bind fake daemon");
+            let _ = ready.send(());
+            let (mut stream, _) = listener.accept().await.expect("accept fake daemon client");
+            fake_daemon_handshake(&mut stream, "fake-daemon-1").await;
+            let request = crate::ipc::mcp_framing::read_line(&mut stream)
+                .await
+                .expect("fake daemon failed reading in-flight request");
+            assert!(
+                String::from_utf8_lossy(&request).contains("\"id\":"),
+                "fake daemon expected an in-flight request"
+            );
+            let _ = request_seen.send(());
+            drop(stream);
+            drop(listener);
+            let _ = std::fs::remove_file(&socket_path);
+        })
+    }
+
+    fn spawn_fake_daemon_that_answers_tools_list(
+        socket_path: PathBuf,
+        ready: tokio::sync::oneshot::Sender<()>,
+    ) -> tokio::task::JoinHandle<()> {
+        tokio::spawn(async move {
+            let _ = std::fs::remove_file(&socket_path);
+            let listener = UnixListener::bind(&socket_path).expect("bind replacement fake daemon");
+            let _ = ready.send(());
+            let (mut stream, _) = listener
+                .accept()
+                .await
+                .expect("accept replacement fake daemon client");
+            fake_daemon_handshake(&mut stream, "fake-daemon-2").await;
+
+            let request = crate::ipc::mcp_framing::read_line(&mut stream)
+                .await
+                .expect("replacement fake daemon failed reading request");
+            let request_json: serde_json::Value =
+                serde_json::from_slice(&request).expect("replacement request JSON");
+            let id = request_json
+                .get("id")
+                .cloned()
+                .expect("replacement request should have id");
+            let response = serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": id,
+                "result": { "tools": [] }
+            });
+            stream
+                .write_all(format!("{}\n", response).as_bytes())
+                .await
+                .expect("replacement fake daemon failed writing response");
+            let _ = crate::ipc::mcp_framing::read_line(&mut stream).await;
+        })
     }
 
     /// Connect an rmcp client through the proxy path (using run_on_socket).
@@ -244,6 +386,126 @@ mod tests {
         daemon_handle2.abort();
         let _ = daemon_handle2.await;
         let _ = proxy_handle.await;
+    }
+
+    /// If the daemon dies while a client request is in flight, the proxy must
+    /// report that lost request as a retryable JSON-RPC error and keep the
+    /// client's stdio session alive for subsequent requests.
+    #[tokio::test]
+    async fn test_inflight_request_gets_retryable_error_after_daemon_restart() {
+        let tmp_dir = tempfile::tempdir().unwrap();
+        let socket_path = tmp_dir.path().join("test.sock");
+        let (first_ready_tx, first_ready_rx) = tokio::sync::oneshot::channel();
+        let (request_seen_tx, request_seen_rx) = tokio::sync::oneshot::channel();
+        let daemon_handle = spawn_fake_daemon_that_drops_next_request(
+            socket_path.clone(),
+            first_ready_tx,
+            request_seen_tx,
+        );
+        first_ready_rx
+            .await
+            .expect("fake daemon should bind socket");
+
+        let (proxy_handle, mut client_write, mut client_read) = start_proxy(&socket_path);
+        raw_handshake(&mut client_write, &mut client_read).await;
+
+        let slow_req = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 10,
+            "method": "tools/list",
+            "params": {}
+        });
+        client_write
+            .write_all(format!("{}\n", slow_req).as_bytes())
+            .await
+            .unwrap();
+
+        request_seen_rx
+            .await
+            .expect("fake daemon should see in-flight request");
+        let _ = daemon_handle.await;
+
+        let (replacement_ready_tx, replacement_ready_rx) = tokio::sync::oneshot::channel();
+        let daemon_handle2 =
+            spawn_fake_daemon_that_answers_tools_list(socket_path.clone(), replacement_ready_tx);
+        replacement_ready_rx
+            .await
+            .expect("replacement fake daemon should bind socket");
+
+        let lost_response = read_proxy_line(&mut client_read, "retryable lost request error").await;
+        assert_eq!(lost_response["id"], serde_json::json!(10));
+        assert!(
+            lost_response["error"]["message"]
+                .as_str()
+                .unwrap_or_default()
+                .contains("retry"),
+            "lost in-flight request should be reported as retryable: {lost_response}"
+        );
+
+        let list_req = r#"{"jsonrpc":"2.0","id":11,"method":"tools/list","params":{}}"#;
+        client_write
+            .write_all(format!("{}\n", list_req).as_bytes())
+            .await
+            .unwrap();
+        let list_response = read_proxy_line(&mut client_read, "post-reconnect tools/list").await;
+        assert_eq!(list_response["id"], serde_json::json!(11));
+        assert!(
+            list_response["result"]["tools"].is_array(),
+            "same client connection should remain usable after reconnect: {list_response}"
+        );
+
+        drop(client_write);
+        drop(client_read);
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        daemon_handle2.abort();
+        let _ = daemon_handle2.await;
+        let _ = proxy_handle.await;
+    }
+
+    /// If the daemon has disappeared and the client closes stdio while the proxy
+    /// is in reconnect backoff, the proxy should reap itself instead of retrying
+    /// forever. A quiet open stdin is an idle live client; a closed stdin is not.
+    #[tokio::test]
+    async fn test_client_close_during_reconnect_exits_proxy() {
+        let tmp_dir = tempfile::tempdir().unwrap();
+        let socket_path = tmp_dir.path().join("test.sock");
+        let (first_ready_tx, first_ready_rx) = tokio::sync::oneshot::channel();
+        let (request_seen_tx, request_seen_rx) = tokio::sync::oneshot::channel();
+        let daemon_handle = spawn_fake_daemon_that_drops_next_request(
+            socket_path.clone(),
+            first_ready_tx,
+            request_seen_tx,
+        );
+        first_ready_rx
+            .await
+            .expect("fake daemon should bind socket");
+
+        let (proxy_handle, mut client_write, mut client_read) = start_proxy(&socket_path);
+        raw_handshake(&mut client_write, &mut client_read).await;
+
+        let req = r#"{"jsonrpc":"2.0","id":20,"method":"tools/list","params":{}}"#;
+        client_write
+            .write_all(format!("{}\n", req).as_bytes())
+            .await
+            .unwrap();
+
+        request_seen_rx
+            .await
+            .expect("fake daemon should see in-flight request");
+        let _ = daemon_handle.await;
+
+        drop(client_write);
+        drop(client_read);
+
+        let result = tokio::time::timeout(Duration::from_secs(2), proxy_handle).await;
+        assert!(
+            result.is_ok(),
+            "proxy should exit promptly when client closes during reconnect"
+        );
+        assert!(
+            result.unwrap().unwrap().is_ok(),
+            "proxy close during reconnect should be clean"
+        );
     }
 
     // ── Test: stdin close exits proxy cleanly ──────────────────────────────
