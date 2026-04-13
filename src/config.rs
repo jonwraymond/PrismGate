@@ -4,10 +4,19 @@ use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Once};
+use std::sync::{Arc, LazyLock, Once};
 use std::time::Duration;
 
 static DOTENV_ONCE: Once = Once::new();
+static SECRETREF_RE: LazyLock<regex::Regex> =
+    LazyLock::new(|| regex::Regex::new(r"secretref:[^:\s]+:[\w/.\-]+").unwrap());
+
+fn unresolved_secretrefs(value: &str) -> Vec<String> {
+    SECRETREF_RE
+        .find_iter(value)
+        .map(|m| m.as_str().to_string())
+        .collect()
+}
 
 /// Load `.env` files into the process environment exactly once.
 ///
@@ -900,17 +909,17 @@ impl Config {
         Ok(())
     }
 
-    /// Scan all backend config fields for leftover `secretref:` literals after resolution.
+    /// Scan all backend config fields for leftover secretref literals after resolution.
     ///
-    /// - `secrets.strict: true` → error listing all unresolved patterns
-    /// - `secrets.strict: false` → warn with actionable hint, return Ok
+    /// Missing or unavailable secrets are left in place and reported here so startup
+    /// can continue while the affected backend remains visibly misconfigured.
     fn validate_no_unresolved_secretrefs(&self) -> Result<()> {
         let mut unresolved: Vec<(String, String, String)> = Vec::new(); // (backend, field, pattern)
 
         for (name, backend) in &self.backends {
             let mut check = |field: &str, value: &str| {
-                if value.contains("secretref:") {
-                    unresolved.push((name.clone(), field.to_string(), value.to_string()));
+                for secretref in unresolved_secretrefs(value) {
+                    unresolved.push((name.clone(), field.to_string(), secretref));
                 }
             };
 
@@ -956,12 +965,8 @@ impl Config {
             details.join("\n")
         );
 
-        if self.secrets.strict {
-            anyhow::bail!("{msg}");
-        } else {
-            tracing::warn!("{msg}");
-            Ok(())
-        }
+        tracing::warn!("{msg}");
+        Ok(())
     }
 
     /// Validate the configuration.
@@ -1678,12 +1683,14 @@ backends:
     }
 
     #[test]
-    fn test_resolve_secrets_bws_disabled_missing_env() {
+    fn test_resolve_secrets_bws_disabled_missing_env_keeps_secretref_for_warning() {
         use crate::secrets::resolver::{EnvFallbackProvider, SecretResolver};
 
         unsafe { std::env::remove_var("GATEMINI_TEST_MISSING_KEY") };
 
         let yaml = r#"
+secrets:
+  strict: true
 backends:
   test-backend:
     transport: stdio
@@ -1693,15 +1700,15 @@ backends:
 "#;
         let mut config: Config = serde_yaml_ng::from_str(yaml).unwrap();
 
-        let mut resolver = SecretResolver::new(false);
+        let mut resolver = SecretResolver::new(config.secrets.strict);
         resolver.register(Box::new(EnvFallbackProvider));
-        let result = config.resolve_secrets(&resolver);
-        assert!(result.is_err());
-        // The error chain: backend context wraps the provider error
-        let err = format!("{:#}", result.unwrap_err());
-        assert!(
-            err.contains("GATEMINI_TEST_MISSING_KEY"),
-            "error should mention key: {err}"
+        config.resolve_secrets(&resolver).unwrap();
+        config.validate_no_unresolved_secretrefs().unwrap();
+
+        let backend = config.backends.get("test-backend").unwrap();
+        assert_eq!(
+            backend.env.get("API_KEY").unwrap(),
+            "secretref:bws:project/dotenv/key/GATEMINI_TEST_MISSING_KEY"
         );
     }
 
@@ -1720,7 +1727,7 @@ backends:
     }
 
     #[test]
-    fn test_validate_no_unresolved_strict_errors() {
+    fn test_validate_no_unresolved_strict_warns() {
         let yaml = r#"
 secrets:
   strict: true
@@ -1732,14 +1739,7 @@ backends:
       KEY: "secretref:bws:project/dotenv/key/LEAKED"
 "#;
         let config: Config = serde_yaml_ng::from_str(yaml).unwrap();
-        let result = config.validate_no_unresolved_secretrefs();
-        assert!(result.is_err());
-        let err = result.unwrap_err().to_string();
-        assert!(err.contains("unresolved secretref"), "error: {err}");
-        assert!(
-            err.contains("LEAKED"),
-            "error should mention the pattern: {err}"
-        );
+        assert!(config.validate_no_unresolved_secretrefs().is_ok());
     }
 
     #[test]
@@ -1753,7 +1753,16 @@ backends:
       KEY: "secretref:bws:project/dotenv/key/LEAKED"
 "#;
         let config: Config = serde_yaml_ng::from_str(yaml).unwrap();
-        // strict is false by default → should warn but return Ok
         assert!(config.validate_no_unresolved_secretrefs().is_ok());
+    }
+
+    #[test]
+    fn test_unresolved_secretrefs_excludes_surrounding_literals() {
+        let refs = unresolved_secretrefs(
+            "https://example.com?literal=plain-token&token=secretref:bws:project/dotenv/key/LEAKED&debug=true",
+        );
+
+        assert_eq!(refs, vec!["secretref:bws:project/dotenv/key/LEAKED"]);
+        assert!(!refs[0].contains("plain-token"));
     }
 }
