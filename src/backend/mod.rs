@@ -473,14 +473,8 @@ impl BackendManager {
         config: BackendConfig,
         registry: &Arc<ToolRegistry>,
     ) -> Result<usize> {
-        // Stop existing backend if present (prevent orphaned processes)
-        if let Some((_, old_backend)) = self.backends.remove(name) {
-            warn!(backend = %name, "stopping existing backend before re-registration");
-            if let Err(e) = old_backend.stop().await {
-                warn!(backend = %name, error = %e, "error stopping existing backend");
-            }
-            registry.remove_backend_tools(name);
-        }
+        self.cleanup_backend_components(name).await;
+        registry.remove_backend_tools(name);
 
         // Store config
         let mut configs = self.configs.write().await;
@@ -495,12 +489,7 @@ impl BackendManager {
     /// Also cleans up the dynamic backend tracking set to prevent stale entries
     /// from blocking future registrations or allowing static backend deregistration.
     pub async fn remove_backend(&self, name: &str, registry: &ToolRegistry) -> Result<()> {
-        // Stop the backend
-        if let Some((_, backend)) = self.backends.remove(name)
-            && let Err(e) = backend.stop().await
-        {
-            warn!(backend = %name, error = %e, "error stopping backend");
-        }
+        self.cleanup_backend_components(name).await;
 
         // Remove tools from registry
         registry.remove_backend_tools(name);
@@ -550,7 +539,11 @@ impl BackendManager {
         let _guard = CallGuard::new(&self.in_flight_calls);
 
         // Dedicated pool path: route to session-specific instance
-        if let Some(pool) = self.dedicated_pools.get(backend_name) {
+        let dedicated_pool = self
+            .dedicated_pools
+            .get(backend_name)
+            .map(|r| Arc::clone(r.value()));
+        if let Some(pool) = dedicated_pool {
             let sid = session_id.ok_or_else(|| {
                 anyhow::anyhow!(
                     "backend '{}' requires dedicated instance but no session_id provided",
@@ -582,14 +575,18 @@ impl BackendManager {
         }
 
         // Acquire per-backend semaphore permit (if semaphore exists for this backend).
-        let _permit = if let Some(sem) = self.call_semaphores.get(backend_name) {
+        let call_semaphore = self
+            .call_semaphores
+            .get(backend_name)
+            .map(|r| Arc::clone(r.value()));
+        let _permit = if let Some(sem) = call_semaphore {
             let timeout = self
                 .semaphore_timeouts
                 .get(backend_name)
                 .map(|r| *r.value())
                 .unwrap_or(Duration::from_secs(60));
 
-            match tokio::time::timeout(timeout, sem.clone().acquire_owned()).await {
+            match tokio::time::timeout(timeout, sem.acquire_owned()).await {
                 Ok(Ok(permit)) => Some(permit),
                 Ok(Err(_)) => {
                     anyhow::bail!(
@@ -799,9 +796,15 @@ impl BackendManager {
     /// Release all dedicated pool instances assigned to a session.
     /// Called when a proxy client disconnects.
     pub async fn release_session(&self, session_id: u64) {
-        for entry in self.dedicated_pools.iter() {
-            if let Err(e) = entry.value().release(session_id).await {
-                warn!(backend = %entry.key(), error = %e, "pool release failed");
+        let pools: Vec<(String, Arc<pool::InstancePool>)> = self
+            .dedicated_pools
+            .iter()
+            .map(|entry| (entry.key().clone(), Arc::clone(entry.value())))
+            .collect();
+
+        for (name, pool) in pools {
+            if let Err(e) = pool.release(session_id).await {
+                warn!(backend = %name, error = %e, "pool release failed");
             }
         }
     }
@@ -820,6 +823,7 @@ impl BackendManager {
         let pool = self
             .dedicated_pools
             .get(name)
+            .map(|r| Arc::clone(r.value()))
             .ok_or_else(|| anyhow::anyhow!("no dedicated pool for backend '{name}'"))?;
         pool.restart_primary(registry).await
     }
@@ -922,16 +926,26 @@ impl BackendManager {
         while join_set.join_next().await.is_some() {}
 
         // Stop all dedicated instance pools
-        for entry in self.dedicated_pools.iter() {
-            entry.value().stop_all().await;
-        }
+        let dedicated_pools: Vec<Arc<pool::InstancePool>> = self
+            .dedicated_pools
+            .iter()
+            .map(|entry| Arc::clone(entry.value()))
+            .collect();
         self.dedicated_pools.clear();
+        for pool in dedicated_pools {
+            pool.stop_all().await;
+        }
 
         // Stop managed prerequisite processes
-        for entry in self.prerequisite_pids.iter() {
-            prerequisite::stop_prerequisite(entry.key(), *entry.value()).await;
-        }
+        let prerequisite_pids: Vec<(String, u32)> = self
+            .prerequisite_pids
+            .iter()
+            .map(|entry| (entry.key().clone(), *entry.value()))
+            .collect();
         self.prerequisite_pids.clear();
+        for (name, pid) in prerequisite_pids {
+            prerequisite::stop_prerequisite(&name, pid).await;
+        }
 
         info!("all backends stopped");
     }
@@ -956,14 +970,7 @@ impl BackendManager {
 
     /// Restart a backend: stop it, re-read config, start fresh, re-discover tools.
     pub async fn restart_backend(&self, name: &str, registry: &Arc<ToolRegistry>) -> Result<usize> {
-        // Stop old backend
-        if let Some((_, backend)) = self.backends.remove(name)
-            && let Err(e) = backend.stop().await
-        {
-            warn!(backend = %name, error = %e, "error stopping backend for restart");
-        }
-
-        // Remove old tools
+        self.cleanup_backend_components(name).await;
         registry.remove_backend_tools(name);
 
         // Get config
@@ -976,6 +983,35 @@ impl BackendManager {
 
         // Start fresh
         self.start_backend(name, &config, registry).await
+    }
+
+    /// Remove lifecycle state for a backend before replacement or deletion.
+    async fn cleanup_backend_components(&self, name: &str) {
+        if let Some((_, backend)) = self.backends.remove(name) {
+            warn!(backend = %name, "stopping backend during cleanup");
+            if let Err(e) = backend.stop().await {
+                warn!(backend = %name, error = %e, "error stopping backend during cleanup");
+            }
+        }
+
+        if let Some((_, pool)) = self.dedicated_pools.remove(name) {
+            pool.stop_all().await;
+        }
+
+        self.call_semaphores.remove(name);
+        self.semaphore_timeouts.remove(name);
+        self.retry_configs.remove(name);
+
+        if let Some((_, handle)) = self.rate_limiter_handles.remove(name) {
+            handle.abort();
+        }
+        self.rate_limiters.remove(name);
+
+        self.memory_stats.remove(name);
+
+        if let Some((_, pid)) = self.prerequisite_pids.remove(name) {
+            prerequisite::stop_prerequisite(name, pid).await;
+        }
     }
 
     /// Return the names of all configured backends (including those that failed
@@ -1124,5 +1160,166 @@ mod map_result_tests {
         // JSON parse of "\"hello\"" → Value::String("hello"), same as before
         assert!(value.is_string());
         assert_eq!(value.as_str().unwrap(), "hello");
+    }
+}
+
+#[cfg(test)]
+mod backend_manager_lifecycle_tests {
+    use super::*;
+    use std::collections::HashMap;
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicU8, AtomicUsize, Ordering};
+    use std::time::{Duration, Instant};
+
+    use crate::backend::memory::MemoryStats;
+    use crate::backend::pool::InstancePool;
+    use crate::config::{BackendConfig, InstanceMode, PoolConfig, Transport};
+    use crate::registry::ToolRegistry;
+
+    #[derive(Debug)]
+    struct StopCountingBackend {
+        name: String,
+        stop_calls: Arc<AtomicUsize>,
+        state: AtomicU8,
+    }
+
+    impl StopCountingBackend {
+        fn new(name: &str, stop_calls: Arc<AtomicUsize>) -> Self {
+            Self {
+                name: name.to_string(),
+                stop_calls,
+                state: AtomicU8::new(STATE_HEALTHY),
+            }
+        }
+    }
+
+    #[async_trait]
+    impl Backend for StopCountingBackend {
+        fn name(&self) -> &str {
+            &self.name
+        }
+
+        async fn start(&self) -> Result<()> {
+            store_state(&self.state, BackendState::Healthy);
+            Ok(())
+        }
+
+        async fn stop(&self) -> Result<()> {
+            self.stop_calls.fetch_add(1, Ordering::SeqCst);
+            store_state(&self.state, BackendState::Stopped);
+            Ok(())
+        }
+
+        async fn call_tool(&self, _tool_name: &str, _arguments: Option<Value>) -> Result<Value> {
+            Ok(Value::Null)
+        }
+
+        async fn discover_tools(&self) -> Result<Vec<ToolEntry>> {
+            Ok(Vec::new())
+        }
+
+        fn is_available(&self) -> bool {
+            state_from_atomic(&self.state) == BackendState::Healthy
+        }
+
+        fn state(&self) -> BackendState {
+            state_from_atomic(&self.state)
+        }
+
+        fn set_state(&self, state: BackendState) {
+            store_state(&self.state, state);
+        }
+    }
+
+    fn dedicated_pool_backend_config() -> BackendConfig {
+        BackendConfig {
+            transport: Transport::Stdio,
+            namespace: None,
+            command: Some("true".to_string()),
+            args: Vec::new(),
+            env: HashMap::new(),
+            cwd: None,
+            url: None,
+            headers: HashMap::new(),
+            timeout: Duration::from_secs(1),
+            required_keys: Vec::new(),
+            max_concurrent_calls: None,
+            semaphore_timeout: Duration::from_secs(1),
+            retry: Default::default(),
+            prerequisite: None,
+            rate_limit: None,
+            tags: Vec::new(),
+            fallback_chain: Vec::new(),
+            tools: None,
+            adapter_file: None,
+            health_check: None,
+            instance_mode: InstanceMode::Dedicated,
+            pool: PoolConfig {
+                min_idle: 0,
+                max_instances: 1,
+                acquire_timeout: Duration::from_secs(1),
+                replenish_delay: Duration::from_secs(1),
+            },
+            shutdown_grace_period: Duration::from_secs(1),
+            max_memory_mb: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn cleanup_backend_components_removes_lifecycle_state() {
+        let manager = BackendManager::new();
+        let registry = ToolRegistry::new();
+        let name = "replace-me";
+        let stop_calls = Arc::new(AtomicUsize::new(0));
+        let backend = Arc::new(StopCountingBackend::new(name, Arc::clone(&stop_calls)));
+        let backend: Arc<dyn Backend> = backend;
+
+        manager.backends.insert(name.to_string(), backend);
+        manager
+            .call_semaphores
+            .insert(name.to_string(), Arc::new(Semaphore::new(1)));
+        manager
+            .semaphore_timeouts
+            .insert(name.to_string(), Duration::from_secs(1));
+        manager
+            .retry_configs
+            .insert(name.to_string(), Default::default());
+        manager
+            .rate_limiters
+            .insert(name.to_string(), Arc::new(Semaphore::new(1)));
+        let rate_handle = tokio::spawn(async {
+            tokio::time::sleep(Duration::from_secs(60)).await;
+        });
+        manager
+            .rate_limiter_handles
+            .insert(name.to_string(), rate_handle);
+        manager.memory_stats.insert(
+            name.to_string(),
+            MemoryStats {
+                pid: 42,
+                rss_kb: 128,
+                peak_rss_kb: 256,
+                sampled_at: Instant::now(),
+            },
+        );
+
+        let pool = InstancePool::new(name.to_string(), dedicated_pool_backend_config(), registry)
+            .await
+            .expect("dedicated pool should construct without spawning instances");
+        manager
+            .dedicated_pools
+            .insert(name.to_string(), Arc::new(pool));
+
+        manager.cleanup_backend_components(name).await;
+
+        assert_eq!(stop_calls.load(Ordering::SeqCst), 1);
+        assert!(!manager.backends.contains_key(name));
+        assert!(!manager.call_semaphores.contains_key(name));
+        assert!(!manager.semaphore_timeouts.contains_key(name));
+        assert!(!manager.retry_configs.contains_key(name));
+        assert!(!manager.rate_limiters.contains_key(name));
+        assert!(!manager.rate_limiter_handles.contains_key(name));
+        assert!(!manager.memory_stats.contains_key(name));
+        assert!(!manager.dedicated_pools.contains_key(name));
     }
 }
