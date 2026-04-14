@@ -2170,7 +2170,7 @@ dependencies = [
 
 [[package]]
 name = "gatemini"
-version = "1.12.2"
+version = "1.13.0"
 dependencies = [
  "anyhow",
  "arc-swap",
