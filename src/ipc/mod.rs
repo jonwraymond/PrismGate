@@ -1,6 +1,7 @@
 pub mod daemon;
 #[cfg(test)]
 mod daemon_tests;
+pub mod doctor;
 pub mod mcp_framing;
 pub mod proxy;
 #[cfg(test)]

@@ -351,6 +351,9 @@ async fn main() -> Result<()> {
         // Restart daemon (stop + proxies auto-spawn new)
         (Some(cli::Command::Restart), _) => ipc::restart::run(),
 
+        // Local diagnostics without daemon/backend initialization
+        (Some(cli::Command::Doctor), _) => ipc::doctor::run(),
+
         // Default: proxy mode (auto-start daemon if needed)
         (None, false) => ipc::proxy::run(&cli.config).await,
     }

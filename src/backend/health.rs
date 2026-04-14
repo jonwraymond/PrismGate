@@ -64,6 +64,15 @@ impl BackendHealth {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RestartPolicy {
+    FullBackend,
+}
+
+fn restart_policy_for_backend(_is_dedicated: bool) -> RestartPolicy {
+    RestartPolicy::FullBackend
+}
+
 /// Runs periodic health checks on all backends.
 /// Handles circuit breaking and auto-restart of failed stdio backends.
 pub async fn run_health_checker(
@@ -294,18 +303,16 @@ pub async fn run_health_checker(
                                 health.restart_window_start = Some(Instant::now());
                             }
 
-                            let restart_result = if manager.is_dedicated(&status.name) {
-                                timeout(
-                                    config.restart_timeout,
-                                    manager.restart_pool_primary(&status.name, &registry),
-                                )
-                                .await
-                            } else {
-                                timeout(
-                                    config.restart_timeout,
-                                    manager.restart_backend(&status.name, &registry),
-                                )
-                                .await
+                            let restart_result = match restart_policy_for_backend(
+                                manager.is_dedicated(&status.name),
+                            ) {
+                                RestartPolicy::FullBackend => {
+                                    timeout(
+                                        config.restart_timeout,
+                                        manager.restart_backend(&status.name, &registry),
+                                    )
+                                    .await
+                                }
                             };
                             match restart_result {
                                 Ok(Ok(tool_count)) => {
@@ -542,10 +549,10 @@ pub async fn run_health_checker(
                     // Perform restarts outside the sampling loop
                     for name in &needs_restart {
                         info!(backend = %name, "restarting backend due to memory limit");
-                        let result = if manager.is_dedicated(name) {
-                            manager.restart_pool_primary(name, &registry).await
-                        } else {
-                            manager.restart_backend(name, &registry).await
+                        let result = match restart_policy_for_backend(manager.is_dedicated(name)) {
+                            RestartPolicy::FullBackend => {
+                                manager.restart_backend(name, &registry).await
+                            }
                         };
                         if let Err(e) = result {
                             error!(backend = %name, error = %e, "memory-triggered restart failed");
@@ -569,6 +576,15 @@ pub async fn run_health_checker(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn dedicated_backends_use_full_restart_policy() {
+        assert_eq!(restart_policy_for_backend(true), RestartPolicy::FullBackend);
+        assert_eq!(
+            restart_policy_for_backend(false),
+            RestartPolicy::FullBackend
+        );
+    }
 
     #[test]
     fn test_restart_backoff_default() {

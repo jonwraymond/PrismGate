@@ -31,6 +31,7 @@ pub struct CliAdapterBackend {
     env: HashMap<String, String>,
     cwd: Option<String>,
     timeout: Duration,
+    shutdown_grace_period: Duration,
     health_check: Option<String>,
     state: AtomicU8,
 }
@@ -87,6 +88,7 @@ impl CliAdapterBackend {
             env: config.env.clone(),
             cwd: config.cwd.clone(),
             timeout: config.timeout,
+            shutdown_grace_period: config.shutdown_grace_period,
             health_check,
             state: AtomicU8::new(STATE_STARTING),
         })
@@ -103,6 +105,11 @@ impl CliAdapterBackend {
             c.args(["-c", rendered_command]);
             c
         };
+
+        #[cfg(unix)]
+        {
+            cmd.process_group(0);
+        }
 
         for (key, value) in &self.env {
             cmd.env(key, value);
@@ -216,6 +223,10 @@ impl Backend for CliAdapterBackend {
         Ok(())
     }
 
+    fn stop_timeout(&self) -> Duration {
+        self.shutdown_grace_period + Duration::from_secs(2)
+    }
+
     async fn call_tool(&self, tool_name: &str, arguments: Option<Value>) -> Result<Value> {
         let tool_config = self.tools.get(tool_name).ok_or_else(|| {
             anyhow::anyhow!(
@@ -278,7 +289,7 @@ impl Backend for CliAdapterBackend {
                 if let Some(pid) = child_pid {
                     #[cfg(unix)]
                     unsafe {
-                        libc::kill(pid as i32, libc::SIGKILL);
+                        libc::kill(-(pid as i32), libc::SIGKILL);
                     }
                 }
                 anyhow::bail!(
@@ -457,6 +468,7 @@ mod tests {
             env: HashMap::new(),
             cwd: None,
             timeout: Duration::from_secs(10),
+            shutdown_grace_period: Duration::from_secs(5),
             health_check: None,
             state: AtomicU8::new(STATE_HEALTHY),
         };
@@ -467,6 +479,63 @@ mod tests {
             .unwrap();
 
         assert_eq!(result.as_str().unwrap().trim(), "Hello, World!");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn timeout_kills_cli_adapter_process_group() {
+        use std::fs;
+
+        let marker = tempfile::NamedTempFile::new().unwrap();
+        let marker_path = marker.path().to_path_buf();
+        let command = format!(
+            "sh -c 'trap \"\" TERM; sleep 30' cli-adapter-child {} & echo child-started > {} && sleep 30",
+            marker_path.display(),
+            marker_path.display()
+        );
+
+        let mut tools = HashMap::new();
+        tools.insert(
+            "hang".to_string(),
+            CliToolConfig {
+                description: "hangs with child".to_string(),
+                input_schema: serde_json::json!({"type": "object"}),
+                command,
+                stdin: None,
+                output: CliOutputFormat::Text,
+            },
+        );
+
+        let backend = CliAdapterBackend {
+            name: "cli-timeout".to_string(),
+            tools,
+            env: HashMap::new(),
+            cwd: None,
+            timeout: Duration::from_millis(200),
+            shutdown_grace_period: Duration::from_secs(5),
+            health_check: None,
+            state: AtomicU8::new(STATE_HEALTHY),
+        };
+
+        let result = backend.call_tool("hang", None).await;
+        assert!(result.is_err());
+        assert!(
+            fs::read_to_string(&marker_path)
+                .unwrap()
+                .contains("child-started")
+        );
+
+        tokio::time::sleep(Duration::from_millis(300)).await;
+
+        let ps = std::process::Command::new("pgrep")
+            .args(["-f", marker_path.to_string_lossy().as_ref()])
+            .output()
+            .unwrap();
+        assert!(
+            ps.stdout.is_empty(),
+            "expected process group to be killed, found: {}",
+            String::from_utf8_lossy(&ps.stdout)
+        );
     }
 
     #[tokio::test]
@@ -489,6 +558,7 @@ mod tests {
             env: HashMap::new(),
             cwd: None,
             timeout: Duration::from_secs(10),
+            shutdown_grace_period: Duration::from_secs(5),
             health_check: None,
             state: AtomicU8::new(STATE_HEALTHY),
         };
@@ -521,6 +591,7 @@ mod tests {
             env: HashMap::new(),
             cwd: None,
             timeout: Duration::from_secs(10),
+            shutdown_grace_period: Duration::from_secs(5),
             health_check: None,
             state: AtomicU8::new(STATE_HEALTHY),
         };
@@ -551,6 +622,7 @@ mod tests {
             env: HashMap::new(),
             cwd: None,
             timeout: Duration::from_secs(10),
+            shutdown_grace_period: Duration::from_secs(5),
             health_check: None,
             state: AtomicU8::new(STATE_HEALTHY),
         };
@@ -583,6 +655,7 @@ mod tests {
             env: HashMap::new(),
             cwd: None,
             timeout: Duration::from_secs(10),
+            shutdown_grace_period: Duration::from_secs(5),
             health_check: None,
             state: AtomicU8::new(STATE_HEALTHY),
         };
@@ -600,6 +673,7 @@ mod tests {
             env: HashMap::new(),
             cwd: None,
             timeout: Duration::from_secs(10),
+            shutdown_grace_period: Duration::from_secs(5),
             health_check: None,
             state: AtomicU8::new(STATE_HEALTHY),
         };
@@ -630,6 +704,7 @@ mod tests {
             env: HashMap::new(),
             cwd: None,
             timeout: Duration::from_secs(10),
+            shutdown_grace_period: Duration::from_secs(5),
             health_check: Some("true".to_string()),
             state: AtomicU8::new(STATE_STARTING),
         };
@@ -659,6 +734,7 @@ mod tests {
             env: HashMap::new(),
             cwd: None,
             timeout: Duration::from_secs(10),
+            shutdown_grace_period: Duration::from_secs(5),
             health_check: Some("false".to_string()),
             state: AtomicU8::new(STATE_STARTING),
         };
@@ -698,6 +774,7 @@ mod tests {
             env: HashMap::new(),
             cwd: None,
             timeout: Duration::from_secs(10),
+            shutdown_grace_period: Duration::from_secs(5),
             health_check: None,
             state: AtomicU8::new(STATE_HEALTHY),
         };
@@ -738,6 +815,7 @@ mod tests {
             env,
             cwd: Some("/tmp".to_string()),
             timeout: Duration::from_secs(10),
+            shutdown_grace_period: Duration::from_secs(5),
             health_check: None,
             state: AtomicU8::new(STATE_HEALTHY),
         };
@@ -754,6 +832,7 @@ mod tests {
             env: HashMap::new(),
             cwd: None,
             timeout: Duration::from_secs(10),
+            shutdown_grace_period: Duration::from_secs(5),
             health_check: None,
             state: AtomicU8::new(STATE_HEALTHY),
         };

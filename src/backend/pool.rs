@@ -25,7 +25,7 @@ use crate::registry::ToolRegistry;
 pub struct InstancePool {
     backend_name: String,
     config: BackendConfig,
-    #[allow(dead_code)] // used by restart_primary
+    #[allow(dead_code)] // retained to preserve the pool constructor contract
     registry: Arc<ToolRegistry>,
     /// Idle instances ready to be assigned.
     idle: Mutex<VecDeque<Arc<dyn Backend>>>,
@@ -40,6 +40,16 @@ pub struct InstancePool {
     acquire_timeout: Duration,
     replenish_delay: Duration,
     next_instance_id: AtomicU32,
+}
+
+#[allow(dead_code)] // reserved for operator diagnostics/resources
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct PoolStats {
+    pub backend_name: String,
+    pub idle: usize,
+    pub assigned: usize,
+    pub max_instances: u32,
+    pub available_capacity: usize,
 }
 
 impl InstancePool {
@@ -71,16 +81,31 @@ impl InstancePool {
 
         // Pre-warm min_idle instances
         for _ in 0..min_idle {
-            match pool.spawn_instance().await {
-                Ok(instance) => {
-                    pool.idle.lock().await.push_back(instance);
+            match pool.capacity.try_acquire() {
+                Ok(permit) => {
+                    permit.forget();
+                    match pool.spawn_instance().await {
+                        Ok(instance) => {
+                            pool.idle.lock().await.push_back(instance);
+                        }
+                        Err(e) => {
+                            pool.capacity.add_permits(1);
+                            warn!(
+                                backend = %name,
+                                error = %e,
+                                "failed to pre-warm pool instance"
+                            );
+                        }
+                    }
                 }
-                Err(e) => {
+                Err(_) => {
                     warn!(
                         backend = %name,
-                        error = %e,
-                        "failed to pre-warm pool instance"
+                        min_idle,
+                        max = max_instances,
+                        "pool min_idle exceeds max_instances; skipping extra prewarm"
                     );
+                    break;
                 }
             }
         }
@@ -94,6 +119,20 @@ impl InstancePool {
         );
 
         Ok(pool)
+    }
+
+    /// Return current pool statistics.
+    #[allow(dead_code)] // reserved for operator diagnostics/resources
+    pub async fn stats(&self) -> PoolStats {
+        let idle = self.idle.lock().await.len();
+        let assigned = self.assigned.lock().await.len();
+        PoolStats {
+            backend_name: self.backend_name.clone(),
+            idle,
+            assigned,
+            max_instances: self.max_instances,
+            available_capacity: self.capacity.available_permits(),
+        }
     }
 
     /// Spawn a fresh backend instance.
@@ -139,40 +178,46 @@ impl InstancePool {
     /// 3. Try to spawn a new instance (if under capacity).
     /// 4. If at capacity, wait for an instance to become available.
     pub async fn acquire(&self, session_id: u64) -> Result<Arc<dyn Backend>> {
-        // 1. Check if session already assigned
-        {
-            let assigned = self.assigned.lock().await;
-            if let Some(instance) = assigned.get(&session_id) {
-                return Ok(Arc::clone(instance));
-            }
-        }
+        let deadline = tokio::time::Instant::now() + self.acquire_timeout;
+        loop {
+            // Register before checking state so a concurrent release/stop/restart
+            // cannot notify between our check and wait, leaving this acquire asleep.
+            let notified = self.idle_notify.notified();
+            tokio::pin!(notified);
+            notified.as_mut().enable();
 
-        // 2. Try idle queue
-        {
-            let mut idle = self.idle.lock().await;
-            if let Some(instance) = idle.pop_front() {
-                // Verify instance is still healthy
-                if instance.state() == BackendState::Healthy {
-                    self.assigned
-                        .lock()
-                        .await
-                        .insert(session_id, Arc::clone(&instance));
-                    debug!(
-                        backend = %self.backend_name,
-                        session = session_id,
-                        "assigned idle instance to session"
-                    );
-                    return Ok(instance);
+            {
+                let assigned = self.assigned.lock().await;
+                if let Some(instance) = assigned.get(&session_id) {
+                    return Ok(Arc::clone(instance));
                 }
-                // Instance is unhealthy — let it drop, release capacity
-                drop(idle);
-                self.capacity.add_permits(1);
             }
-        }
 
-        // 3. Try to spawn under capacity
-        match self.capacity.try_acquire() {
-            Ok(permit) => {
+            {
+                let mut idle = self.idle.lock().await;
+                if let Some(instance) = idle.pop_front() {
+                    if instance.state() == BackendState::Healthy {
+                        self.assigned
+                            .lock()
+                            .await
+                            .insert(session_id, Arc::clone(&instance));
+                        debug!(
+                            backend = %self.backend_name,
+                            session = session_id,
+                            "assigned idle instance to session"
+                        );
+                        return Ok(instance);
+                    }
+
+                    // Instance is unhealthy — let it drop, release capacity.
+                    drop(idle);
+                    self.capacity.add_permits(1);
+                    self.idle_notify.notify_waiters();
+                    continue;
+                }
+            }
+
+            if let Ok(permit) = self.capacity.try_acquire() {
                 permit.forget(); // consume the permit permanently
                 match self.spawn_instance().await {
                     Ok(instance) => {
@@ -188,77 +233,31 @@ impl InstancePool {
                         return Ok(instance);
                     }
                     Err(e) => {
-                        // Spawn failed — return capacity
+                        // Spawn failed — return capacity.
                         self.capacity.add_permits(1);
+                        self.idle_notify.notify_waiters();
                         return Err(e);
                     }
                 }
             }
-            Err(_) => {
-                // At capacity — wait for an instance to become available
-                debug!(
-                    backend = %self.backend_name,
-                    session = session_id,
-                    max = self.max_instances,
-                    "pool at capacity, waiting for available instance"
+
+            debug!(
+                backend = %self.backend_name,
+                session = session_id,
+                max = self.max_instances,
+                "pool at capacity, waiting for available instance"
+            );
+
+            if tokio::time::timeout_at(deadline, &mut notified)
+                .await
+                .is_err()
+            {
+                anyhow::bail!(
+                    "pool exhausted for backend '{}' (max: {}, timeout: {:?})",
+                    self.backend_name,
+                    self.max_instances,
+                    self.acquire_timeout
                 );
-            }
-        }
-
-        // 4. Wait with timeout
-        let deadline = tokio::time::Instant::now() + self.acquire_timeout;
-        loop {
-            match tokio::time::timeout_at(deadline, self.idle_notify.notified()).await {
-                Ok(()) => {
-                    // Someone released — try idle queue again
-                    let mut idle = self.idle.lock().await;
-                    if let Some(instance) = idle.pop_front() {
-                        if instance.state() == BackendState::Healthy {
-                            self.assigned
-                                .lock()
-                                .await
-                                .insert(session_id, Arc::clone(&instance));
-                            debug!(
-                                backend = %self.backend_name,
-                                session = session_id,
-                                "assigned newly-freed instance to session"
-                            );
-                            return Ok(instance);
-                        }
-                        // Unhealthy — release capacity and try again
-                        drop(idle);
-                        self.capacity.add_permits(1);
-                        continue;
-                    }
-                    drop(idle);
-
-                    // Try spawning if capacity opened up
-                    if let Ok(permit) = self.capacity.try_acquire() {
-                        permit.forget();
-                        match self.spawn_instance().await {
-                            Ok(instance) => {
-                                self.assigned
-                                    .lock()
-                                    .await
-                                    .insert(session_id, Arc::clone(&instance));
-                                return Ok(instance);
-                            }
-                            Err(e) => {
-                                self.capacity.add_permits(1);
-                                return Err(e);
-                            }
-                        }
-                    }
-                    // No luck — loop back and wait again
-                }
-                Err(_) => {
-                    anyhow::bail!(
-                        "pool exhausted for backend '{}' (max: {}, timeout: {:?})",
-                        self.backend_name,
-                        self.max_instances,
-                        self.acquire_timeout
-                    );
-                }
             }
         }
     }
@@ -292,6 +291,7 @@ impl InstancePool {
 
         // Release capacity
         self.capacity.add_permits(1);
+        self.idle_notify.notify_one();
 
         // Wait for OS to reclaim memory from stopped process before spawning replacement
         if !self.replenish_delay.is_zero() {
@@ -311,6 +311,7 @@ impl InstancePool {
                         backend = %self.backend_name,
                         "replenished idle pool instance"
                     );
+                    self.idle_notify.notify_one();
                 }
                 Err(e) => {
                     self.capacity.add_permits(1);
@@ -319,12 +320,10 @@ impl InstancePool {
                         error = %e,
                         "failed to replenish idle pool instance"
                     );
+                    self.idle_notify.notify_one();
                 }
             }
         }
-
-        // Wake anyone waiting for an instance
-        self.idle_notify.notify_one();
 
         Ok(())
     }
@@ -354,6 +353,8 @@ impl InstancePool {
             assigned.drain().map(|(_, v)| v).collect()
         };
 
+        let stopped_count = idle.len() + assigned.len();
+
         for instance in idle.into_iter().chain(assigned.into_iter()) {
             if let Err(e) = instance.stop().await {
                 warn!(
@@ -363,57 +364,13 @@ impl InstancePool {
                 );
             }
         }
-    }
 
-    /// Restart the primary instance (used by health checker).
-    /// Returns the number of tools discovered from the fresh instance.
-    pub async fn restart_primary(&self, registry: &Arc<ToolRegistry>) -> Result<usize> {
-        // Stop the current primary if it exists in idle
-        {
-            let mut idle = self.idle.lock().await;
-            if let Some(old) = idle.pop_front() {
-                if let Err(e) = old.stop().await {
-                    warn!(
-                        backend = %self.backend_name,
-                        error = %e,
-                        "error stopping old primary for restart"
-                    );
-                }
-                self.capacity.add_permits(1);
-            }
-        }
-
-        // Spawn fresh
-        if let Ok(permit) = self.capacity.try_acquire() {
-            permit.forget();
-            let instance = self.spawn_instance().await?;
-
-            // Re-discover tools from the fresh instance
-            let mut tools = instance.discover_tools().await?;
-            if !self.config.tags.is_empty() {
-                for tool in &mut tools {
-                    tool.tags.clone_from(&self.config.tags);
-                }
-            }
-            let tool_count = tools.len();
-
-            // Re-register tools
-            let namespace = self
-                .config
-                .namespace
-                .as_deref()
-                .unwrap_or(&self.backend_name);
-            registry.remove_backend_tools(&self.backend_name);
-            registry.register_backend_tools_namespaced(&self.backend_name, namespace, tools);
-
-            self.idle.lock().await.push_back(instance);
-
-            Ok(tool_count)
-        } else {
-            anyhow::bail!(
-                "cannot restart primary for '{}': pool at capacity",
-                self.backend_name
-            );
+        let available_capacity = self.capacity.available_permits();
+        let max_capacity = self.max_instances as usize;
+        let permits_to_add = stopped_count.min(max_capacity.saturating_sub(available_capacity));
+        if permits_to_add > 0 {
+            self.capacity.add_permits(permits_to_add);
+            self.idle_notify.notify_waiters();
         }
     }
 }
@@ -422,10 +379,13 @@ impl InstancePool {
 mod tests {
     use super::*;
     use crate::backend::BackendState;
-    use crate::config::{BackendConfig, InstanceMode, PoolConfig, Transport};
+    use crate::config::{
+        BackendConfig, CliOutputFormat, CliToolConfig, InstanceMode, PoolConfig, Transport,
+    };
     use crate::registry::ToolEntry;
     use async_trait::async_trait;
     use serde_json::Value;
+    use std::collections::HashMap;
     use std::sync::Arc;
     use std::sync::atomic::{AtomicU8, AtomicU32, Ordering};
 
@@ -527,6 +487,57 @@ mod tests {
             pool: PoolConfig::default(),
             shutdown_grace_period: Duration::from_secs(5),
             max_memory_mb: None,
+        }
+    }
+
+    fn cli_adapter_backend_config(
+        min_idle: u32,
+        max_instances: u32,
+        acquire_timeout: Duration,
+    ) -> BackendConfig {
+        cli_adapter_backend_config_with_pool(
+            min_idle,
+            max_instances,
+            acquire_timeout,
+            Duration::ZERO,
+        )
+    }
+
+    fn cli_adapter_backend_config_with_pool(
+        min_idle: u32,
+        max_instances: u32,
+        acquire_timeout: Duration,
+        replenish_delay: Duration,
+    ) -> BackendConfig {
+        let mut tools = HashMap::new();
+        tools.insert(
+            "greet".to_string(),
+            CliToolConfig {
+                description: "Say hello".to_string(),
+                input_schema: serde_json::json!({
+                    "type": "object",
+                    "properties": {
+                        "name": { "type": "string" }
+                    }
+                }),
+                command: "echo hello".to_string(),
+                stdin: None,
+                output: CliOutputFormat::Text,
+            },
+        );
+
+        BackendConfig {
+            transport: Transport::CliAdapter,
+            command: None,
+            instance_mode: InstanceMode::Dedicated,
+            tools: Some(tools),
+            pool: PoolConfig {
+                min_idle,
+                max_instances,
+                acquire_timeout,
+                replenish_delay,
+            },
+            ..default_backend_config()
         }
     }
 
@@ -637,27 +648,112 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn production_prewarmed_instances_consume_capacity() {
+        let config = cli_adapter_backend_config(1, 1, Duration::from_millis(200));
+        let registry = ToolRegistry::new();
+        let pool = InstancePool::new("test".to_string(), config, registry)
+            .await
+            .unwrap();
+
+        let _session_one = pool.acquire(1).await.unwrap();
+        let result = pool.acquire(2).await;
+
+        let err = result.err().expect("second session should not acquire");
+        assert!(
+            err.to_string().contains("pool exhausted"),
+            "expected pool exhaustion, got {err:#}"
+        );
+    }
+
+    #[tokio::test]
+    async fn release_notifies_waiters_before_replenish_delay() {
+        let config = cli_adapter_backend_config_with_pool(
+            1,
+            1,
+            Duration::from_millis(500),
+            Duration::from_secs(2),
+        );
+        let registry = ToolRegistry::new();
+        let pool = Arc::new(
+            InstancePool::new("test".to_string(), config, registry)
+                .await
+                .unwrap(),
+        );
+
+        let _session_one = pool.acquire(1).await.unwrap();
+
+        let pool_clone = Arc::clone(&pool);
+        let release_task = tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            pool_clone.release(1).await
+        });
+
+        let second = tokio::time::timeout(Duration::from_secs(1), pool.acquire(2))
+            .await
+            .expect("second acquire should finish within 1s")
+            .unwrap();
+        assert!(second.is_available());
+
+        release_task.abort();
+        let _ = release_task.await;
+    }
+
+    #[tokio::test]
+    async fn prewarmed_instances_consume_capacity() {
+        let (pool, _mocks) = pool_with_mocks(1, 1, 1).await;
+
+        let _session_one = pool.acquire(1).await.unwrap();
+        let result = pool.acquire(2).await;
+
+        let err = result.err().expect("second session should not acquire");
+        assert!(
+            err.to_string().contains("pool exhausted"),
+            "expected pool exhaustion, got {err:#}"
+        );
+    }
+
+    #[tokio::test]
+    async fn stats_reports_pool_state() {
+        let (pool, _mocks) = pool_with_mocks(1, 3, 1).await;
+
+        let stats = pool.stats().await;
+        assert_eq!(stats.backend_name, "test");
+        assert_eq!(stats.idle, 1);
+        assert_eq!(stats.assigned, 0);
+        assert_eq!(stats.max_instances, 3);
+        assert_eq!(stats.available_capacity, 2);
+
+        let _session_one = pool.acquire(1).await.unwrap();
+        let stats = pool.stats().await;
+        assert_eq!(stats.idle, 0);
+        assert_eq!(stats.assigned, 1);
+        assert_eq!(stats.available_capacity, 2);
+    }
+
+    #[tokio::test]
     async fn pool_exhaustion_waits_then_succeeds() {
-        let (pool, _mocks) = pool_with_mocks(0, 1, 1).await;
-        let pool = Arc::new(pool);
+        let config = cli_adapter_backend_config(1, 1, Duration::from_millis(200));
+        let registry = ToolRegistry::new();
+        let pool = Arc::new(
+            InstancePool::new("test".to_string(), config, registry)
+                .await
+                .unwrap(),
+        );
 
         // Session 1 takes the only instance
         let _instance = pool.acquire(1).await.unwrap();
 
-        // Release session 1 after a short delay in a background task
+        // Release session 1 after a short delay in a background task.
         let pool_clone = Arc::clone(&pool);
-        tokio::spawn(async move {
+        let release_task = tokio::spawn(async move {
             tokio::time::sleep(Duration::from_millis(50)).await;
-            pool_clone.release(1).await.unwrap();
+            pool_clone.release(1).await
         });
 
-        // Session 2 should eventually get an instance (after release frees capacity)
-        // Note: since we use mock pool and spawn_instance creates real backends,
-        // this test validates the notification mechanism. The acquire will either:
-        // - pick up the idle instance (if replenish succeeded) or
-        // - try to spawn (which may fail in tests without real backends)
-        // So we just verify that the notification happens and doesn't time out.
-        // In production, spawn_instance works, so this path succeeds.
+        // Session 2 should eventually get an instance once release frees capacity.
+        let instance = pool.acquire(2).await.unwrap();
+        assert!(instance.is_available());
+        release_task.await.unwrap().unwrap();
     }
 
     #[tokio::test]
@@ -669,8 +765,10 @@ mod tests {
 
         pool.stop_all().await;
 
-        assert_eq!(pool.idle.lock().await.len(), 0);
-        assert_eq!(pool.assigned.lock().await.len(), 0);
+        let stats = pool.stats().await;
+        assert_eq!(stats.idle, 0);
+        assert_eq!(stats.assigned, 0);
+        assert_eq!(stats.available_capacity, stats.max_instances as usize);
     }
 
     #[test]
