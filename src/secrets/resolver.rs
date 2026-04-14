@@ -151,9 +151,18 @@ impl SecretResolver {
             .get(provider_name)
             .with_context(|| format!("unknown secret provider: '{provider_name}'"))?;
 
-        let resolved = provider.resolve(reference).with_context(|| {
-            format!("provider '{provider_name}' failed to resolve '{reference}'")
-        })?;
+        let resolved = match provider.resolve(reference) {
+            Ok(resolved) => resolved,
+            Err(error) => {
+                tracing::warn!(
+                    provider = provider_name,
+                    reference,
+                    error = %error,
+                    "secret provider failed to resolve reference; leaving secretref unresolved"
+                );
+                return Ok(format!("secretref:{provider_name}:{reference}"));
+            }
+        };
 
         if self.strict && resolved.is_empty() {
             bail!(

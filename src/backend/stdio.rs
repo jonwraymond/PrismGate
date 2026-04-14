@@ -299,11 +299,29 @@ impl Backend for StdioBackend {
     }
 
     async fn wait_for_exit(&self) -> Option<std::process::ExitStatus> {
-        let mut guard = self.child.write().await;
-        if let Some(child) = guard.as_mut() {
-            child.wait().await.ok()
-        } else {
-            None
+        loop {
+            {
+                let mut guard = self.child.write().await;
+                let child = guard.as_mut()?;
+
+                match child.try_wait() {
+                    Ok(Some(status)) => {
+                        guard.take();
+                        return Some(status);
+                    }
+                    Ok(None) => {}
+                    Err(e) => {
+                        warn!(backend = %self.name, error = %e, "error waiting for backend child");
+                        return None;
+                    }
+                }
+            }
+
+            if self.state() == BackendState::Stopped {
+                return None;
+            }
+
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
         }
     }
 
@@ -315,5 +333,74 @@ impl Backend for StdioBackend {
     fn pid(&self) -> Option<u32> {
         let p = self.pid.load(Ordering::Acquire);
         if p > 0 { Some(p) } else { None }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+    use std::time::Duration;
+
+    fn sleep_config() -> BackendConfig {
+        BackendConfig {
+            transport: crate::config::Transport::Stdio,
+            namespace: None,
+            command: Some("sleep".to_string()),
+            args: vec!["5".to_string()],
+            env: HashMap::new(),
+            cwd: None,
+            url: None,
+            headers: HashMap::new(),
+            timeout: Duration::from_secs(30),
+            required_keys: vec![],
+            max_concurrent_calls: None,
+            semaphore_timeout: Duration::from_secs(60),
+            retry: Default::default(),
+            prerequisite: None,
+            rate_limit: None,
+            tags: vec![],
+            fallback_chain: vec![],
+            tools: None,
+            adapter_file: None,
+            health_check: None,
+            instance_mode: Default::default(),
+            pool: Default::default(),
+            shutdown_grace_period: Duration::from_millis(100),
+            max_memory_mb: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn stop_does_not_block_behind_reaper_wait() {
+        let backend = Arc::new(StdioBackend::new(
+            "stdio-stop-race".to_string(),
+            sleep_config(),
+        ));
+        let child = Command::new("sleep")
+            .arg("5")
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap();
+
+        if let Some(pid) = child.id() {
+            backend.pid.store(pid, Ordering::Release);
+        }
+        *backend.child.write().await = Some(child);
+
+        let reaper_backend = Arc::clone(&backend);
+        let reaper = tokio::spawn(async move { reaper_backend.wait_for_exit().await });
+
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        let stop_result = tokio::time::timeout(Duration::from_millis(500), backend.stop()).await;
+
+        assert!(
+            stop_result.is_ok(),
+            "stop should not block behind the reaper's child wait lock"
+        );
+
+        reaper.abort();
     }
 }

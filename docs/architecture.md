@@ -64,6 +64,8 @@ The flow is:
 
 The proxy also caches the MCP initialize request and initialized notification. If the daemon restarts, the proxy reconnects and replays that handshake so the client session can continue with less disruption.
 
+After the handshake, the proxy forwards newline-delimited JSON-RPC messages while tracking request IDs in both directions. If the daemon connection drops while client requests are in flight, the proxy sends retryable JSON-RPC errors for those request IDs, reconnects to the daemon, replays the handshake, and keeps the client stdio transport open. A quiet client is still a live session; the proxy only exits when the client closes stdin/stdout, the parent process is gone, or the client transport is otherwise broken.
+
 ## Accept loop and shutdown
 
 After initialization, the daemon accepts client connections and creates a fresh `GateminiServer` per client. Those server instances are cheap because they share the real state through `Arc`s.

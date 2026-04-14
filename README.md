@@ -121,9 +121,11 @@ The daemon binds its socket early, before the heavier initialization path comple
 Proxy mode is not just a raw byte pipe. It also:
 
 - acquires a flock lock to avoid duplicate daemon startup
-- reconnects with backoff if the daemon disappears
+- reconnects with backoff if the daemon disappears, while keeping the client stdio session open
 - caches the MCP initialize request and initialized notification
 - replays that cached handshake when reconnecting
+- tracks in-flight JSON-RPC request IDs so daemon restarts become retryable request errors instead of transport loss
+- treats quiet clients as live sessions; it exits only when client stdio closes, stdout breaks, or the parent process is gone
 
 <p align="center">
   <img src="docs/diagrams/proxy-startup.svg" alt="Gatemini proxy startup" width="760">

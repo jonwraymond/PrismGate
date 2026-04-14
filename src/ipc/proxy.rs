@@ -1,9 +1,11 @@
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::process::Stdio;
 use std::time::Duration;
 
 use anyhow::{Context, Result, bail};
-use tokio::io::{self, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
+use serde_json::Value;
+use tokio::io::{self, AsyncRead, AsyncWrite, AsyncWriteExt};
 use tracing::{debug, info, warn};
 
 #[cfg(unix)]
@@ -14,22 +16,12 @@ use crate::ipc::socket;
 
 // ── Reconnection parameters ────────────────────────────────────────────────
 
-const MAX_RECONNECTS: u32 = 10;
 const INITIAL_BACKOFF: Duration = Duration::from_millis(100);
 const MAX_BACKOFF: Duration = Duration::from_secs(5);
 const RECONNECT_TIMEOUT: Duration = Duration::from_secs(60);
 
-// ── Bridge buffer size ─────────────────────────────────────────────────────
-
-const BUF_SIZE: usize = 8192;
-
 /// How often to check if the parent process is still alive.
 const ORPHAN_CHECK_INTERVAL: Duration = Duration::from_secs(5);
-
-/// If no data flows in either direction for this long, the proxy exits.
-/// Defends against MCP clients that keep stdin open after conversations end
-/// (e.g. Codex, Cursor extensions). MCP keepalive/ping traffic resets the timer.
-const IDLE_TIMEOUT: Duration = Duration::from_secs(300); // 5 minutes
 
 // ── Handshake cache ────────────────────────────────────────────────────────
 
@@ -52,8 +44,152 @@ enum BridgeOutcome {
     DaemonDisconnected,
     /// Parent process died (orphaned proxy) — exit immediately
     ParentDied,
-    /// No data in either direction for IDLE_TIMEOUT — exit to free resources
-    IdleTimeout,
+}
+
+/// Tracks JSON-RPC request/response IDs across daemon reconnects.
+///
+/// The MCP stdio transport has no session-resume primitive if the server
+/// process exits, so the proxy protects the client connection by accounting for
+/// requests that were in flight when the daemon side disappeared.
+#[derive(Debug, Default)]
+struct JsonRpcTracker {
+    /// Client -> daemon requests waiting for daemon responses.
+    client_pending: HashMap<String, Value>,
+    /// Daemon -> client requests waiting for client responses.
+    server_pending: HashSet<String>,
+}
+
+impl JsonRpcTracker {
+    fn observe_client_message(&mut self, line: &[u8]) -> ClientMessageAction {
+        let Some(obj) = parse_json_object(line) else {
+            return ClientMessageAction::Forward;
+        };
+
+        if obj.get("method").is_some() {
+            if let Some(id) = obj.get("id")
+                && let Some(key) = request_id_key(id)
+            {
+                self.client_pending.insert(key, id.clone());
+            }
+            return ClientMessageAction::Forward;
+        }
+
+        if (obj.contains_key("result") || obj.contains_key("error"))
+            && let Some(id) = obj.get("id")
+            && let Some(key) = request_id_key(id)
+            && !self.server_pending.remove(&key)
+        {
+            debug!(
+                id = %id,
+                "dropping client response for request from a previous daemon generation"
+            );
+            return ClientMessageAction::Drop;
+        }
+
+        ClientMessageAction::Forward
+    }
+
+    fn observe_daemon_message(&mut self, line: &[u8]) {
+        let Some(obj) = parse_json_object(line) else {
+            return;
+        };
+
+        if obj.get("method").is_some() {
+            if let Some(id) = obj.get("id")
+                && let Some(key) = request_id_key(id)
+            {
+                self.server_pending.insert(key);
+            }
+            return;
+        }
+
+        if (obj.contains_key("result") || obj.contains_key("error"))
+            && let Some(id) = obj.get("id")
+            && let Some(key) = request_id_key(id)
+        {
+            self.client_pending.remove(&key);
+        }
+    }
+
+    async fn fail_pending_client_requests<W>(&mut self, stdout: &mut W) -> Result<()>
+    where
+        W: AsyncWrite + Unpin,
+    {
+        let pending: Vec<Value> = self.client_pending.drain().map(|(_, id)| id).collect();
+        self.server_pending.clear();
+
+        if pending.is_empty() {
+            return Ok(());
+        }
+
+        warn!(
+            count = pending.len(),
+            "daemon disconnected with in-flight client requests; reporting retryable errors"
+        );
+
+        for id in pending {
+            let response = serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": id,
+                "error": {
+                    "code": -32000,
+                    "message": "Gatemini daemon disconnected before this request completed; retry the request on the still-open client connection."
+                }
+            });
+            let mut bytes = serde_json::to_vec(&response)
+                .context("failed to serialize retryable request error")?;
+            bytes.push(b'\n');
+            stdout
+                .write_all(&bytes)
+                .await
+                .context("failed to write retryable request error to client stdout")?;
+        }
+
+        stdout
+            .flush()
+            .await
+            .context("failed to flush retryable request errors to client stdout")?;
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ClientMessageAction {
+    Forward,
+    Drop,
+}
+
+enum ReconnectOutcome {
+    Reconnected(UnixStream),
+    ClientClosed,
+    ParentDied,
+    Failed(anyhow::Error),
+}
+
+struct ReconnectClientState<'a, R>
+where
+    R: AsyncRead + Unpin,
+{
+    stdin: &'a mut R,
+    tracker: &'a mut JsonRpcTracker,
+    queued_client_messages: &'a mut Vec<Vec<u8>>,
+    original_ppid: u32,
+}
+
+fn parse_json_object(line: &[u8]) -> Option<serde_json::Map<String, Value>> {
+    serde_json::from_slice::<Value>(line)
+        .ok()?
+        .as_object()
+        .cloned()
+}
+
+fn request_id_key(id: &Value) -> Option<String> {
+    match id {
+        Value::String(s) => Some(format!("s:{s}")),
+        Value::Number(n) => Some(format!("n:{n}")),
+        Value::Null => Some("null".to_string()),
+        _ => None,
+    }
 }
 
 // ── Public entry point ─────────────────────────────────────────────────────
@@ -127,63 +263,75 @@ where
 {
     let mut reconnect_count: u32 = 0;
     let mut bridge_start = std::time::Instant::now();
+    let original_ppid = std::os::unix::process::parent_id();
+    let mut tracker = JsonRpcTracker::default();
+    let mut queued_client_messages: Vec<Vec<u8>> = Vec::new();
 
     loop {
-        match bridge_phase(&mut stream, &mut stdin, &mut stdout).await {
-            BridgeOutcome::StdinClosed | BridgeOutcome::ParentDied | BridgeOutcome::IdleTimeout => {
-                debug!("proxy exiting (stdin closed, parent died, or idle timeout)");
+        match bridge_phase(
+            &mut stream,
+            &mut stdin,
+            &mut stdout,
+            &mut tracker,
+            original_ppid,
+        )
+        .await
+        {
+            BridgeOutcome::StdinClosed | BridgeOutcome::ParentDied => {
+                debug!("proxy exiting (stdin closed or parent died)");
                 return Ok(());
             }
             BridgeOutcome::DaemonDisconnected => {
+                if let Err(e) = tracker.fail_pending_client_requests(&mut stdout).await {
+                    warn!(error = %e, "client stdout closed while reporting daemon disconnect");
+                    return Ok(());
+                }
+
                 // Reset counter if the bridge ran for a reasonable time.
                 if bridge_start.elapsed() > Duration::from_secs(30) {
                     reconnect_count = 0;
                 }
 
                 reconnect_count += 1;
-                if reconnect_count > MAX_RECONNECTS {
-                    bail!(
-                        "daemon disconnected {} times in rapid succession, giving up (max {})",
-                        reconnect_count,
-                        MAX_RECONNECTS
-                    );
-                }
-
                 warn!(
                     attempt = reconnect_count,
-                    max = MAX_RECONNECTS,
                     "daemon disconnected, attempting reconnect (test mode)"
                 );
 
-                // Exponential backoff
-                let backoff =
-                    INITIAL_BACKOFF * 2u32.saturating_pow(reconnect_count.saturating_sub(1));
-                let backoff = backoff.min(MAX_BACKOFF);
-                tokio::time::sleep(backoff).await;
-
-                // Try to connect (no spawning) with timeout
-                let connect_result = tokio::time::timeout(
-                    RECONNECT_TIMEOUT,
-                    wait_for_socket(socket_path, Duration::from_secs(30)),
-                )
-                .await;
-
-                match connect_result {
-                    Ok(Ok(new_stream)) => match replay_handshake(new_stream, cache).await {
-                        Ok(replayed) => {
-                            stream = replayed;
-                            bridge_start = std::time::Instant::now();
-                            info!(
-                                attempt = reconnect_count,
-                                "reconnected to daemon (test mode)"
-                            );
-                        }
-                        Err(e) => {
-                            bail!("handshake replay failed: {}", e);
-                        }
+                match reconnect_connect_only_monitoring_client(
+                    cache,
+                    socket_path,
+                    reconnect_count,
+                    ReconnectClientState {
+                        stdin: &mut stdin,
+                        tracker: &mut tracker,
+                        queued_client_messages: &mut queued_client_messages,
+                        original_ppid,
                     },
-                    Ok(Err(e)) => bail!("reconnect failed: {}", e),
-                    Err(_) => bail!("reconnect timed out"),
+                )
+                .await
+                {
+                    ReconnectOutcome::Reconnected(mut new_stream) => {
+                        if let Err(e) =
+                            flush_queued_client_messages(&mut new_stream, &queued_client_messages)
+                                .await
+                        {
+                            warn!(error = %e, "failed to flush queued client messages after reconnect");
+                            continue;
+                        }
+                        queued_client_messages.clear();
+                        stream = new_stream;
+                        bridge_start = std::time::Instant::now();
+                        info!(
+                            attempt = reconnect_count,
+                            "reconnected to daemon (test mode)"
+                        );
+                    }
+                    ReconnectOutcome::ClientClosed => return Ok(()),
+                    ReconnectOutcome::ParentDied => return Ok(()),
+                    ReconnectOutcome::Failed(e) => {
+                        warn!(error = %e, "reconnect failed; continuing reconnect loop");
+                    }
                 }
             }
         }
@@ -291,42 +439,76 @@ where
 {
     let mut reconnect_count: u32 = 0;
     let mut bridge_start = std::time::Instant::now();
+    let original_ppid = std::os::unix::process::parent_id();
+    let mut tracker = JsonRpcTracker::default();
+    let mut queued_client_messages: Vec<Vec<u8>> = Vec::new();
 
     loop {
-        match bridge_phase(&mut stream, &mut stdin, &mut stdout).await {
-            BridgeOutcome::StdinClosed | BridgeOutcome::ParentDied | BridgeOutcome::IdleTimeout => {
-                debug!("proxy exiting (stdin closed, parent died, or idle timeout)");
+        match bridge_phase(
+            &mut stream,
+            &mut stdin,
+            &mut stdout,
+            &mut tracker,
+            original_ppid,
+        )
+        .await
+        {
+            BridgeOutcome::StdinClosed | BridgeOutcome::ParentDied => {
+                debug!("proxy exiting (stdin closed or parent died)");
                 return Ok(());
             }
             BridgeOutcome::DaemonDisconnected => {
+                if let Err(e) = tracker.fail_pending_client_requests(&mut stdout).await {
+                    warn!(error = %e, "client stdout closed while reporting daemon disconnect");
+                    return Ok(());
+                }
+
                 // Reset counter if the bridge ran for a reasonable time (stable connection).
                 if bridge_start.elapsed() > Duration::from_secs(30) {
                     reconnect_count = 0;
                 }
 
                 reconnect_count += 1;
-                if reconnect_count > MAX_RECONNECTS {
-                    bail!(
-                        "daemon disconnected {} times in rapid succession, giving up (max {})",
-                        reconnect_count,
-                        MAX_RECONNECTS
-                    );
-                }
-
                 warn!(
                     attempt = reconnect_count,
-                    max = MAX_RECONNECTS,
                     "daemon disconnected, attempting reconnect"
                 );
 
-                match reconnect_phase(cache, socket_path, config_path, reconnect_count).await {
-                    Ok(new_stream) => {
+                match reconnect_monitoring_client(
+                    cache,
+                    socket_path,
+                    config_path,
+                    reconnect_count,
+                    ReconnectClientState {
+                        stdin: &mut stdin,
+                        tracker: &mut tracker,
+                        queued_client_messages: &mut queued_client_messages,
+                        original_ppid,
+                    },
+                )
+                .await
+                {
+                    ReconnectOutcome::Reconnected(mut new_stream) => {
+                        if let Err(e) =
+                            flush_queued_client_messages(&mut new_stream, &queued_client_messages)
+                                .await
+                        {
+                            warn!(error = %e, "failed to flush queued client messages after reconnect");
+                            continue;
+                        }
+                        queued_client_messages.clear();
                         stream = new_stream;
                         bridge_start = std::time::Instant::now();
                         info!(attempt = reconnect_count, "reconnected to daemon");
                     }
-                    Err(e) => {
-                        bail!("reconnect failed after {} attempts: {}", reconnect_count, e);
+                    ReconnectOutcome::ClientClosed => return Ok(()),
+                    ReconnectOutcome::ParentDied => return Ok(()),
+                    ReconnectOutcome::Failed(e) => {
+                        warn!(
+                            attempt = reconnect_count,
+                            error = %e,
+                            "reconnect failed; keeping client transport open"
+                        );
                     }
                 }
             }
@@ -336,63 +518,65 @@ where
 
 // ── Bridge phase (bidirectional copy) ──────────────────────────────────────
 
-/// Bidirectional byte bridge: stdin → socket, socket → stdout.
+/// Bidirectional MCP line bridge: stdin → socket, socket → stdout.
 ///
-/// Uses explicit read/write_all with 8KB buffers (no io::copy) to avoid
-/// lost bytes from internal BufReader buffering on cancel.
+/// Tracks JSON-RPC request IDs while forwarding newline-delimited MCP messages
+/// so daemon reconnects can report lost in-flight requests without closing the
+/// client stdio transport.
 ///
 /// Returns when stdin closes (StdinClosed), the daemon socket closes/errors
 /// (DaemonDisconnected), or the parent process dies (ParentDied).
 #[cfg(unix)]
-async fn bridge_phase<R, W>(stream: &mut UnixStream, stdin: &mut R, stdout: &mut W) -> BridgeOutcome
+async fn bridge_phase<R, W>(
+    stream: &mut UnixStream,
+    stdin: &mut R,
+    stdout: &mut W,
+    tracker: &mut JsonRpcTracker,
+    original_ppid: u32,
+) -> BridgeOutcome
 where
     R: AsyncRead + Unpin,
     W: AsyncWrite + Unpin,
 {
     let (mut sock_read, mut sock_write) = stream.split();
-    let mut stdin_buf = [0u8; BUF_SIZE];
-    let mut sock_buf = [0u8; BUF_SIZE];
 
-    // Record parent PID at bridge start. If it changes (reparented to init/launchd),
-    // the parent Claude Code process has exited and this proxy is orphaned.
-    let original_ppid = std::os::unix::process::parent_id();
+    // If the parent PID changes (reparented to init/launchd), the client
+    // process has exited or crashed and this proxy is orphaned.
     let mut orphan_check = tokio::time::interval(ORPHAN_CHECK_INTERVAL);
     orphan_check.tick().await; // consume immediate first tick
-
-    // Idle timeout: exit if no data flows in either direction.
-    // Defends against MCP clients that hold stdin open after conversations end.
-    let idle_sleep = tokio::time::sleep(IDLE_TIMEOUT);
-    tokio::pin!(idle_sleep);
 
     loop {
         tokio::select! {
             // Bias toward draining daemon responses first (avoids backpressure)
             biased;
 
-            result = sock_read.read(&mut sock_buf) => {
+            result = mcp_framing::read_line(&mut sock_read) => {
                 match result {
-                    Ok(0) => return BridgeOutcome::DaemonDisconnected,
-                    Ok(n) => {
-                        if stdout.write_all(&sock_buf[..n]).await.is_err() {
+                    Ok(line) if line.is_empty() => return BridgeOutcome::DaemonDisconnected,
+                    Ok(line) => {
+                        tracker.observe_daemon_message(&line);
+                        if stdout.write_all(&line).await.is_err() {
                             // stdout broken (Claude Code crashed) — treat as stdin close
                             return BridgeOutcome::StdinClosed;
                         }
-                        // Reset idle timer — data flowing
-                        idle_sleep.as_mut().reset(tokio::time::Instant::now() + IDLE_TIMEOUT);
+                        if stdout.flush().await.is_err() {
+                            return BridgeOutcome::StdinClosed;
+                        }
                     }
                     Err(_) => return BridgeOutcome::DaemonDisconnected,
                 }
             }
 
-            result = stdin.read(&mut stdin_buf) => {
+            result = mcp_framing::read_line(stdin) => {
                 match result {
-                    Ok(0) => return BridgeOutcome::StdinClosed,
-                    Ok(n) => {
-                        if sock_write.write_all(&stdin_buf[..n]).await.is_err() {
+                    Ok(line) if line.is_empty() => return BridgeOutcome::StdinClosed,
+                    Ok(line) => {
+                        if tracker.observe_client_message(&line) == ClientMessageAction::Drop {
+                            continue;
+                        }
+                        if sock_write.write_all(&line).await.is_err() {
                             return BridgeOutcome::DaemonDisconnected;
                         }
-                        // Reset idle timer — data flowing
-                        idle_sleep.as_mut().reset(tokio::time::Instant::now() + IDLE_TIMEOUT);
                     }
                     Err(_) => return BridgeOutcome::StdinClosed,
                 }
@@ -408,11 +592,6 @@ where
                     );
                     return BridgeOutcome::ParentDied;
                 }
-            }
-
-            () = &mut idle_sleep => {
-                warn!("no MCP traffic for {:?}, exiting idle proxy", IDLE_TIMEOUT);
-                return BridgeOutcome::IdleTimeout;
             }
         }
     }
@@ -451,6 +630,131 @@ async fn reconnect_phase(
 
     // Replay the handshake to the new daemon
     replay_handshake(stream, cache).await
+}
+
+#[cfg(test)]
+async fn reconnect_phase_connect_only(
+    cache: &HandshakeCache,
+    socket_path: &Path,
+    attempt: u32,
+) -> Result<UnixStream> {
+    let backoff = INITIAL_BACKOFF * 2u32.saturating_pow(attempt.saturating_sub(1));
+    let backoff = backoff.min(MAX_BACKOFF);
+    tokio::time::sleep(backoff).await;
+
+    let stream = tokio::time::timeout(
+        RECONNECT_TIMEOUT,
+        wait_for_socket(socket_path, Duration::from_secs(30)),
+    )
+    .await
+    .context("reconnect timed out")?
+    .context("connect failed during reconnect")?;
+
+    replay_handshake(stream, cache).await
+}
+
+#[cfg(test)]
+async fn reconnect_connect_only_monitoring_client<R>(
+    cache: &HandshakeCache,
+    socket_path: &Path,
+    attempt: u32,
+    client: ReconnectClientState<'_, R>,
+) -> ReconnectOutcome
+where
+    R: AsyncRead + Unpin,
+{
+    let reconnect = reconnect_phase_connect_only(cache, socket_path, attempt);
+    monitor_client_during_reconnect(reconnect, client).await
+}
+
+#[cfg(unix)]
+async fn reconnect_monitoring_client<R>(
+    cache: &HandshakeCache,
+    socket_path: &Path,
+    config_path: &Path,
+    attempt: u32,
+    client: ReconnectClientState<'_, R>,
+) -> ReconnectOutcome
+where
+    R: AsyncRead + Unpin,
+{
+    let reconnect = reconnect_phase(cache, socket_path, config_path, attempt);
+    monitor_client_during_reconnect(reconnect, client).await
+}
+
+#[cfg(unix)]
+async fn monitor_client_during_reconnect<R, F>(
+    reconnect: F,
+    client: ReconnectClientState<'_, R>,
+) -> ReconnectOutcome
+where
+    R: AsyncRead + Unpin,
+    F: std::future::Future<Output = Result<UnixStream>>,
+{
+    let mut orphan_check = tokio::time::interval(ORPHAN_CHECK_INTERVAL);
+    orphan_check.tick().await;
+    tokio::pin!(reconnect);
+
+    loop {
+        tokio::select! {
+            result = &mut reconnect => {
+                return match result {
+                    Ok(stream) => ReconnectOutcome::Reconnected(stream),
+                    Err(e) => ReconnectOutcome::Failed(e),
+                };
+            }
+            line = mcp_framing::read_line(client.stdin) => {
+                match line {
+                    Ok(line) if line.is_empty() => {
+                        info!("client stdin closed during daemon reconnect");
+                        return ReconnectOutcome::ClientClosed;
+                    }
+                    Ok(line) => {
+                        if client.tracker.observe_client_message(&line) == ClientMessageAction::Forward {
+                            client.queued_client_messages.push(line);
+                        }
+                    }
+                    Err(e) => {
+                        warn!(error = %e, "error reading client stdin during daemon reconnect");
+                        return ReconnectOutcome::ClientClosed;
+                    }
+                }
+            }
+            _ = orphan_check.tick() => {
+                if std::os::unix::process::parent_id() != client.original_ppid {
+                    warn!("parent process died during reconnect, proxy is orphaned — exiting");
+                    return ReconnectOutcome::ParentDied;
+                }
+            }
+        }
+    }
+}
+
+#[cfg(unix)]
+async fn flush_queued_client_messages(
+    stream: &mut UnixStream,
+    queued_client_messages: &[Vec<u8>],
+) -> Result<()> {
+    if queued_client_messages.is_empty() {
+        return Ok(());
+    }
+
+    info!(
+        count = queued_client_messages.len(),
+        "flushing queued client messages after daemon reconnect"
+    );
+
+    for line in queued_client_messages {
+        stream
+            .write_all(line)
+            .await
+            .context("failed to write queued client message to reconnected daemon")?;
+    }
+
+    stream
+        .flush()
+        .await
+        .context("failed to flush queued client messages to reconnected daemon")
 }
 
 /// Send cached handshake messages to the new daemon and discard the server's response.
