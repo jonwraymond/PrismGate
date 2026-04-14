@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.12.2](https://github.com/jonwraymond/PrismGate/compare/v1.12.1...v1.12.2) (2026-04-14)
+
+
+### Bug Fixes
+
+* build release containers on native arm64 runners ([8be3ad7](https://github.com/jonwraymond/PrismGate/commit/8be3ad708e96756e6c5ffe5a27ec0012219a628b))
+
 ## [1.12.1](https://github.com/jonwraymond/PrismGate/compare/v1.12.0...v1.12.1) (2026-04-14)
 
 
