@@ -151,6 +151,9 @@ pub trait Backend: Send + Sync {
     fn name(&self) -> &str;
     async fn start(&self) -> Result<()>;
     async fn stop(&self) -> Result<()>;
+    fn stop_timeout(&self) -> Duration {
+        Duration::from_secs(7)
+    }
     async fn call_tool(&self, tool_name: &str, arguments: Option<Value>) -> Result<Value>;
     async fn discover_tools(&self) -> Result<Vec<ToolEntry>>;
     fn is_available(&self) -> bool;
@@ -899,8 +902,7 @@ impl BackendManager {
         let mut join_set = tokio::task::JoinSet::new();
         for (name, backend) in backends {
             join_set.spawn(async move {
-                // Use shutdown_grace_period + 2s buffer for the stop timeout
-                let timeout = std::time::Duration::from_secs(7); // 5s grace + 2s buffer
+                let timeout = backend.stop_timeout();
                 match tokio::time::timeout(timeout, backend.stop()).await {
                     Ok(Ok(())) => {}
                     Ok(Err(e)) => warn!(backend = %name, error = %e, "error stopping backend"),

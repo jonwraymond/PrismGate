@@ -31,6 +31,7 @@ pub struct CliAdapterBackend {
     env: HashMap<String, String>,
     cwd: Option<String>,
     timeout: Duration,
+    shutdown_grace_period: Duration,
     health_check: Option<String>,
     state: AtomicU8,
 }
@@ -87,6 +88,7 @@ impl CliAdapterBackend {
             env: config.env.clone(),
             cwd: config.cwd.clone(),
             timeout: config.timeout,
+            shutdown_grace_period: config.shutdown_grace_period,
             health_check,
             state: AtomicU8::new(STATE_STARTING),
         })
@@ -219,6 +221,10 @@ impl Backend for CliAdapterBackend {
             .store(STATE_STOPPED, std::sync::atomic::Ordering::Release);
         info!(backend = %self.name, "cli-adapter backend stopped");
         Ok(())
+    }
+
+    fn stop_timeout(&self) -> Duration {
+        self.shutdown_grace_period + Duration::from_secs(2)
     }
 
     async fn call_tool(&self, tool_name: &str, arguments: Option<Value>) -> Result<Value> {
@@ -462,6 +468,7 @@ mod tests {
             env: HashMap::new(),
             cwd: None,
             timeout: Duration::from_secs(10),
+            shutdown_grace_period: Duration::from_secs(5),
             health_check: None,
             state: AtomicU8::new(STATE_HEALTHY),
         };
@@ -505,6 +512,7 @@ mod tests {
             env: HashMap::new(),
             cwd: None,
             timeout: Duration::from_millis(200),
+            shutdown_grace_period: Duration::from_secs(5),
             health_check: None,
             state: AtomicU8::new(STATE_HEALTHY),
         };
@@ -550,6 +558,7 @@ mod tests {
             env: HashMap::new(),
             cwd: None,
             timeout: Duration::from_secs(10),
+            shutdown_grace_period: Duration::from_secs(5),
             health_check: None,
             state: AtomicU8::new(STATE_HEALTHY),
         };
@@ -582,6 +591,7 @@ mod tests {
             env: HashMap::new(),
             cwd: None,
             timeout: Duration::from_secs(10),
+            shutdown_grace_period: Duration::from_secs(5),
             health_check: None,
             state: AtomicU8::new(STATE_HEALTHY),
         };
@@ -612,6 +622,7 @@ mod tests {
             env: HashMap::new(),
             cwd: None,
             timeout: Duration::from_secs(10),
+            shutdown_grace_period: Duration::from_secs(5),
             health_check: None,
             state: AtomicU8::new(STATE_HEALTHY),
         };
@@ -644,6 +655,7 @@ mod tests {
             env: HashMap::new(),
             cwd: None,
             timeout: Duration::from_secs(10),
+            shutdown_grace_period: Duration::from_secs(5),
             health_check: None,
             state: AtomicU8::new(STATE_HEALTHY),
         };
@@ -661,6 +673,7 @@ mod tests {
             env: HashMap::new(),
             cwd: None,
             timeout: Duration::from_secs(10),
+            shutdown_grace_period: Duration::from_secs(5),
             health_check: None,
             state: AtomicU8::new(STATE_HEALTHY),
         };
@@ -691,6 +704,7 @@ mod tests {
             env: HashMap::new(),
             cwd: None,
             timeout: Duration::from_secs(10),
+            shutdown_grace_period: Duration::from_secs(5),
             health_check: Some("true".to_string()),
             state: AtomicU8::new(STATE_STARTING),
         };
@@ -720,6 +734,7 @@ mod tests {
             env: HashMap::new(),
             cwd: None,
             timeout: Duration::from_secs(10),
+            shutdown_grace_period: Duration::from_secs(5),
             health_check: Some("false".to_string()),
             state: AtomicU8::new(STATE_STARTING),
         };
@@ -759,6 +774,7 @@ mod tests {
             env: HashMap::new(),
             cwd: None,
             timeout: Duration::from_secs(10),
+            shutdown_grace_period: Duration::from_secs(5),
             health_check: None,
             state: AtomicU8::new(STATE_HEALTHY),
         };
@@ -799,6 +815,7 @@ mod tests {
             env,
             cwd: Some("/tmp".to_string()),
             timeout: Duration::from_secs(10),
+            shutdown_grace_period: Duration::from_secs(5),
             health_check: None,
             state: AtomicU8::new(STATE_HEALTHY),
         };
@@ -815,6 +832,7 @@ mod tests {
             env: HashMap::new(),
             cwd: None,
             timeout: Duration::from_secs(10),
+            shutdown_grace_period: Duration::from_secs(5),
             health_check: None,
             state: AtomicU8::new(STATE_HEALTHY),
         };

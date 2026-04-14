@@ -4,6 +4,7 @@ use serde_json::Value;
 use std::process::Stdio;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU8, Ordering};
+use std::time::Duration;
 use tokio::process::Command;
 use tokio::sync::RwLock;
 use tracing::{debug, error, info, warn};
@@ -236,6 +237,10 @@ impl Backend for StdioBackend {
         Ok(())
     }
 
+    fn stop_timeout(&self) -> Duration {
+        self.config.shutdown_grace_period + Duration::from_secs(2)
+    }
+
     async fn call_tool(&self, tool_name: &str, arguments: Option<Value>) -> Result<Value> {
         let guard = self.service.read().await;
         let service = guard
@@ -369,6 +374,18 @@ mod tests {
             shutdown_grace_period: Duration::from_millis(100),
             max_memory_mb: None,
         }
+    }
+
+    #[test]
+    fn stdio_stop_timeout_uses_configured_grace_period() {
+        let mut config = BackendConfig {
+            shutdown_grace_period: Duration::from_secs(12),
+            ..sleep_config()
+        };
+        config.command = Some("sleep".to_string());
+
+        let backend = StdioBackend::new("timeout-check".to_string(), config);
+        assert_eq!(backend.stop_timeout(), Duration::from_secs(14));
     }
 
     #[tokio::test]
