@@ -21,22 +21,23 @@ env:
   REGISTRY: ghcr.io
 
 jobs:
-  build:
+  build-pr:
     name: Build Container
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
-      - uses: docker/setup-qemu-action@v3
 
       - uses: docker/setup-buildx-action@v3
 
       - name: Derive image coordinates
         id: vars
         run: |
-          echo "image=${REGISTRY}/${GITHUB_REPOSITORY_OWNER,,}/gatemini" >> "$GITHUB_OUTPUT"
-          echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
-          echo "major_minor=$(echo "${GITHUB_REF_NAME#v}" | cut -d. -f1,2)" >> "$GITHUB_OUTPUT"
+          {
+            echo "image=${REGISTRY}/${GITHUB_REPOSITORY_OWNER,,}/gatemini"
+            echo "version=${GITHUB_REF_NAME#v}"
+            echo "major_minor=$(echo "${GITHUB_REF_NAME#v}" | cut -d. -f1,2)"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Generate image metadata
         id: meta
@@ -45,25 +46,101 @@ jobs:
           images: ${{ steps.vars.outputs.image }}
           tags: |
             type=raw,value=pr-${{ github.event.pull_request.number }},enable=${{ github.event_name == 'pull_request' }}
-            type=raw,value=${{ github.ref_name }},enable=${{ github.event_name == 'push' }}
-            type=raw,value=${{ steps.vars.outputs.version }},enable=${{ github.event_name == 'push' }}
-            type=raw,value=${{ steps.vars.outputs.major_minor }},enable=${{ github.event_name == 'push' }}
-            type=raw,value=latest,enable=${{ github.event_name == 'push' }}
+
+      - name: Build PR container image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: linux/amd64
+          push: false
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+  build-release:
+    name: Build Container (${{ matrix.arch }})
+    if: github.event_name == 'push'
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            platform: linux/amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            platform: linux/arm64
+            runner: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Derive image coordinates
+        id: vars
+        run: |
+          echo "image=${REGISTRY}/${GITHUB_REPOSITORY_OWNER,,}/gatemini" >> "$GITHUB_OUTPUT"
+
+      - name: Generate image metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ steps.vars.outputs.image }}
+          tags: |
+            type=raw,value=${{ github.ref_name }}-${{ matrix.arch }}
 
       - name: Log in to GHCR
-        if: github.event_name == 'push'
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build container image
+      - name: Build and push platform image
         uses: docker/build-push-action@v6
         with:
           context: .
           file: ./Dockerfile
-          platforms: ${{ github.event_name == 'push' && 'linux/amd64,linux/arm64' || 'linux/amd64' }}
-          push: ${{ github.event_name == 'push' }}
+          platforms: ${{ matrix.platform }}
+          push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+
+  publish-release:
+    name: Publish Container Manifest
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    needs: build-release
+    steps:
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Derive image coordinates
+        id: vars
+        run: |
+          image="${REGISTRY}/${GITHUB_REPOSITORY_OWNER,,}/gatemini"
+          version="${GITHUB_REF_NAME#v}"
+          major_minor="$(echo "$version" | cut -d. -f1,2)"
+          {
+            echo "image=$image"
+            echo "version=$version"
+            echo "major_minor=$major_minor"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish multi-platform tags
+        run: |
+          image="${{ steps.vars.outputs.image }}"
+          docker buildx imagetools create \
+            -t "$image:${GITHUB_REF_NAME}" \
+            -t "$image:${{ steps.vars.outputs.version }}" \
+            -t "$image:${{ steps.vars.outputs.major_minor }}" \
+            -t "$image:latest" \
+            "$image:${GITHUB_REF_NAME}-amd64" \
+            "$image:${GITHUB_REF_NAME}-arm64"
+          docker buildx imagetools inspect "$image:${{ steps.vars.outputs.version }}"
