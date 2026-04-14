@@ -104,6 +104,11 @@ impl CliAdapterBackend {
             c
         };
 
+        #[cfg(unix)]
+        {
+            cmd.process_group(0);
+        }
+
         for (key, value) in &self.env {
             cmd.env(key, value);
         }
@@ -278,7 +283,7 @@ impl Backend for CliAdapterBackend {
                 if let Some(pid) = child_pid {
                     #[cfg(unix)]
                     unsafe {
-                        libc::kill(pid as i32, libc::SIGKILL);
+                        libc::kill(-(pid as i32), libc::SIGKILL);
                     }
                 }
                 anyhow::bail!(
@@ -467,6 +472,62 @@ mod tests {
             .unwrap();
 
         assert_eq!(result.as_str().unwrap().trim(), "Hello, World!");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn timeout_kills_cli_adapter_process_group() {
+        use std::fs;
+
+        let marker = tempfile::NamedTempFile::new().unwrap();
+        let marker_path = marker.path().to_path_buf();
+        let command = format!(
+            "sh -c 'trap \"\" TERM; sleep 30' cli-adapter-child {} & echo child-started > {} && sleep 30",
+            marker_path.display(),
+            marker_path.display()
+        );
+
+        let mut tools = HashMap::new();
+        tools.insert(
+            "hang".to_string(),
+            CliToolConfig {
+                description: "hangs with child".to_string(),
+                input_schema: serde_json::json!({"type": "object"}),
+                command,
+                stdin: None,
+                output: CliOutputFormat::Text,
+            },
+        );
+
+        let backend = CliAdapterBackend {
+            name: "cli-timeout".to_string(),
+            tools,
+            env: HashMap::new(),
+            cwd: None,
+            timeout: Duration::from_millis(200),
+            health_check: None,
+            state: AtomicU8::new(STATE_HEALTHY),
+        };
+
+        let result = backend.call_tool("hang", None).await;
+        assert!(result.is_err());
+        assert!(
+            fs::read_to_string(&marker_path)
+                .unwrap()
+                .contains("child-started")
+        );
+
+        tokio::time::sleep(Duration::from_millis(300)).await;
+
+        let ps = std::process::Command::new("pgrep")
+            .args(["-f", marker_path.to_string_lossy().as_ref()])
+            .output()
+            .unwrap();
+        assert!(
+            ps.stdout.is_empty(),
+            "expected process group to be killed, found: {}",
+            String::from_utf8_lossy(&ps.stdout)
+        );
     }
 
     #[tokio::test]
