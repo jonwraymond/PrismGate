@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.12.1](https://github.com/jonwraymond/PrismGate/compare/v1.12.0...v1.12.1) (2026-04-14)
+
+
+### Bug Fixes
+
+* unblock release builds and registry tests ([725b2e6](https://github.com/jonwraymond/PrismGate/commit/725b2e69efa284c1da0e9607e67e9fdbfb683d69))
+
 ## [1.12.0](https://github.com/jonwraymond/PrismGate/compare/v1.11.2...v1.12.0) (2026-04-14)
 
 
