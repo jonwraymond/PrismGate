@@ -814,20 +814,6 @@ impl BackendManager {
         self.dedicated_pools.contains_key(name)
     }
 
-    /// Restart the primary instance in a dedicated pool.
-    pub async fn restart_pool_primary(
-        &self,
-        name: &str,
-        registry: &Arc<ToolRegistry>,
-    ) -> Result<usize> {
-        let pool = self
-            .dedicated_pools
-            .get(name)
-            .map(|r| Arc::clone(r.value()))
-            .ok_or_else(|| anyhow::anyhow!("no dedicated pool for backend '{name}'"))?;
-        pool.restart_primary(registry).await
-    }
-
     /// Register a pre-built backend directly (e.g. CompositeBackend).
     ///
     /// Unlike `add_backend` / `start_backend`, this does NOT spawn a child process

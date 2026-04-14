@@ -25,7 +25,7 @@ use crate::registry::ToolRegistry;
 pub struct InstancePool {
     backend_name: String,
     config: BackendConfig,
-    #[allow(dead_code)] // used by restart_primary
+    #[allow(dead_code)] // retained to preserve the pool constructor contract
     registry: Arc<ToolRegistry>,
     /// Idle instances ready to be assigned.
     idle: Mutex<VecDeque<Arc<dyn Backend>>>,
@@ -371,81 +371,6 @@ impl InstancePool {
             self.idle_notify.notify_waiters();
         }
     }
-
-    /// Restart the primary instance (used by health checker).
-    /// Returns the number of tools discovered from the fresh instance.
-    pub async fn restart_primary(&self, registry: &Arc<ToolRegistry>) -> Result<usize> {
-        // Stop the current primary if it exists in idle
-        {
-            let mut idle = self.idle.lock().await;
-            if let Some(old) = idle.pop_front() {
-                if let Err(e) = old.stop().await {
-                    warn!(
-                        backend = %self.backend_name,
-                        error = %e,
-                        "error stopping old primary for restart"
-                    );
-                }
-                self.capacity.add_permits(1);
-                self.idle_notify.notify_one();
-            }
-        }
-
-        // Spawn fresh
-        if let Ok(permit) = self.capacity.try_acquire() {
-            permit.forget();
-            let instance = match self.spawn_instance().await {
-                Ok(instance) => instance,
-                Err(e) => {
-                    self.capacity.add_permits(1);
-                    self.idle_notify.notify_one();
-                    return Err(e);
-                }
-            };
-
-            // Re-discover tools from the fresh instance
-            let mut tools = match instance.discover_tools().await {
-                Ok(tools) => tools,
-                Err(e) => {
-                    if let Err(stop_err) = instance.stop().await {
-                        warn!(
-                            backend = %self.backend_name,
-                            error = %stop_err,
-                            "error stopping failed pool restart instance"
-                        );
-                    }
-                    self.capacity.add_permits(1);
-                    self.idle_notify.notify_one();
-                    return Err(e);
-                }
-            };
-            if !self.config.tags.is_empty() {
-                for tool in &mut tools {
-                    tool.tags.clone_from(&self.config.tags);
-                }
-            }
-            let tool_count = tools.len();
-
-            // Re-register tools
-            let namespace = self
-                .config
-                .namespace
-                .as_deref()
-                .unwrap_or(&self.backend_name);
-            registry.remove_backend_tools(&self.backend_name);
-            registry.register_backend_tools_namespaced(&self.backend_name, namespace, tools);
-
-            self.idle.lock().await.push_back(instance);
-            self.idle_notify.notify_one();
-
-            Ok(tool_count)
-        } else {
-            anyhow::bail!(
-                "cannot restart primary for '{}': pool at capacity",
-                self.backend_name
-            );
-        }
-    }
 }
 
 #[cfg(test)]
@@ -783,33 +708,6 @@ mod tests {
             err.to_string().contains("pool exhausted"),
             "expected pool exhaustion, got {err:#}"
         );
-    }
-
-    #[tokio::test]
-    async fn restart_primary_notifies_waiters() {
-        let config = cli_adapter_backend_config(1, 1, Duration::from_millis(200));
-        let registry = Arc::new(ToolRegistry::new());
-        let pool = Arc::new(
-            InstancePool::new("test".to_string(), config, Arc::clone(&registry))
-                .await
-                .unwrap(),
-        );
-
-        let notified = {
-            let pool = Arc::clone(&pool);
-            tokio::spawn(async move {
-                pool.idle_notify.notified().await;
-            })
-        };
-
-        tokio::task::yield_now().await;
-        let tool_count = pool.restart_primary(&registry).await.unwrap();
-        assert_eq!(tool_count, 1);
-
-        tokio::time::timeout(Duration::from_secs(1), notified)
-            .await
-            .expect("restart_primary should notify waiters")
-            .expect("waiter task should complete");
     }
 
     #[tokio::test]
