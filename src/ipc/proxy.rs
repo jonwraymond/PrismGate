@@ -159,6 +159,7 @@ enum ClientMessageAction {
     Drop,
 }
 
+#[cfg(unix)]
 enum ReconnectOutcome {
     Reconnected(UnixStream),
     ClientClosed,
@@ -166,6 +167,7 @@ enum ReconnectOutcome {
     Failed(anyhow::Error),
 }
 
+#[cfg(unix)]
 struct ReconnectClientState<'a, R>
 where
     R: AsyncRead + Unpin,
@@ -236,7 +238,7 @@ where
 /// Unlike `run_inner`, this does NOT spawn daemons or use flock coordination.
 /// Reconnection attempts connect directly to the same socket path (waiting for
 /// the test infrastructure to restart the daemon).
-#[cfg(test)]
+#[cfg(all(test, unix))]
 pub(crate) async fn run_on_socket<R, W>(stdin: R, stdout: W, socket_path: &Path) -> Result<()>
 where
     R: AsyncRead + Unpin,
@@ -249,7 +251,7 @@ where
 
 /// Bridge loop variant that reconnects by connecting only (no daemon spawning).
 /// Used in tests where the daemon is managed externally.
-#[cfg(test)]
+#[cfg(all(test, unix))]
 async fn bridge_loop_connect_only<R, W>(
     mut stream: UnixStream,
     cache: &HandshakeCache,
@@ -632,7 +634,7 @@ async fn reconnect_phase(
     replay_handshake(stream, cache).await
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 async fn reconnect_phase_connect_only(
     cache: &HandshakeCache,
     socket_path: &Path,
@@ -653,7 +655,7 @@ async fn reconnect_phase_connect_only(
     replay_handshake(stream, cache).await
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 async fn reconnect_connect_only_monitoring_client<R>(
     cache: &HandshakeCache,
     socket_path: &Path,

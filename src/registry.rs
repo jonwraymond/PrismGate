@@ -248,15 +248,20 @@ impl ToolRegistry {
             // Restore bare-name aliases for resolved collisions
             for (bare_name, remaining_backend, remaining_ns) in to_restore {
                 let ns_key = format!("{}.{}", remaining_ns, bare_name);
-                if let Some(ns_entry) = self.tools.get(&ns_key) {
-                    let bare_entry = ToolEntry {
+                let bare_entry = {
+                    self.tools.get(&ns_key).map(|ns_entry| ToolEntry {
                         name: bare_name.clone(),
                         original_name: bare_name.clone(),
                         description: ns_entry.description.clone(),
                         backend_name: remaining_backend,
                         input_schema: ns_entry.input_schema.clone(),
                         tags: ns_entry.tags.clone(),
-                    };
+                    })
+                };
+
+                // Do not mutate DashMap while holding a Ref guard from `get`;
+                // same-shard keys can deadlock on Linux.
+                if let Some(bare_entry) = bare_entry {
                     self.tools.insert(bare_name, bare_entry);
                 }
             }
