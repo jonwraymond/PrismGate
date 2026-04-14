@@ -59,4 +59,17 @@ pub enum Command {
     Stop,
     /// Restart a running daemon (stop + let proxies auto-spawn new).
     Restart,
+    /// Diagnose local proxy/daemon/runtime state without starting backends.
+    Doctor,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cli_accepts_doctor_command() {
+        let cli = Cli::try_parse_from(["gatemini", "doctor"]).unwrap();
+        assert!(matches!(cli.command, Some(Command::Doctor)));
+    }
 }

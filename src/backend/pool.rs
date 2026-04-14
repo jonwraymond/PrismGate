@@ -42,6 +42,7 @@ pub struct InstancePool {
     next_instance_id: AtomicU32,
 }
 
+#[allow(dead_code)] // reserved for operator diagnostics/resources
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct PoolStats {
     pub backend_name: String,
@@ -121,6 +122,7 @@ impl InstancePool {
     }
 
     /// Return current pool statistics.
+    #[allow(dead_code)] // reserved for operator diagnostics/resources
     pub async fn stats(&self) -> PoolStats {
         let idle = self.idle.lock().await.len();
         let assigned = self.assigned.lock().await.len();
