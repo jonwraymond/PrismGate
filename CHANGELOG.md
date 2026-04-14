@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.12.0](https://github.com/jonwraymond/PrismGate/compare/v1.11.2...v1.12.0) (2026-04-14)
+
+
+### Features
+
+* harden Gatemini startup and proxy sessions ([6f6e05a](https://github.com/jonwraymond/PrismGate/commit/6f6e05a9bb7559c230f2dc74df0149473720e89d))
+
 ## [1.11.2](https://github.com/jonwraymond/PrismGate/compare/v1.11.1...v1.11.2) (2026-03-30)
 
 
