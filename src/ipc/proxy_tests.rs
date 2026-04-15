@@ -388,6 +388,104 @@ mod tests {
         let _ = proxy_handle.await;
     }
 
+    /// Promote a staged daemon while a client has an in-flight request on the
+    /// old daemon. The old request should complete, and new clients should use
+    /// the promoted daemon on the public socket.
+    #[tokio::test]
+    async fn test_generational_promotion_keeps_old_inflight_call() {
+        let (socket_path, old_daemon_handle, old_mock, _tmp) =
+            spawn_test_daemon_with_mock("old_backend", Duration::ZERO, Duration::from_millis(500))
+                .await;
+
+        let (peer, proxy_handle, service_handle) = handshake_through_proxy(&socket_path).await;
+
+        let slow_peer = peer.clone();
+        let slow_call = tokio::spawn(async move {
+            slow_peer
+                .call_tool(
+                    rmcp::model::CallToolRequestParams::new("call_tool_chain").with_arguments(
+                        serde_json::json!({
+                            "code": "old_backend.slow_tool({})",
+                            "timeout": 5000
+                        })
+                        .as_object()
+                        .unwrap()
+                        .clone(),
+                    ),
+                )
+                .await
+                .unwrap()
+        });
+
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        let staged_socket = crate::ipc::socket::staged_socket_path(&socket_path, 77);
+        let manager = BackendManager::new();
+        let registry = ToolRegistry::new();
+        let new_mock = MockBackend::new("new_backend", Duration::ZERO);
+        insert_mock(&manager, &registry, &new_mock).await;
+
+        let gw2 = InitializedGateway {
+            registry,
+            backend_manager: manager,
+            tracker: Arc::new(crate::tracker::CallTracker::new()),
+            cache_path: PathBuf::from("/tmp/test-proxy-cache-generational.json"),
+            config: test_config(Duration::ZERO),
+            shutdown_notify: Arc::new(tokio::sync::Notify::new()),
+        };
+
+        let mut bound2 = crate::ipc::daemon::bind_early(Some(staged_socket.clone()))
+            .expect("bind_early failed for staged daemon");
+        crate::ipc::upgrade::promote_staged_without_signal_for_test(
+            &mut bound2,
+            socket_path.clone(),
+            std::process::id() as i32,
+        )
+        .expect("staged promotion should succeed");
+        let new_daemon_handle =
+            tokio::spawn(async move { crate::ipc::daemon::run(gw2, bound2).await });
+
+        let stream = UnixStream::connect(&socket_path)
+            .await
+            .expect("new client should connect to promoted public socket");
+        let (read, write) = tokio::io::split(stream);
+        let new_service = ().serve((read, write)).await.expect("new client handshake");
+        let new_peer = new_service.peer().clone();
+        let new_service_handle = tokio::spawn(async move {
+            let _ = new_service.waiting().await;
+        });
+
+        let tools = new_peer.list_all_tools().await.unwrap();
+        assert_eq!(tools.len(), 7);
+
+        let slow_result = tokio::time::timeout(Duration::from_secs(2), slow_call)
+            .await
+            .expect("old in-flight call should finish")
+            .expect("slow call task should join");
+        assert!(
+            !slow_result.is_error.unwrap_or(false),
+            "old in-flight call should not be turned into a reconnect error"
+        );
+        assert_eq!(old_mock.call_log().await.len(), 1);
+        assert!(
+            !proxy_handle.is_finished(),
+            "existing proxy should remain connected to old daemon generation"
+        );
+
+        drop(peer);
+        drop(new_peer);
+        service_handle.abort();
+        new_service_handle.abort();
+        let _ = service_handle.await;
+        let _ = new_service_handle.await;
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        old_daemon_handle.abort();
+        new_daemon_handle.abort();
+        let _ = old_daemon_handle.await;
+        let _ = new_daemon_handle.await;
+        let _ = proxy_handle.await;
+    }
+
     /// If the daemon dies while a client request is in flight, the proxy must
     /// report that lost request as a retryable JSON-RPC error and keep the
     /// client's stdio session alive for subsequent requests.

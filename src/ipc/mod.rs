@@ -10,3 +10,4 @@ pub mod restart;
 pub mod socket;
 pub mod status;
 pub mod stop;
+pub mod upgrade;

@@ -64,6 +64,7 @@ pub fn bind_early(custom_socket: Option<PathBuf>) -> Result<BoundSocket> {
     // Write PID file.
     let pid = std::process::id();
     std::fs::write(socket::pid_path(&socket_path), pid.to_string())?;
+    socket::write_generation_info(&socket_path, socket::GenerationRole::Active, pid as i32)?;
 
     // Note: tracing may not be initialized yet, so use eprintln
     eprintln!(
@@ -126,16 +127,20 @@ pub async fn run(gw: InitializedGateway, bound: BoundSocket) -> Result<()> {
     let session_change = Arc::new(tokio::sync::Notify::new());
     let idle_timeout = gw.config.daemon.idle_timeout;
     let idle_enabled = !idle_timeout.is_zero();
+    let self_pid = std::process::id() as i32;
 
     if idle_enabled {
         info!(timeout = ?idle_timeout, "idle shutdown enabled");
     }
 
     // Accept loop with signal handling and idle shutdown.
-    let accept_result: Result<(), anyhow::Error> = {
+    let accept_result: Result<bool, anyhow::Error> = {
         let mut sigterm =
             tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
         let mut sigint = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())?;
+        let mut sigusr2 =
+            tokio::signal::unix::signal(tokio::signal::unix::SignalKind::user_defined2())?;
+        let mut drain_mode = false;
 
         // Idle timer — reset whenever session count changes.
         let idle_deadline = tokio::time::Instant::now() + idle_timeout;
@@ -218,6 +223,11 @@ pub async fn run(gw: InitializedGateway, bound: BoundSocket) -> Result<()> {
                     info!("received SIGINT");
                     break;
                 }
+                _ = sigusr2.recv() => {
+                    info!("received SIGUSR2, entering drain mode");
+                    drain_mode = true;
+                    break;
+                }
             }
 
             // After each iteration: keep timer pushed forward while clients are active.
@@ -227,12 +237,16 @@ pub async fn run(gw: InitializedGateway, bound: BoundSocket) -> Result<()> {
                     .reset(tokio::time::Instant::now() + idle_timeout);
             }
         }
-        Ok(())
+        Ok(drain_mode)
     };
 
-    if let Err(e) = accept_result {
-        error!(error = %e, "accept loop failed");
-    }
+    let drain_mode = match accept_result {
+        Ok(drain_mode) => drain_mode,
+        Err(e) => {
+            error!(error = %e, "accept loop failed");
+            false
+        }
+    };
 
     // Graceful shutdown: stop accepting, drain clients with timeout, stop backends, clean up files.
     info!("shutting down daemon");
@@ -240,23 +254,39 @@ pub async fn run(gw: InitializedGateway, bound: BoundSocket) -> Result<()> {
     /// Ensures socket/PID/lock files are cleaned up even if stop_all() panics.
     struct CleanupGuard<'a> {
         path: &'a std::path::Path,
+        pid: i32,
+        drain_mode: bool,
     }
     impl Drop for CleanupGuard<'_> {
         fn drop(&mut self) {
-            socket::cleanup_files(self.path);
+            if self.drain_mode {
+                socket::cleanup_drain_generation_files(self.path, self.pid);
+            } else {
+                socket::cleanup_owned_generation_files(self.path, self.pid);
+            }
         }
     }
-    let _cleanup = CleanupGuard { path: &socket_path };
+    let _cleanup = CleanupGuard {
+        path: &socket_path,
+        pid: self_pid,
+        drain_mode,
+    };
 
-    let client_drain_timeout = gw.config.daemon.client_drain_timeout;
     client_tracker.close();
-    match tokio::time::timeout(client_drain_timeout, client_tracker.wait()).await {
-        Ok(()) => info!("all clients disconnected"),
-        Err(_) => {
-            warn!(
-                timeout = ?client_drain_timeout,
-                "client drain timeout reached, proceeding with shutdown"
-            );
+    if drain_mode {
+        info!("waiting indefinitely for clients to drain");
+        client_tracker.wait().await;
+        info!("all draining clients disconnected");
+    } else {
+        let client_drain_timeout = gw.config.daemon.client_drain_timeout;
+        match tokio::time::timeout(client_drain_timeout, client_tracker.wait()).await {
+            Ok(()) => info!("all clients disconnected"),
+            Err(_) => {
+                warn!(
+                    timeout = ?client_drain_timeout,
+                    "client drain timeout reached, proceeding with shutdown"
+                );
+            }
         }
     }
     shutdown_notify.notify_waiters();
