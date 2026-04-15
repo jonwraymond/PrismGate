@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.14.1](https://github.com/jonwraymond/PrismGate/compare/v1.14.0...v1.14.1) (2026-04-15)
+
+
+### Bug Fixes
+
+* rebind promoted daemon socket after legacy cleanup ([7262bf1](https://github.com/jonwraymond/PrismGate/commit/7262bf1fd144cc4c60d1309ec45df873274f469a))
+* rebind promoted daemon socket after legacy cleanup ([127b99e](https://github.com/jonwraymond/PrismGate/commit/127b99e4dd63ec3b0d12cec369e43a3158092736))
+
 ## [1.14.0](https://github.com/jonwraymond/PrismGate/compare/v1.13.0...v1.14.0) (2026-04-15)
 
 
