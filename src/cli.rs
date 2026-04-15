@@ -2,6 +2,7 @@
 
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
+use std::time::Duration;
 
 /// Standard prismgate config directory.
 /// Defaults to `~/.prismgate`. Falls back to platform config dirs if home
@@ -52,6 +53,12 @@ pub enum Command {
         /// Custom Unix socket path (default: auto-detected per platform).
         #[arg(long)]
         socket: Option<PathBuf>,
+        /// Internal: promote this staged daemon to the public socket after initialization.
+        #[arg(long, hide = true)]
+        promote_to: Option<PathBuf>,
+        /// Internal: PID of the daemon generation that should enter drain mode.
+        #[arg(long, hide = true)]
+        old_pid: Option<i32>,
     },
     /// Show the status of a running daemon.
     Status,
@@ -59,8 +66,39 @@ pub enum Command {
     Stop,
     /// Restart a running daemon (stop + let proxies auto-spawn new).
     Restart,
+    /// Hot-upgrade the daemon without breaking existing MCP client connections.
+    Upgrade {
+        /// Timeout for staging and promoting the new daemon generation.
+        #[arg(long, default_value = "60s", value_parser = parse_duration)]
+        timeout: Duration,
+    },
     /// Diagnose local proxy/daemon/runtime state without starting backends.
     Doctor,
+}
+
+fn parse_duration(value: &str) -> Result<Duration, String> {
+    let value = value.trim();
+    if let Some(seconds) = value.strip_suffix('s') {
+        seconds
+            .parse::<u64>()
+            .map(Duration::from_secs)
+            .map_err(|e| format!("invalid duration '{value}': {e}"))
+    } else if let Some(minutes) = value.strip_suffix('m') {
+        minutes
+            .parse::<u64>()
+            .map(|m| Duration::from_secs(m * 60))
+            .map_err(|e| format!("invalid duration '{value}': {e}"))
+    } else if let Some(hours) = value.strip_suffix('h') {
+        hours
+            .parse::<u64>()
+            .map(|h| Duration::from_secs(h * 3600))
+            .map_err(|e| format!("invalid duration '{value}': {e}"))
+    } else {
+        value
+            .parse::<u64>()
+            .map(Duration::from_secs)
+            .map_err(|_| format!("invalid duration '{value}': expected 30s, 5m, or 1h"))
+    }
 }
 
 #[cfg(test)]
@@ -71,5 +109,14 @@ mod tests {
     fn cli_accepts_doctor_command() {
         let cli = Cli::try_parse_from(["gatemini", "doctor"]).unwrap();
         assert!(matches!(cli.command, Some(Command::Doctor)));
+    }
+
+    #[test]
+    fn cli_accepts_upgrade_command_with_timeout() {
+        let cli = Cli::try_parse_from(["gatemini", "upgrade", "--timeout", "90s"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Some(Command::Upgrade { timeout }) if timeout == std::time::Duration::from_secs(90)
+        ));
     }
 }

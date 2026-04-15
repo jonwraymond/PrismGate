@@ -329,15 +329,39 @@ async fn main() -> Result<()> {
         // Daemon mode: gatemini serve
         // Bind socket FIRST so the proxy can connect immediately while
         // initialize() resolves secrets and loads embedding models.
-        (Some(cli::Command::Serve { socket }), _) => {
+        (
+            Some(cli::Command::Serve {
+                socket,
+                promote_to,
+                old_pid,
+            }),
+            _,
+        ) => {
             let bound = ipc::daemon::bind_early(socket.clone())?;
+            if promote_to.is_some() {
+                ipc::socket::write_generation_info(
+                    &bound.socket_path,
+                    ipc::socket::GenerationRole::Staged,
+                    std::process::id() as i32,
+                )?;
+            }
             let gw = match initialize(&cli.config).await {
                 Ok(gw) => gw,
                 Err(e) => {
                     // Clean up socket so proxies don't connect to a dead daemon
-                    ipc::socket::cleanup_files(&bound.socket_path);
+                    ipc::socket::cleanup_owned_generation_files(
+                        &bound.socket_path,
+                        std::process::id() as i32,
+                    );
                     return Err(e);
                 }
+            };
+            let bound = match (promote_to, old_pid) {
+                (Some(public_socket), Some(old_pid)) => {
+                    ipc::upgrade::promote_staged(bound, public_socket.clone(), *old_pid)?
+                }
+                (None, None) => bound,
+                _ => anyhow::bail!("--promote-to and --old-pid must be provided together"),
             };
             ipc::daemon::run(gw, bound).await
         }
@@ -350,6 +374,11 @@ async fn main() -> Result<()> {
 
         // Restart daemon (stop + proxies auto-spawn new)
         (Some(cli::Command::Restart), _) => ipc::restart::run(),
+
+        // Hot upgrade daemon generation while existing clients drain on old daemon
+        (Some(cli::Command::Upgrade { timeout }), _) => {
+            ipc::upgrade::run(&cli.config, *timeout).await
+        }
 
         // Local diagnostics without daemon/backend initialization
         (Some(cli::Command::Doctor), _) => ipc::doctor::run(),
