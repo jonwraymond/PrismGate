@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.14.3](https://github.com/jonwraymond/PrismGate/compare/v1.14.2...v1.14.3) (2026-04-15)
+
+
+### Bug Fixes
+
+* detach daemon process session when spawning ([dafff8b](https://github.com/jonwraymond/PrismGate/commit/dafff8bea027647b5284359d80e39fc67ff5d197))
+* detach daemon process session when spawning ([7fbd601](https://github.com/jonwraymond/PrismGate/commit/7fbd6014fbc12a1fb9dad75cefa608a838e17535))
+
 ## [1.14.2](https://github.com/jonwraymond/PrismGate/compare/v1.14.1...v1.14.2) (2026-04-15)
 
 
