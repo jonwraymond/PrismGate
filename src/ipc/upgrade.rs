@@ -230,6 +230,8 @@ fn spawn_daemon(
     promote_to: Option<&Path>,
     old_pid: Option<i32>,
 ) -> Result<std::process::Child> {
+    use std::os::unix::process::CommandExt;
+
     let exe = std::env::current_exe().context("could not determine current executable")?;
     let daemon_cwd = config_path
         .parent()
@@ -259,6 +261,14 @@ fn spawn_daemon(
     }
     if let Some(pid) = old_pid {
         command.arg("--old-pid").arg(pid.to_string());
+    }
+    unsafe {
+        command.pre_exec(|| {
+            if libc::setsid() == -1 {
+                return Err(std::io::Error::last_os_error());
+            }
+            Ok(())
+        });
     }
 
     command.spawn().context("failed to spawn daemon")

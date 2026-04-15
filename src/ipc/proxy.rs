@@ -865,6 +865,8 @@ async fn try_connect(socket_path: &Path) -> Result<UnixStream> {
 /// Called only after acquiring the exclusive flock and double-checking no daemon exists.
 #[cfg(unix)]
 fn spawn_daemon(config_path: &Path) -> Result<()> {
+    use std::os::unix::process::CommandExt;
+
     let exe = std::env::current_exe().context("could not determine own executable path")?;
     let config_str = config_path
         .to_str()
@@ -885,18 +887,26 @@ fn spawn_daemon(config_path: &Path) -> Result<()> {
         .map(Stdio::from)
         .unwrap_or_else(|_| Stdio::null());
 
-    // Spawn detached: stdio points away from the proxy so the daemon can
-    // outlive short-lived clients without logging to a closed pipe.
-    let _child = std::process::Command::new(exe)
+    // Spawn detached: stdio points away from the proxy and setsid separates the
+    // daemon from the spawning client's process session.
+    let mut command = std::process::Command::new(exe);
+    command
         .arg("-c")
         .arg(config_str)
         .arg("serve")
         .current_dir(&daemon_cwd)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
-        .stderr(stderr)
-        .spawn()
-        .context("failed to spawn daemon process")?;
+        .stderr(stderr);
+    unsafe {
+        command.pre_exec(|| {
+            if libc::setsid() == -1 {
+                return Err(std::io::Error::last_os_error());
+            }
+            Ok(())
+        });
+    }
+    let _child = command.spawn().context("failed to spawn daemon process")?;
 
     Ok(())
 }
