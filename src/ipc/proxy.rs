@@ -881,7 +881,12 @@ fn spawn_daemon(config_path: &Path) -> Result<()> {
         .or_else(dirs::home_dir)
         .unwrap_or_else(|| std::path::PathBuf::from("/"));
 
-    // Spawn detached: stdin/stdout null so the daemon doesn't hold our stdio.
+    let stderr = socket::open_daemon_log()
+        .map(Stdio::from)
+        .unwrap_or_else(|_| Stdio::null());
+
+    // Spawn detached: stdio points away from the proxy so the daemon can
+    // outlive short-lived clients without logging to a closed pipe.
     let _child = std::process::Command::new(exe)
         .arg("-c")
         .arg(config_str)
@@ -889,7 +894,7 @@ fn spawn_daemon(config_path: &Path) -> Result<()> {
         .current_dir(&daemon_cwd)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
-        .stderr(Stdio::inherit()) // Daemon logs to stderr via tracing
+        .stderr(stderr)
         .spawn()
         .context("failed to spawn daemon process")?;
 
