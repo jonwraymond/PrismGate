@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.14.0](https://github.com/jonwraymond/PrismGate/compare/v1.13.0...v1.14.0) (2026-04-15)
+
+
+### Features
+
+* add generational daemon hot upgrade ([887370e](https://github.com/jonwraymond/PrismGate/commit/887370ed5bb78fd49300d33ab8426a5d1b878d55))
+* add generational daemon hot upgrade ([a35112b](https://github.com/jonwraymond/PrismGate/commit/a35112b82c67bd9087843ca98d530cb44b2bc909))
+
 ## [1.13.0](https://github.com/jonwraymond/PrismGate/compare/v1.12.2...v1.13.0) (2026-04-14)
 
 
