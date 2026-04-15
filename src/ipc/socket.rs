@@ -1,11 +1,10 @@
+use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
 #[cfg(unix)]
 use nix::unistd::getuid;
 use serde::{Deserialize, Serialize};
-#[cfg(unix)]
-use std::fs;
 
 /// Resolve the default Unix socket path for this platform and user.
 ///
@@ -32,6 +31,21 @@ pub fn default_socket_path() -> PathBuf {
 /// Path to the flock lockfile (sibling of the socket).
 pub fn lock_path(socket: &Path) -> PathBuf {
     socket.with_extension("lock")
+}
+
+pub fn daemon_log_path() -> PathBuf {
+    dirs::cache_dir()
+        .unwrap_or_else(std::env::temp_dir)
+        .join("gatemini")
+        .join("daemon.log")
+}
+
+pub fn open_daemon_log() -> io::Result<fs::File> {
+    let path = daemon_log_path();
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    fs::OpenOptions::new().create(true).append(true).open(path)
 }
 
 /// Path to the PID file (sibling of the socket).
@@ -341,6 +355,16 @@ mod tests {
         let sock = PathBuf::from("/tmp/gatemini.sock");
         assert_eq!(lock_path(&sock), PathBuf::from("/tmp/gatemini.lock"));
         assert_eq!(pid_path(&sock), PathBuf::from("/tmp/gatemini.pid"));
+    }
+
+    #[test]
+    fn daemon_log_path_is_stable_cache_file() {
+        let path = daemon_log_path();
+        assert_eq!(path.file_name().unwrap(), "daemon.log");
+        assert!(
+            path.components().any(|c| c.as_os_str() == "gatemini"),
+            "daemon log should live under a gatemini cache directory"
+        );
     }
 
     #[test]

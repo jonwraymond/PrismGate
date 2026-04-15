@@ -239,6 +239,9 @@ fn spawn_daemon(
         .unwrap_or_else(|| PathBuf::from("/"));
 
     let mut command = std::process::Command::new(exe);
+    let stderr = socket::open_daemon_log()
+        .map(Stdio::from)
+        .unwrap_or_else(|_| Stdio::null());
     command
         .arg("-c")
         .arg(config_path)
@@ -246,7 +249,7 @@ fn spawn_daemon(
         .current_dir(daemon_cwd)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
-        .stderr(Stdio::inherit());
+        .stderr(stderr);
 
     if let Some(socket) = staged_socket {
         command.arg("--socket").arg(socket);
