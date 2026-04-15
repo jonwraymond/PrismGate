@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.14.2](https://github.com/jonwraymond/PrismGate/compare/v1.14.1...v1.14.2) (2026-04-15)
+
+
+### Bug Fixes
+
+* detach daemon stderr from spawning clients ([f91b491](https://github.com/jonwraymond/PrismGate/commit/f91b49175e7cc250acd7eb74ed0093d3ee3f7ca5))
+* detach daemon stderr from spawning clients ([00e8f52](https://github.com/jonwraymond/PrismGate/commit/00e8f52a9b8ab72f7ec1459be517d3af18ebe12f))
+
 ## [1.14.1](https://github.com/jonwraymond/PrismGate/compare/v1.14.0...v1.14.1) (2026-04-15)
 
 
