@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 
@@ -79,6 +79,37 @@ pub fn bind_early(custom_socket: Option<PathBuf>) -> Result<BoundSocket> {
     })
 }
 
+#[cfg(unix)]
+fn repair_public_socket_if_missing(
+    listener: &mut UnixListener,
+    socket_path: &Path,
+    self_pid: i32,
+) -> Result<()> {
+    if socket_path.exists() {
+        if socket::read_pid(socket_path).is_none() {
+            std::fs::write(socket::pid_path(socket_path), self_pid.to_string())?;
+            socket::write_generation_info(socket_path, socket::GenerationRole::Active, self_pid)?;
+            warn!(
+                socket = %socket_path.display(),
+                pid = self_pid,
+                "repaired missing daemon PID metadata"
+            );
+        }
+        return Ok(());
+    }
+
+    let replacement = UnixListener::bind(socket_path)?;
+    std::fs::write(socket::pid_path(socket_path), self_pid.to_string())?;
+    socket::write_generation_info(socket_path, socket::GenerationRole::Active, self_pid)?;
+    *listener = replacement;
+    warn!(
+        socket = %socket_path.display(),
+        pid = self_pid,
+        "re-bound missing public daemon socket"
+    );
+    Ok(())
+}
+
 /// Non-Unix platforms do not support the daemon socket architecture.
 #[cfg(not(unix))]
 pub fn bind_early(custom_socket: Option<PathBuf>) -> Result<BoundSocket> {
@@ -94,7 +125,7 @@ pub fn bind_early(custom_socket: Option<PathBuf>) -> Result<BoundSocket> {
 #[cfg(unix)]
 pub async fn run(gw: InitializedGateway, bound: BoundSocket) -> Result<()> {
     let BoundSocket {
-        listener,
+        mut listener,
         socket_path,
     } = bound;
 
@@ -141,6 +172,8 @@ pub async fn run(gw: InitializedGateway, bound: BoundSocket) -> Result<()> {
         let mut sigusr2 =
             tokio::signal::unix::signal(tokio::signal::unix::SignalKind::user_defined2())?;
         let mut drain_mode = false;
+        let mut socket_repair = tokio::time::interval(tokio::time::Duration::from_secs(1));
+        socket_repair.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
 
         // Idle timer — reset whenever session count changes.
         let idle_deadline = tokio::time::Instant::now() + idle_timeout;
@@ -148,6 +181,7 @@ pub async fn run(gw: InitializedGateway, bound: BoundSocket) -> Result<()> {
         tokio::pin!(idle_sleep);
 
         loop {
+            let mut repair_requested = false;
             tokio::select! {
                 accept = listener.accept() => {
                     match accept {
@@ -207,6 +241,9 @@ pub async fn run(gw: InitializedGateway, bound: BoundSocket) -> Result<()> {
                         idle_sleep.as_mut().reset(tokio::time::Instant::now() + idle_timeout);
                     }
                 }
+                _ = socket_repair.tick() => {
+                    repair_requested = true;
+                }
                 () = &mut idle_sleep, if idle_enabled
                                        && active_sessions.load(Ordering::SeqCst) == 0 => {
                     info!(
@@ -228,6 +265,17 @@ pub async fn run(gw: InitializedGateway, bound: BoundSocket) -> Result<()> {
                     drain_mode = true;
                     break;
                 }
+            }
+
+            if repair_requested
+                && let Err(e) =
+                    repair_public_socket_if_missing(&mut listener, &socket_path, self_pid)
+            {
+                warn!(
+                    error = %e,
+                    socket = %socket_path.display(),
+                    "failed to repair public daemon socket"
+                );
             }
 
             // After each iteration: keep timer pushed forward while clients are active.
