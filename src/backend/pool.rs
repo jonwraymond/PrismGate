@@ -355,7 +355,7 @@ impl InstancePool {
 
         let stopped_count = idle.len() + assigned.len();
 
-        for instance in idle.into_iter().chain(assigned.into_iter()) {
+        for instance in idle.into_iter().chain(assigned) {
             if let Err(e) = instance.stop().await {
                 warn!(
                     backend = %self.backend_name,
