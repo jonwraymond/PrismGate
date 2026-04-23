@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.14.4](https://github.com/jonwraymond/PrismGate/compare/v1.14.3...v1.14.4) (2026-04-23)
+
+
+### Bug Fixes
+
+* reap nonresponsive idle proxy clients ([eebc280](https://github.com/jonwraymond/PrismGate/commit/eebc280d6621202f2e8afb47c677cd6dc11bf369))
+* reap nonresponsive idle proxy clients ([c7a3016](https://github.com/jonwraymond/PrismGate/commit/c7a3016ba8ed63c64f921846817d6bb468340be0))
+* update rustls webpki advisory dependency ([0b6b899](https://github.com/jonwraymond/PrismGate/commit/0b6b89901d7a8d0a3492eed5a29ceb629ae1e9fe))
+
 ## [1.14.3](https://github.com/jonwraymond/PrismGate/compare/v1.14.2...v1.14.3) (2026-04-15)
 
 
