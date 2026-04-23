@@ -220,6 +220,32 @@ mod tests {
         })
     }
 
+    fn spawn_fake_daemon_that_holds_next_request(
+        socket_path: PathBuf,
+        ready: tokio::sync::oneshot::Sender<()>,
+        request_seen: tokio::sync::oneshot::Sender<()>,
+    ) -> tokio::task::JoinHandle<()> {
+        tokio::spawn(async move {
+            let _ = std::fs::remove_file(&socket_path);
+            let listener = UnixListener::bind(&socket_path).expect("bind holding fake daemon");
+            let _ = ready.send(());
+            let (mut stream, _) = listener
+                .accept()
+                .await
+                .expect("accept holding fake daemon client");
+            fake_daemon_handshake(&mut stream, "fake-daemon-hold").await;
+            let request = crate::ipc::mcp_framing::read_line(&mut stream)
+                .await
+                .expect("holding fake daemon failed reading request");
+            assert!(
+                String::from_utf8_lossy(&request).contains("\"id\":"),
+                "holding fake daemon expected an in-flight request"
+            );
+            let _ = request_seen.send(());
+            tokio::time::sleep(Duration::from_secs(60)).await;
+        })
+    }
+
     /// Connect an rmcp client through the proxy path (using run_on_socket).
     /// Returns (proxy_task, client_write_half, client_read_half).
     ///
@@ -241,6 +267,31 @@ mod tests {
         let sock = socket_path.to_path_buf();
         let handle = tokio::spawn(async move {
             crate::ipc::proxy::run_on_socket(proxy_stdin, proxy_stdout, &sock).await
+        });
+
+        (handle, client_write, client_read)
+    }
+
+    fn start_proxy_with_liveness(
+        socket_path: &Path,
+        liveness: crate::ipc::proxy::ProxyLiveness,
+    ) -> (
+        tokio::task::JoinHandle<anyhow::Result<()>>,
+        DuplexStream,
+        DuplexStream,
+    ) {
+        let (client_write, proxy_stdin) = tokio::io::duplex(65536);
+        let (proxy_stdout, client_read) = tokio::io::duplex(65536);
+
+        let sock = socket_path.to_path_buf();
+        let handle = tokio::spawn(async move {
+            crate::ipc::proxy::run_on_socket_with_liveness(
+                proxy_stdin,
+                proxy_stdout,
+                &sock,
+                liveness,
+            )
+            .await
         });
 
         (handle, client_write, client_read)
@@ -604,6 +655,134 @@ mod tests {
             result.unwrap().unwrap().is_ok(),
             "proxy close during reconnect should be clean"
         );
+    }
+
+    /// MCP clients can leave stdin open after a conversation ends while the
+    /// parent process stays alive. Once the proxy has no in-flight work, it
+    /// should probe the client and exit if the client does not answer.
+    #[tokio::test]
+    async fn test_quiescent_proxy_exits_when_client_ignores_ping() {
+        let (socket_path, daemon_handle, _mock, _tmp) = spawn_test_daemon(Duration::ZERO).await;
+        let liveness = crate::ipc::proxy::ProxyLiveness {
+            idle_probe_after: Duration::from_millis(25),
+            ping_timeout: Duration::from_millis(25),
+        };
+        let (proxy_handle, mut client_write, mut client_read) =
+            start_proxy_with_liveness(&socket_path, liveness);
+        raw_handshake(&mut client_write, &mut client_read).await;
+
+        let result = tokio::time::timeout(Duration::from_secs(1), proxy_handle).await;
+        assert!(
+            result.is_ok(),
+            "quiescent proxy should exit when the client ignores a liveness ping"
+        );
+        assert!(
+            result.unwrap().unwrap().is_ok(),
+            "liveness probe exit should be clean"
+        );
+
+        daemon_handle.abort();
+        let _ = daemon_handle.await;
+    }
+
+    /// A quiet connection is not necessarily stale. Responsive MCP clients must
+    /// stay connected after answering the proxy's liveness ping.
+    #[tokio::test]
+    async fn test_quiescent_proxy_stays_connected_when_client_answers_ping() {
+        let (socket_path, daemon_handle, _mock, _tmp) = spawn_test_daemon(Duration::ZERO).await;
+        let liveness = crate::ipc::proxy::ProxyLiveness {
+            idle_probe_after: Duration::from_millis(25),
+            ping_timeout: Duration::from_millis(100),
+        };
+        let (proxy_handle, mut client_write, mut client_read) =
+            start_proxy_with_liveness(&socket_path, liveness);
+        raw_handshake(&mut client_write, &mut client_read).await;
+
+        let ping = read_proxy_line(&mut client_read, "proxy liveness ping").await;
+        assert_eq!(ping["method"], serde_json::json!("ping"));
+        let ping_id = ping["id"].clone();
+        let pong = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": ping_id,
+            "result": {}
+        });
+        client_write
+            .write_all(format!("{pong}\n").as_bytes())
+            .await
+            .unwrap();
+
+        let list_req = r#"{"jsonrpc":"2.0","id":31,"method":"tools/list","params":{}}"#;
+        client_write
+            .write_all(format!("{}\n", list_req).as_bytes())
+            .await
+            .unwrap();
+        let list_response =
+            read_proxy_line(&mut client_read, "tools/list after liveness pong").await;
+        assert_eq!(list_response["id"], serde_json::json!(31));
+        assert!(
+            list_response["result"]["tools"].is_array(),
+            "responsive idle client should remain usable: {list_response}"
+        );
+        assert!(
+            !proxy_handle.is_finished(),
+            "proxy should remain alive for a responsive idle client"
+        );
+
+        drop(client_write);
+        drop(client_read);
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        daemon_handle.abort();
+        let _ = daemon_handle.await;
+        let _ = proxy_handle.await;
+    }
+
+    /// A long-running tool call can have no byte traffic for longer than the
+    /// idle probe interval. The proxy must preserve that stateful session while
+    /// a client request is still in flight.
+    #[tokio::test]
+    async fn test_idle_probe_does_not_reap_inflight_request() {
+        let tmp_dir = tempfile::tempdir().unwrap();
+        let socket_path = tmp_dir.path().join("test.sock");
+        let (ready_tx, ready_rx) = tokio::sync::oneshot::channel();
+        let (request_seen_tx, request_seen_rx) = tokio::sync::oneshot::channel();
+        let daemon_handle = spawn_fake_daemon_that_holds_next_request(
+            socket_path.clone(),
+            ready_tx,
+            request_seen_tx,
+        );
+        ready_rx
+            .await
+            .expect("holding fake daemon should bind socket");
+
+        let liveness = crate::ipc::proxy::ProxyLiveness {
+            idle_probe_after: Duration::from_millis(25),
+            ping_timeout: Duration::from_millis(25),
+        };
+        let (proxy_handle, mut client_write, mut client_read) =
+            start_proxy_with_liveness(&socket_path, liveness);
+        raw_handshake(&mut client_write, &mut client_read).await;
+
+        let req = r#"{"jsonrpc":"2.0","id":41,"method":"tools/call","params":{"name":"slow","arguments":{}}}"#;
+        client_write
+            .write_all(format!("{}\n", req).as_bytes())
+            .await
+            .unwrap();
+        request_seen_rx
+            .await
+            .expect("holding fake daemon should see in-flight request");
+
+        tokio::time::sleep(Duration::from_millis(150)).await;
+        assert!(
+            !proxy_handle.is_finished(),
+            "proxy should not reap an idle connection with an in-flight client request"
+        );
+
+        drop(client_write);
+        drop(client_read);
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        daemon_handle.abort();
+        let _ = daemon_handle.await;
+        let _ = proxy_handle.await;
     }
 
     // ── Test: stdin close exits proxy cleanly ──────────────────────────────

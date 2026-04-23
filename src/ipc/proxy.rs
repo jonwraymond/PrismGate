@@ -23,6 +23,29 @@ const RECONNECT_TIMEOUT: Duration = Duration::from_secs(60);
 /// How often to check if the parent process is still alive.
 const ORPHAN_CHECK_INTERVAL: Duration = Duration::from_secs(5);
 
+/// How long a fully quiescent proxy waits before proving the client is still responsive.
+const DEFAULT_IDLE_PROBE_AFTER: Duration = Duration::from_secs(300);
+
+/// How long the proxy waits for a response to its client liveness ping.
+const DEFAULT_PING_TIMEOUT: Duration = Duration::from_secs(15);
+
+#[cfg(unix)]
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct ProxyLiveness {
+    pub(crate) idle_probe_after: Duration,
+    pub(crate) ping_timeout: Duration,
+}
+
+#[cfg(unix)]
+impl Default for ProxyLiveness {
+    fn default() -> Self {
+        Self {
+            idle_probe_after: DEFAULT_IDLE_PROBE_AFTER,
+            ping_timeout: DEFAULT_PING_TIMEOUT,
+        }
+    }
+}
+
 // ── Handshake cache ────────────────────────────────────────────────────────
 
 /// Cached MCP handshake messages for session replay on reconnect.
@@ -44,6 +67,8 @@ enum BridgeOutcome {
     DaemonDisconnected,
     /// Parent process died (orphaned proxy) — exit immediately
     ParentDied,
+    /// The client kept stdio open but did not answer a protocol liveness ping.
+    ClientUnresponsive,
 }
 
 /// Tracks JSON-RPC request/response IDs across daemon reconnects.
@@ -151,6 +176,10 @@ impl JsonRpcTracker {
             .context("failed to flush retryable request errors to client stdout")?;
         Ok(())
     }
+
+    fn has_in_flight(&self) -> bool {
+        !self.client_pending.is_empty() || !self.server_pending.is_empty()
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -192,6 +221,64 @@ fn request_id_key(id: &Value) -> Option<String> {
         Value::Null => Some("null".to_string()),
         _ => None,
     }
+}
+
+fn proxy_ping_id(sequence: u64) -> String {
+    format!("__gatemini_proxy_ping:{}:{sequence}", std::process::id())
+}
+
+fn is_response_to_id(line: &[u8], expected_id: &str) -> bool {
+    let Some(obj) = parse_json_object(line) else {
+        return false;
+    };
+    if !obj.contains_key("result") && !obj.contains_key("error") {
+        return false;
+    }
+    matches!(obj.get("id"), Some(Value::String(id)) if id == expected_id)
+}
+
+fn consume_proxy_ping_response(
+    line: &[u8],
+    pending_proxy_ping: &mut Option<String>,
+    ignored_proxy_ping_ids: &mut HashSet<String>,
+) -> bool {
+    if let Some(id) = pending_proxy_ping.as_deref()
+        && is_response_to_id(line, id)
+    {
+        pending_proxy_ping.take();
+        return true;
+    }
+
+    if let Some(obj) = parse_json_object(line)
+        && (obj.contains_key("result") || obj.contains_key("error"))
+        && let Some(Value::String(id)) = obj.get("id")
+        && ignored_proxy_ping_ids.remove(id)
+    {
+        return true;
+    }
+
+    false
+}
+
+async fn send_proxy_ping<W>(stdout: &mut W, id: &str) -> Result<()>
+where
+    W: AsyncWrite + Unpin,
+{
+    let request = serde_json::json!({
+        "jsonrpc": "2.0",
+        "id": id,
+        "method": "ping"
+    });
+    let mut bytes = serde_json::to_vec(&request).context("failed to serialize proxy ping")?;
+    bytes.push(b'\n');
+    stdout
+        .write_all(&bytes)
+        .await
+        .context("failed to write proxy ping to client stdout")?;
+    stdout
+        .flush()
+        .await
+        .context("failed to flush proxy ping to client stdout")
 }
 
 // ── Public entry point ─────────────────────────────────────────────────────
@@ -244,9 +331,23 @@ where
     R: AsyncRead + Unpin,
     W: AsyncWrite + Unpin,
 {
+    run_on_socket_with_liveness(stdin, stdout, socket_path, ProxyLiveness::default()).await
+}
+
+#[cfg(all(test, unix))]
+pub(crate) async fn run_on_socket_with_liveness<R, W>(
+    stdin: R,
+    stdout: W,
+    socket_path: &Path,
+    liveness: ProxyLiveness,
+) -> Result<()>
+where
+    R: AsyncRead + Unpin,
+    W: AsyncWrite + Unpin,
+{
     let stream = try_connect(socket_path).await?;
     let (stream, cache, stdin, stdout) = handshake_phase(stream, stdin, stdout).await?;
-    bridge_loop_connect_only(stream, &cache, socket_path, stdin, stdout).await
+    bridge_loop_connect_only(stream, &cache, socket_path, stdin, stdout, liveness).await
 }
 
 /// Bridge loop variant that reconnects by connecting only (no daemon spawning).
@@ -258,6 +359,7 @@ async fn bridge_loop_connect_only<R, W>(
     socket_path: &Path,
     mut stdin: R,
     mut stdout: W,
+    liveness: ProxyLiveness,
 ) -> Result<()>
 where
     R: AsyncRead + Unpin,
@@ -276,11 +378,14 @@ where
             &mut stdout,
             &mut tracker,
             original_ppid,
+            liveness,
         )
         .await
         {
-            BridgeOutcome::StdinClosed | BridgeOutcome::ParentDied => {
-                debug!("proxy exiting (stdin closed or parent died)");
+            BridgeOutcome::StdinClosed
+            | BridgeOutcome::ParentDied
+            | BridgeOutcome::ClientUnresponsive => {
+                debug!("proxy exiting (stdin closed, parent died, or client unresponsive)");
                 return Ok(());
             }
             BridgeOutcome::DaemonDisconnected => {
@@ -452,11 +557,14 @@ where
             &mut stdout,
             &mut tracker,
             original_ppid,
+            ProxyLiveness::default(),
         )
         .await
         {
-            BridgeOutcome::StdinClosed | BridgeOutcome::ParentDied => {
-                debug!("proxy exiting (stdin closed or parent died)");
+            BridgeOutcome::StdinClosed
+            | BridgeOutcome::ParentDied
+            | BridgeOutcome::ClientUnresponsive => {
+                debug!("proxy exiting (stdin closed, parent died, or client unresponsive)");
                 return Ok(());
             }
             BridgeOutcome::DaemonDisconnected => {
@@ -535,6 +643,7 @@ async fn bridge_phase<R, W>(
     stdout: &mut W,
     tracker: &mut JsonRpcTracker,
     original_ppid: u32,
+    liveness: ProxyLiveness,
 ) -> BridgeOutcome
 where
     R: AsyncRead + Unpin,
@@ -546,6 +655,13 @@ where
     // process has exited or crashed and this proxy is orphaned.
     let mut orphan_check = tokio::time::interval(ORPHAN_CHECK_INTERVAL);
     orphan_check.tick().await; // consume immediate first tick
+    let idle_sleep = tokio::time::sleep(liveness.idle_probe_after);
+    tokio::pin!(idle_sleep);
+    let ping_timeout_sleep = tokio::time::sleep(liveness.ping_timeout);
+    tokio::pin!(ping_timeout_sleep);
+    let mut proxy_ping_sequence = 0u64;
+    let mut pending_proxy_ping: Option<String> = None;
+    let mut ignored_proxy_ping_ids: HashSet<String> = HashSet::new();
 
     loop {
         tokio::select! {
@@ -564,6 +680,9 @@ where
                         if stdout.flush().await.is_err() {
                             return BridgeOutcome::StdinClosed;
                         }
+                        idle_sleep
+                            .as_mut()
+                            .reset(tokio::time::Instant::now() + liveness.idle_probe_after);
                     }
                     Err(_) => return BridgeOutcome::DaemonDisconnected,
                 }
@@ -573,6 +692,24 @@ where
                 match result {
                     Ok(line) if line.is_empty() => return BridgeOutcome::StdinClosed,
                     Ok(line) => {
+                        if consume_proxy_ping_response(
+                            &line,
+                            &mut pending_proxy_ping,
+                            &mut ignored_proxy_ping_ids,
+                        ) {
+                            idle_sleep
+                                .as_mut()
+                                .reset(tokio::time::Instant::now() + liveness.idle_probe_after);
+                            continue;
+                        }
+
+                        if let Some(id) = pending_proxy_ping.take() {
+                            ignored_proxy_ping_ids.insert(id);
+                        }
+                        idle_sleep
+                            .as_mut()
+                            .reset(tokio::time::Instant::now() + liveness.idle_probe_after);
+
                         if tracker.observe_client_message(&line) == ClientMessageAction::Drop {
                             continue;
                         }
@@ -594,6 +731,52 @@ where
                     );
                     return BridgeOutcome::ParentDied;
                 }
+            }
+
+            () = &mut idle_sleep, if !liveness.idle_probe_after.is_zero()
+                                   && pending_proxy_ping.is_none() => {
+                if tracker.has_in_flight() {
+                    idle_sleep
+                        .as_mut()
+                        .reset(tokio::time::Instant::now() + liveness.idle_probe_after);
+                    continue;
+                }
+
+                proxy_ping_sequence = proxy_ping_sequence.saturating_add(1);
+                let id = proxy_ping_id(proxy_ping_sequence);
+                match tokio::time::timeout(
+                    liveness.ping_timeout,
+                    send_proxy_ping(stdout, &id),
+                )
+                .await
+                {
+                    Ok(Ok(())) => {
+                        debug!(%id, "sent proxy liveness ping to idle client");
+                        pending_proxy_ping = Some(id);
+                        ping_timeout_sleep
+                            .as_mut()
+                            .reset(tokio::time::Instant::now() + liveness.ping_timeout);
+                    }
+                    Ok(Err(e)) => {
+                        warn!(error = %e, "client stdout closed while sending proxy liveness ping");
+                        return BridgeOutcome::StdinClosed;
+                    }
+                    Err(_) => {
+                        warn!(
+                            timeout = ?liveness.ping_timeout,
+                            "timed out writing proxy liveness ping to client"
+                        );
+                        return BridgeOutcome::ClientUnresponsive;
+                    }
+                }
+            }
+
+            () = &mut ping_timeout_sleep, if pending_proxy_ping.is_some() => {
+                warn!(
+                    timeout = ?liveness.ping_timeout,
+                    "idle MCP client did not answer proxy liveness ping"
+                );
+                return BridgeOutcome::ClientUnresponsive;
             }
         }
     }
