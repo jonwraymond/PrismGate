@@ -101,9 +101,9 @@ impl StreamableHttpClient for LenientClient {
                     )
                 })?
                 .to_string();
-            return Err(StreamableHttpError::AuthRequired(AuthRequiredError {
-                www_authenticate_header: header,
-            }));
+            return Err(StreamableHttpError::AuthRequired(AuthRequiredError::new(
+                header,
+            )));
         }
 
         // 202 Accepted / 204 No Content → Accepted
