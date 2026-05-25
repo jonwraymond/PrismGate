@@ -119,6 +119,7 @@ pub struct GateminiServer {
     pub session_id: Option<u64>,
     /// Output processing configuration (auto-chunking, smart truncation).
     pub output_config: crate::config::OutputConfig,
+    #[allow(dead_code)]
     tool_router: ToolRouter<Self>,
 }
 
