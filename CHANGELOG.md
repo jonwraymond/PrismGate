@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.15.0](https://github.com/jonwraymond/PrismGate/compare/v1.14.4...v1.15.0) (2026-05-25)
+
+
+### Features
+
+* add branding assets (logo SVG, favicon, OG images) ([#116](https://github.com/jonwraymond/PrismGate/issues/116)) ([eee2523](https://github.com/jonwraymond/PrismGate/commit/eee2523df578bdcdec59e28ccc9e85053ac9349d))
+* **register:** improve error messages with actionable guidance ([#120](https://github.com/jonwraymond/PrismGate/issues/120)) ([a19afea](https://github.com/jonwraymond/PrismGate/commit/a19afea4660a621445a7f8e0911f34a9a8999b99))
+
+
+### Bug Fixes
+
+* bump rmcp 1.2→1.7, use AuthRequiredError::new() to fix cargo install ([#122](https://github.com/jonwraymond/PrismGate/issues/122)) ([b640355](https://github.com/jonwraymond/PrismGate/commit/b6403553b367ebdfbfb45f5206ab4889487c8c65))
+
 ## [1.14.4](https://github.com/jonwraymond/PrismGate/compare/v1.14.3...v1.14.4) (2026-04-23)
 
 
