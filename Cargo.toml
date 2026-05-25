@@ -97,6 +97,7 @@ nix = { version = "0.31", features = ["signal", "user", "fs"] }
 tempfile = "3"
 clap_mangen = "0.1"
 criterion = "0.5"
+schemars = "1"
 
 [[bench]]
 name = "registry_search"
