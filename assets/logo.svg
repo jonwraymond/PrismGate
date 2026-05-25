@@ -1,0 +1,116 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <defs>
+    <!-- Beam gradient: white fading toward prism -->
+    <linearGradient id="beamGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="1"/>
+      <stop offset="85%" stop-color="#FFFFFF" stop-opacity="0.7"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0.3"/>
+    </linearGradient>
+
+    <!-- Prism fill: violet translucent -->
+    <linearGradient id="prismGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#6B21A8" stop-opacity="0.35"/>
+      <stop offset="50%" stop-color="#6B21A8" stop-opacity="0.20"/>
+      <stop offset="100%" stop-color="#6B21A8" stop-opacity="0.10"/>
+    </linearGradient>
+
+    <!-- Prism stroke glow -->
+    <filter id="prismGlow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="2"/>
+    </filter>
+
+    <!-- Ray glow filters -->
+    <filter id="glowCyan" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="4" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="glowEmerald" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="4" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="glowAmber" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="4" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="glowRose" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="4" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+
+    <!-- Subtle sparkle/particle -->
+    <radialGradient id="sparkleGrad">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.8"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
+    </radialGradient>
+
+    <!-- Background subtle inner shadow -->
+    <filter id="bgInnerShadow">
+      <feComponentTransfer in="SourceAlpha">
+        <feFuncA type="table" tableValues="1 0"/>
+      </feComponentTransfer>
+      <feGaussianBlur stdDeviation="8"/>
+      <feOffset dx="0" dy="0" result="offsetblur"/>
+      <feFlood flood-color="#000000" flood-opacity="0.3" result="color"/>
+      <feComposite in2="offsetblur" operator="in"/>
+      <feComposite in2="SourceAlpha" operator="in"/>
+      <feMerge>
+        <feMergeNode in="SourceGraphic"/>
+        <feMergeNode/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Background rounded square -->
+  <rect width="512" height="512" rx="36" fill="#1E293B"/>
+
+  <!-- Subtle inner border -->
+  <rect x="2" y="2" width="508" height="508" rx="34" stroke="#334155" stroke-width="1.5" fill="none"/>
+
+  <!-- Incoming light beam - enters from left, narrows toward prism face -->
+  <polygon points="0,240 0,272 190,200 190,312" fill="url(#beamGrad)"/>
+
+  <!-- Prism - right-pointing isosceles triangle -->
+  <!-- Internal highlight line (glass edge detail) -->
+  <line x1="190" y1="256" x2="310" y2="256" stroke="#6B21A8" stroke-opacity="0.2" stroke-width="1"/>
+
+  <!-- Prism body -->
+  <polygon points="190,155 330,256 190,357" fill="url(#prismGrad)" stroke="#6B21A8" stroke-width="3" stroke-linejoin="round"/>
+
+  <!-- Prism inner highlight (top facet reflection) -->
+  <polygon points="190,155 330,256 190,256" fill="#A78BFA" fill-opacity="0.08"/>
+
+  <!-- Internal refraction paths (subtle, showing light bending inside prism) -->
+  <line x1="190" y1="240" x2="270" y2="232" stroke="#FFFFFF" stroke-opacity="0.15" stroke-width="1.5"/>
+  <line x1="190" y1="272" x2="270" y2="280" stroke="#FFFFFF" stroke-opacity="0.15" stroke-width="1.5"/>
+
+  <!-- Exit point glow on prism right face -->
+  <ellipse cx="270" cy="256" rx="4" ry="28" fill="#FFFFFF" fill-opacity="0.12"/>
+
+  <!-- Cyan ray - Tool discovery - top, bends most upward -->
+  <line x1="270" y1="232" x2="490" y2="110" stroke="#06B6D4" stroke-width="10" stroke-linecap="round" filter="url(#glowCyan)"/>
+  <line x1="270" y1="232" x2="490" y2="110" stroke="#06B6D4" stroke-width="4" stroke-linecap="round" stroke-opacity="0.6"/>
+
+  <!-- Emerald ray - Session isolation -->
+  <line x1="270" y1="248" x2="490" y2="180" stroke="#10B981" stroke-width="10" stroke-linecap="round" filter="url(#glowEmerald)"/>
+  <line x1="270" y1="248" x2="490" y2="180" stroke="#10B981" stroke-width="4" stroke-linecap="round" stroke-opacity="0.6"/>
+
+  <!-- Amber ray - Secrets management -->
+  <line x1="270" y1="264" x2="490" y2="256" stroke="#F59E0B" stroke-width="10" stroke-linecap="round" filter="url(#glowAmber)"/>
+  <line x1="270" y1="264" x2="490" y2="256" stroke="#F59E0B" stroke-width="4" stroke-linecap="round" stroke-opacity="0.6"/>
+
+  <!-- Rose ray - Health monitoring, bends least -->
+  <line x1="270" y1="280" x2="490" y2="340" stroke="#F43F5E" stroke-width="10" stroke-linecap="round" filter="url(#glowRose)"/>
+  <line x1="270" y1="280" x2="490" y2="340" stroke="#F43F5E" stroke-width="4" stroke-linecap="round" stroke-opacity="0.6"/>
+
+  <!-- Sparkle particles at ray tips -->
+  <circle cx="492" cy="108" r="3" fill="#06B6D4" fill-opacity="0.7"/>
+  <circle cx="492" cy="178" r="2.5" fill="#10B981" fill-opacity="0.7"/>
+  <circle cx="492" cy="254" r="2" fill="#F59E0B" fill-opacity="0.7"/>
+  <circle cx="492" cy="342" r="3" fill="#F43F5E" fill-opacity="0.7"/>
+
+  <!-- Small sparkle dots along rays -->
+  <circle cx="380" cy="170" r="1.5" fill="#06B6D4" fill-opacity="0.5"/>
+  <circle cx="420" cy="200" r="1.5" fill="#10B981" fill-opacity="0.5"/>
+  <circle cx="400" cy="260" r="1.5" fill="#F59E0B" fill-opacity="0.5"/>
+  <circle cx="410" cy="310" r="1.5" fill="#F43F5E" fill-opacity="0.5"/>
+</svg>
