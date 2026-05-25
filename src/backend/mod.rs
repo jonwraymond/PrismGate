@@ -354,8 +354,7 @@ impl BackendManager {
         }
 
         let is_stdio = config.transport == Transport::Stdio;
-        let is_dedicated = config.instance_mode == InstanceMode::Dedicated
-            && config.transport != Transport::StreamableHttp;
+        let is_dedicated = config.instance_mode == InstanceMode::Dedicated;
 
         let backend: Arc<dyn Backend> = match config.transport {
             Transport::Stdio => {

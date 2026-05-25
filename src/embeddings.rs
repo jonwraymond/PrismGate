@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::sync::RwLock;
+use std::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 use model2vec_rs::model::StaticModel;
 use tracing::{debug, info};
@@ -43,6 +43,14 @@ impl EmbeddingIndex {
         })
     }
 
+    fn read_store(&self) -> RwLockReadGuard<HashMap<String, ToolEmbedding>> {
+        self.embeddings.read().expect("embedding lock poisoned")
+    }
+
+    fn write_store(&self) -> RwLockWriteGuard<HashMap<String, ToolEmbedding>> {
+        self.embeddings.write().expect("embedding lock poisoned")
+    }
+
     /// Embed text and L2-normalize the result.
     ///
     /// Normalizing means dot product equals cosine similarity,
@@ -74,7 +82,7 @@ impl EmbeddingIndex {
             l2_normalize(vec);
         }
 
-        let mut store = self.embeddings.write().expect("embedding lock poisoned");
+        let mut store = self.write_store();
         for (tool, vec) in tools.iter().zip(vectors) {
             store.insert(tool.name.clone(), ToolEmbedding { vector: vec });
         }
@@ -84,7 +92,7 @@ impl EmbeddingIndex {
 
     /// Remove embeddings for tools belonging to a deregistered backend.
     pub fn remove_tools(&self, tool_names: &[String]) {
-        let mut store = self.embeddings.write().expect("embedding lock poisoned");
+        let mut store = self.write_store();
         for name in tool_names {
             store.remove(name);
         }
@@ -97,7 +105,7 @@ impl EmbeddingIndex {
     pub fn search(&self, query: &str, limit: usize) -> Vec<(String, f32)> {
         let query_vec = self.embed_text(query);
 
-        let store = self.embeddings.read().expect("embedding lock poisoned");
+        let store = self.read_store();
         let mut scored: Vec<(String, f32)> = store
             .iter()
             .map(|(name, emb)| {
@@ -114,7 +122,7 @@ impl EmbeddingIndex {
 
     /// Export all embeddings for cache persistence.
     pub fn snapshot(&self) -> HashMap<String, Vec<f32>> {
-        let store = self.embeddings.read().expect("embedding lock poisoned");
+        let store = self.read_store();
         store
             .iter()
             .map(|(name, emb)| (name.clone(), emb.vector.clone()))
