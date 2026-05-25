@@ -13,8 +13,17 @@ static BACKEND_NAME_RE: LazyLock<regex::Regex> =
 
 /// Validate a backend name against the safe character set.
 fn validate_backend_name(name: &str) -> Result<()> {
+    if name.is_empty() {
+        anyhow::bail!(
+            "backend name cannot be empty. Provide a name like 'my-backend' or 'my_backend_v2'."
+        );
+    }
     if !BACKEND_NAME_RE.is_match(name) {
-        anyhow::bail!("invalid backend name '{name}': must match [a-zA-Z0-9][a-zA-Z0-9_-]{{0,63}}");
+        anyhow::bail!(
+            "invalid backend name '{name}': must start with a letter or digit, \
+             contain only [a-zA-Z0-9_-], and be 1–64 characters. \
+             Valid examples: 'my-backend', 'search_v2', 'tools123'."
+        );
     }
     Ok(())
 }
@@ -38,7 +47,12 @@ pub async fn handle_register(
     let name = obj
         .get("name")
         .and_then(|v| v.as_str())
-        .ok_or_else(|| anyhow::anyhow!("missing 'name' in call template"))?
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "missing 'name' in call template. Provide a backend name like 'my-backend' \
+             (alphanumeric with hyphens/underscores, max 64 chars)."
+            )
+        })?
         .to_string();
 
     validate_backend_name(&name)?;
@@ -187,10 +201,14 @@ pub async fn handle_deregister(
         if configured.contains(&name.to_string()) {
             anyhow::bail!(
                 "backend '{name}' is a static (config-file) backend and cannot be deregistered. \
-                 Only dynamically registered backends can be removed at runtime."
+                 Only dynamically registered backends (via register_manual) can be removed at runtime. \
+                 To remove it, edit your gatemini.yaml config file and restart."
             );
         } else {
-            anyhow::bail!("backend '{name}' not found.");
+            anyhow::bail!(
+                "backend '{name}' not found. It may have already been removed or never existed. \
+                 List all backends with '@gatemini://backends'."
+            );
         }
     }
 
