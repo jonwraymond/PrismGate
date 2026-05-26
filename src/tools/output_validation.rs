@@ -134,9 +134,11 @@ fn validate_json_recursive(
                 .collect();
             serde_json::Value::Object(new_map)
         }
-        serde_json::Value::Array(arr) => {
-            serde_json::Value::Array(arr.iter().map(|v| validate_json_recursive(v, total)).collect())
-        }
+        serde_json::Value::Array(arr) => serde_json::Value::Array(
+            arr.iter()
+                .map(|v| validate_json_recursive(v, total))
+                .collect(),
+        ),
         other => other.clone(),
     }
 }
@@ -285,7 +287,8 @@ fn neutralize_dangerous_uris(text: &str) -> (String, usize) {
     // Neutralize dangerous data: URIs
     let data_patterns = ["data:text/html", "data:application/xhtml", "data:text/xss"];
     for pattern in data_patterns {
-        let replaced = replace_case_insensitive(&result, pattern, &format!("[blocked-data-uri:{}]","" ));
+        let replaced =
+            replace_case_insensitive(&result, pattern, &format!("[blocked-data-uri:{}]", ""));
         if replaced.1 > 0 {
             result = replaced.0;
         }

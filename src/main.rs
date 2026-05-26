@@ -422,10 +422,7 @@ fn run_dry_run(config_path: &Path) -> Result<()> {
     for (name, backend) in &config.backends {
         println!(
             "  {}: {:?} command={:?} url={:?}",
-            name,
-            backend.transport,
-            backend.command,
-            backend.url,
+            name, backend.transport, backend.command, backend.url,
         );
     }
     println!(
@@ -444,9 +441,18 @@ fn run_dry_run(config_path: &Path) -> Result<()> {
     } else {
         println!("semantic: disabled");
     }
-    println!("sandbox: max_concurrent={}", config.sandbox.max_concurrent_sandboxes);
-    println!("health: interval={:?} failure_threshold={}", config.health.interval, config.health.failure_threshold);
-    println!("admin: enabled={} listen={}", config.admin.enabled, config.admin.listen);
+    println!(
+        "sandbox: max_concurrent={}",
+        config.sandbox.max_concurrent_sandboxes
+    );
+    println!(
+        "health: interval={:?} failure_threshold={}",
+        config.health.interval, config.health.failure_threshold
+    );
+    println!(
+        "admin: enabled={} listen={}",
+        config.admin.enabled, config.admin.listen
+    );
     println!("daemon: idle_timeout={:?}", config.daemon.idle_timeout);
     println!("config is valid");
 

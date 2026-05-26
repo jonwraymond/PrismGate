@@ -9,7 +9,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use criterion::{criterion_group, criterion_main, BatchSize, Criterion};
+use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
 use futures_util::future::join_all;
 use serde_json::Value;
 
@@ -59,9 +59,15 @@ fn build_manager_with_backends(
             max_memory_mb: None,
         };
 
-        manager.register_virtual_backend(name, Arc::clone(&mock) as Arc<dyn gatemini::backend::Backend>);
+        manager.register_virtual_backend(
+            name,
+            Arc::clone(&mock) as Arc<dyn gatemini::backend::Backend>,
+        );
         {
-            let mut configs = manager.configs.try_write_for(Duration::from_secs(1)).unwrap();
+            let mut configs = manager
+                .configs
+                .try_write_for(Duration::from_secs(1))
+                .unwrap();
             configs.insert(name.to_string(), config);
         }
         if max_conc > 0 {
@@ -112,7 +118,8 @@ fn bench_multi_backend_mix(c: &mut Criterion) {
 // ---- Saturate a backend with exactly its max_concurrent_calls ----
 
 fn bench_saturation(c: &mut Criterion) {
-    let (manager, mock) = build_manager_with_backends(&[("saturated", Duration::from_millis(10), 10)]);
+    let (manager, mock) =
+        build_manager_with_backends(&[("saturated", Duration::from_millis(10), 10)]);
     mock[0].1.reset(); // reset counters
 
     c.bench_function("saturation_10_permits_20_calls", |b| {
@@ -147,32 +154,28 @@ fn bench_throughput_sweep(c: &mut Criterion) {
             ("t-slow", Duration::from_millis(5), num_calls),
         ]);
 
-        group.bench_with_input(
-            BenchmarkId::new("calls", num_calls),
-            &num_calls,
-            |b, &n| {
-                b.to_async(tokio::runtime::Runtime::new().unwrap())
-                    .iter_batched(
-                        || n,
-                        |n_tasks| {
-                            let mgr = Arc::clone(&manager);
-                            async move {
-                                let futures = (0..n_tasks).map(|i| {
-                                    let m = Arc::clone(&mgr);
-                                    let backend = if i % 2 == 0 { "t-fast" } else { "t-slow" };
-                                    async move {
-                                        let _ = m
-                                            .call_tool(backend, "echo_tool", Some(Value::Null), None)
-                                            .await;
-                                    }
-                                });
-                                join_all(futures).await;
-                            }
-                        },
-                        BatchSize::LargeInput,
-                    )
-            },
-        );
+        group.bench_with_input(BenchmarkId::new("calls", num_calls), &num_calls, |b, &n| {
+            b.to_async(tokio::runtime::Runtime::new().unwrap())
+                .iter_batched(
+                    || n,
+                    |n_tasks| {
+                        let mgr = Arc::clone(&manager);
+                        async move {
+                            let futures = (0..n_tasks).map(|i| {
+                                let m = Arc::clone(&mgr);
+                                let backend = if i % 2 == 0 { "t-fast" } else { "t-slow" };
+                                async move {
+                                    let _ = m
+                                        .call_tool(backend, "echo_tool", Some(Value::Null), None)
+                                        .await;
+                                }
+                            });
+                            join_all(futures).await;
+                        }
+                    },
+                    BatchSize::LargeInput,
+                )
+        });
     }
 
     group.finish();

@@ -21,7 +21,7 @@
 use std::io::Write as IoWrite;
 use std::path::PathBuf;
 
-use gatemini::cli::{prismgate_home, Command as CliCommand, Cli};
+use gatemini::cli::{Cli, Command as CliCommand, prismgate_home};
 
 // ---------------------------------------------------------------------------
 // Per-subcommand command builders (reconstruct Clap commands with defaults,
@@ -79,12 +79,12 @@ fn root_command() -> clap::Command {
 // ---------------------------------------------------------------------------
 
 const SUBCOMMANDS: &[(&str, fn() -> clap::Command)] = &[
-    ("gatemini-serve",   make_serve),
-    ("gatemini-status",  make_status),
-    ("gatemini-stop",    make_stop),
+    ("gatemini-serve", make_serve),
+    ("gatemini-status", make_status),
+    ("gatemini-stop", make_stop),
     ("gatemini-restart", make_restart),
     ("gatemini-upgrade", make_upgrade),
-    ("gatemini-doctor",  make_doctor),
+    ("gatemini-doctor", make_doctor),
 ];
 
 // ---------------------------------------------------------------------------

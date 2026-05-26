@@ -6,14 +6,15 @@
 pub mod admin;
 pub mod backend;
 pub mod cache;
+#[cfg(test)]
+pub mod chaos_tests;
 pub mod cli;
 pub mod config;
 #[cfg(feature = "semantic")]
 pub mod embeddings;
 pub mod integration_inventory;
 pub mod ipc;
-#[cfg(test)]
-pub mod chaos_tests;
+pub mod load_testing;
 pub mod mcp_compliance_tests;
 pub mod prompts;
 pub mod rbac;
@@ -25,7 +26,6 @@ pub mod server;
 pub mod testutil;
 pub mod tools;
 pub mod tracker;
-pub mod load_testing;
 
 use std::path::PathBuf;
 use std::sync::Arc;

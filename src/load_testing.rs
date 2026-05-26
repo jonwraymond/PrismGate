@@ -202,7 +202,11 @@ impl gatemini::backend::Backend for LoadTestMockBackend {
         Ok(())
     }
 
-    async fn call_tool(&self, _tool_name: &str, _arguments: Option<Value>) -> anyhow::Result<Value> {
+    async fn call_tool(
+        &self,
+        _tool_name: &str,
+        _arguments: Option<Value>,
+    ) -> anyhow::Result<Value> {
         let _concurrent = self.record_call_start();
 
         if self.inject_error {
@@ -256,13 +260,13 @@ fn register_mock_backends(
         mocks.push(Arc::clone(&mock));
 
         // Register as virtual backend (bypasses child-process management)
-        manager.register_virtual_backend(
-            &name,
-            Arc::clone(&mock) as LoadTestBackendDyn,
-        );
+        manager.register_virtual_backend(&name, Arc::clone(&mock) as LoadTestBackendDyn);
 
         // Set config + semaphore so BackendManager::call_tool sees them
-        let mut configs = manager.configs.try_write_for(Duration::from_secs(1)).unwrap();
+        let mut configs = manager
+            .configs
+            .try_write_for(Duration::from_secs(1))
+            .unwrap();
         configs.insert(
             name.clone(),
             BackendConfig {
@@ -319,10 +323,7 @@ fn register_mock_backends(
 ///
 /// Registers mock backends, fires `cfg.num_calls` concurrent calls (limited by
 /// `cfg.max_concurrent` via an outer semaphore), and collects stats.
-pub async fn run_load_test(
-    manager: Arc<BackendManager>,
-    cfg: LoadTestConfig,
-) -> LoadTestResult {
+pub async fn run_load_test(manager: Arc<BackendManager>, cfg: LoadTestConfig) -> LoadTestResult {
     let _registry = Arc::new(ToolRegistry::new());
     let mocks = register_mock_backends(&manager, &cfg);
 
@@ -365,7 +366,10 @@ pub async fn run_load_test(
     let mut per_backend_max_conc = HashMap::new();
     let mut backend_call_counts = HashMap::new();
     for mock in &mocks {
-        per_backend_max_conc.insert(mock.name.clone(), mock.max_seen_concurrent.load(Ordering::SeqCst));
+        per_backend_max_conc.insert(
+            mock.name.clone(),
+            mock.max_seen_concurrent.load(Ordering::SeqCst),
+        );
         backend_call_counts.insert(mock.name.clone(), mock.total_calls.load(Ordering::SeqCst));
     }
 

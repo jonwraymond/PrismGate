@@ -16,14 +16,14 @@ mod tests {
     use std::time::Duration;
 
     use anyhow::Result;
-    use tokio::sync::{mpsc, Semaphore};
+    use tokio::sync::{Semaphore, mpsc};
     use tokio::time::sleep;
 
     use crate::backend::{
         Backend, BackendManager, BackendState, STATE_HEALTHY, STATE_STOPPED, STATE_UNHEALTHY,
     };
     use crate::registry::ToolRegistry;
-    use crate::testutil::{insert_mock, insert_mock_with_config, MockBackend};
+    use crate::testutil::{MockBackend, insert_mock, insert_mock_with_config};
 
     // ========================================================================
     //  CHAOS 1: Backend crash during active tool call
@@ -82,7 +82,8 @@ mod tests {
         // Fire a call that will hang for 10s
         let mgr1 = Arc::clone(&manager);
         let call_handle = tokio::spawn(async move {
-            mgr1.call_tool("restart-test", "slow_tool", None, None).await
+            mgr1.call_tool("restart-test", "slow_tool", None, None)
+                .await
         });
 
         sleep(Duration::from_millis(100)).await;
@@ -102,9 +103,18 @@ mod tests {
 
         // Subsequent calls should succeed
         let result = manager
-            .call_tool("restart-test", "echo_tool", Some(serde_json::json!({"restarted": true})), None)
+            .call_tool(
+                "restart-test",
+                "echo_tool",
+                Some(serde_json::json!({"restarted": true})),
+                None,
+            )
             .await;
-        assert!(result.is_ok(), "call after restart should succeed: {:?}", result);
+        assert!(
+            result.is_ok(),
+            "call after restart should succeed: {:?}",
+            result
+        );
     }
 
     // ========================================================================
@@ -121,18 +131,9 @@ mod tests {
 
         // Set max_concurrent=1 so calls queue behind each other,
         // and timeout=1s so each call times out
-        insert_mock_with_config(
-            &manager,
-            &registry,
-            &mock,
-            Some(1),
-            Duration::from_secs(1),
-        )
-        .await;
+        insert_mock_with_config(&manager, &registry, &mock, Some(1), Duration::from_secs(1)).await;
 
-        let result = manager
-            .call_tool("slowpoke", "echo_tool", None, None)
-            .await;
+        let result = manager.call_tool("slowpoke", "echo_tool", None, None).await;
 
         assert!(result.is_err(), "slow backend should hit timeout");
         let err = result.unwrap_err().to_string();
@@ -159,9 +160,7 @@ mod tests {
         .await;
 
         // First call times out
-        let result = manager
-            .call_tool("brittle", "echo_tool", None, None)
-            .await;
+        let result = manager.call_tool("brittle", "echo_tool", None, None).await;
         assert!(result.is_err());
 
         // Reduce delay so next call completes in time
@@ -176,9 +175,18 @@ mod tests {
 
         // Next call should succeed
         let result = manager
-            .call_tool("brittle", "echo_tool", Some(serde_json::json!({"recovered": true})), None)
+            .call_tool(
+                "brittle",
+                "echo_tool",
+                Some(serde_json::json!({"recovered": true})),
+                None,
+            )
             .await;
-        assert!(result.is_ok(), "backend should recover after restart: {:?}", result);
+        assert!(
+            result.is_ok(),
+            "backend should recover after restart: {:?}",
+            result
+        );
     }
 
     // ========================================================================
@@ -198,9 +206,7 @@ mod tests {
         mock.set_state(BackendState::Unhealthy);
 
         // New calls should be rejected
-        let result = manager
-            .call_tool("ailing", "echo_tool", None, None)
-            .await;
+        let result = manager.call_tool("ailing", "echo_tool", None, None).await;
         assert!(
             result.is_err(),
             "unhealthy backend should reject calls: {:?}",
@@ -210,7 +216,12 @@ mod tests {
         // Restore to healthy
         mock.set_state(BackendState::Healthy);
         let result = manager
-            .call_tool("ailing", "echo_tool", Some(serde_json::json!({"restored": true})), None)
+            .call_tool(
+                "ailing",
+                "echo_tool",
+                Some(serde_json::json!({"restored": true})),
+                None,
+            )
             .await;
         assert!(result.is_ok(), "healthy backend should accept calls");
     }
@@ -227,7 +238,11 @@ mod tests {
         mock.set_state(BackendState::Stopped);
 
         let result = manager.call_tool("dead", "echo_tool", None, None).await;
-        assert!(result.is_err(), "stopped backend should reject calls: {:?}", result);
+        assert!(
+            result.is_err(),
+            "stopped backend should reject calls: {:?}",
+            result
+        );
     }
 
     /// Rapid cycling: Healthy → Unhealthy → Healthy → Stopped → Healthy.
@@ -252,7 +267,12 @@ mod tests {
         for state in states {
             mock.set_state(state);
             let result = manager
-                .call_tool("flaky", "echo_tool", Some(serde_json::json!({"state": format!("{:?}", state)})), None)
+                .call_tool(
+                    "flaky",
+                    "echo_tool",
+                    Some(serde_json::json!({"state": format!("{:?}", state)})),
+                    None,
+                )
                 .await;
 
             if state == BackendState::Stopped {
@@ -280,9 +300,18 @@ mod tests {
         mock.set_inject_error(true);
 
         let result = manager
-            .call_tool("broken", "echo_tool", Some(serde_json::json!({"should": "fail"})), None)
+            .call_tool(
+                "broken",
+                "echo_tool",
+                Some(serde_json::json!({"should": "fail"})),
+                None,
+            )
             .await;
-        assert!(result.is_err(), "injected error should propagate: {:?}", result);
+        assert!(
+            result.is_err(),
+            "injected error should propagate: {:?}",
+            result
+        );
     }
 
     /// Error injection toggled on/off mid-session — calls succeed after recovery.
@@ -302,9 +331,18 @@ mod tests {
         // Toggle off — simulate backend self-healing
         mock.set_inject_error(false);
         let result = manager
-            .call_tool("erratic", "echo_tool", Some(serde_json::json!({"healed": true})), None)
+            .call_tool(
+                "erratic",
+                "echo_tool",
+                Some(serde_json::json!({"healed": true})),
+                None,
+            )
             .await;
-        assert!(result.is_ok(), "should succeed after injection off: {:?}", result);
+        assert!(
+            result.is_ok(),
+            "should succeed after injection off: {:?}",
+            result
+        );
     }
 
     // ========================================================================
@@ -320,14 +358,7 @@ mod tests {
         let mock = MockBackend::new("crowded", Duration::from_secs(5));
 
         // Only 1 concurrent call allowed, 2s timeout
-        insert_mock_with_config(
-            &manager,
-            &registry,
-            &mock,
-            Some(1),
-            Duration::from_secs(2),
-        )
-        .await;
+        insert_mock_with_config(&manager, &registry, &mock, Some(1), Duration::from_secs(2)).await;
 
         // Fire 5 calls simultaneously — 4 should timeout waiting
         let mut handles = Vec::new();
@@ -398,7 +429,10 @@ mod tests {
             }
         }
 
-        assert_eq!(ok_count, 10, "all 10 calls should succeed with unlimited concurrency");
+        assert_eq!(
+            ok_count, 10,
+            "all 10 calls should succeed with unlimited concurrency"
+        );
     }
 
     // ========================================================================
@@ -411,11 +445,13 @@ mod tests {
         let manager = BackendManager::new();
         let registry = ToolRegistry::new();
 
-        let result = manager
-            .call_tool("phantom", "echo_tool", None, None)
-            .await;
+        let result = manager.call_tool("phantom", "echo_tool", None, None).await;
 
-        assert!(result.is_err(), "call to unknown backend should error: {:?}", result);
+        assert!(
+            result.is_err(),
+            "call to unknown backend should error: {:?}",
+            result
+        );
     }
 
     /// Manager with multiple backends — one removed mid-session, others still work.
@@ -431,14 +467,18 @@ mod tests {
         insert_mock(&manager, &registry, &mock_b).await;
 
         // Verify both work
-        assert!(manager
-            .call_tool("service-a", "echo_tool", None, None)
-            .await
-            .is_ok());
-        assert!(manager
-            .call_tool("service-b", "echo_tool", None, None)
-            .await
-            .is_ok());
+        assert!(
+            manager
+                .call_tool("service-a", "echo_tool", None, None)
+                .await
+                .is_ok()
+        );
+        assert!(
+            manager
+                .call_tool("service-b", "echo_tool", None, None)
+                .await
+                .is_ok()
+        );
 
         // Remove service-a
         manager
@@ -447,16 +487,25 @@ mod tests {
             .unwrap();
 
         // service-a should fail
-        assert!(manager
-            .call_tool("service-a", "echo_tool", None, None)
-            .await
-            .is_err());
+        assert!(
+            manager
+                .call_tool("service-a", "echo_tool", None, None)
+                .await
+                .is_err()
+        );
 
         // service-b should still work
-        assert!(manager
-            .call_tool("service-b", "echo_tool", Some(serde_json::json!({"still": "here"})), None)
-            .await
-            .is_ok());
+        assert!(
+            manager
+                .call_tool(
+                    "service-b",
+                    "echo_tool",
+                    Some(serde_json::json!({"still": "here"})),
+                    None
+                )
+                .await
+                .is_ok()
+        );
     }
 
     // ========================================================================
@@ -479,8 +528,13 @@ mod tests {
         for i in 0..50 {
             let mgr = Arc::clone(&manager);
             handles.push(tokio::spawn(async move {
-                mgr.call_tool("leaky", "echo_tool", Some(serde_json::json!({"i": i})), None)
-                    .await
+                mgr.call_tool(
+                    "leaky",
+                    "echo_tool",
+                    Some(serde_json::json!({"i": i})),
+                    None,
+                )
+                .await
             }));
         }
 
@@ -491,7 +545,10 @@ mod tests {
             }
         }
 
-        assert_eq!(error_count, 50, "all 50 calls to stopped backend should fail gracefully");
+        assert_eq!(
+            error_count, 50,
+            "all 50 calls to stopped backend should fail gracefully"
+        );
     }
 
     /// Tool discovery on a backend that has zero tools registered.

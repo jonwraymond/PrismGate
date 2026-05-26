@@ -20,7 +20,19 @@ use crate::registry::ToolRegistry;
 // ---------------------------------------------------------------------------
 
 /// RBAC privilege levels. Ordinal determines privilege: higher = more access.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, schemars::JsonSchema)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    schemars::JsonSchema,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum Role {
     /// Read-only: can list tools, search, and view tool info. Cannot execute.
@@ -126,7 +138,7 @@ impl Default for RbacConfig {
 /// Resolves the minimum required role for a tool call.
 ///
 /// Priority:
-///   1. Per-tool override in `rbac.backends.<name>.tools.<tool>` 
+///   1. Per-tool override in `rbac.backends.<name>.tools.<tool>`
 ///   2. Per-backend default in `rbac.backends.<name>.min_role`
 ///   3. Global default: Developer (if RBAC enabled)
 ///
@@ -325,16 +337,21 @@ mod tests {
         let engine = RbacEngine::new(config, HashMap::new());
 
         // ReadOnly session should be able to do anything when RBAC is off
-        assert!(engine
-            .check_permission(Role::ReadOnly, "sensitive", "delete_all")
-            .is_ok());
+        assert!(
+            engine
+                .check_permission(Role::ReadOnly, "sensitive", "delete_all")
+                .is_ok()
+        );
         assert!(engine.check_admin_action(Role::ReadOnly).is_ok());
     }
 
     #[test]
     fn default_fallback_is_developer() {
         let engine = RbacEngine::new(admin_config(), HashMap::new());
-        assert_eq!(engine.required_role("any_backend", "any_tool"), Role::Developer);
+        assert_eq!(
+            engine.required_role("any_backend", "any_tool"),
+            Role::Developer
+        );
     }
 
     #[test]
@@ -344,7 +361,10 @@ mod tests {
 
         let engine = RbacEngine::new(admin_config(), backend_defaults);
         assert_eq!(engine.required_role("prod_db", "query"), Role::Operator);
-        assert_eq!(engine.required_role("other_backend", "query"), Role::Developer);
+        assert_eq!(
+            engine.required_role("other_backend", "query"),
+            Role::Developer
+        );
     }
 
     #[test]
@@ -405,12 +425,16 @@ mod tests {
     #[test]
     fn check_permission_grants_when_role_sufficient() {
         let engine = RbacEngine::new(admin_config(), HashMap::new());
-        assert!(engine
-            .check_permission(Role::Developer, "backend", "tool")
-            .is_ok());
-        assert!(engine
-            .check_permission(Role::Admin, "backend", "tool")
-            .is_ok());
+        assert!(
+            engine
+                .check_permission(Role::Developer, "backend", "tool")
+                .is_ok()
+        );
+        assert!(
+            engine
+                .check_permission(Role::Admin, "backend", "tool")
+                .is_ok()
+        );
     }
 
     #[test]
@@ -466,11 +490,11 @@ mod tests {
     #[test]
     fn serde_roundtrip_role() {
         let yaml = "admin";
-        let role: Role = serde_yaml::from_str(yaml).unwrap();
+        let role: Role = serde_yaml_ng::from_str(yaml).unwrap();
         assert_eq!(role, Role::Admin);
 
         let yaml = "developer";
-        let role: Role = serde_yaml::from_str(yaml).unwrap();
+        let role: Role = serde_yaml_ng::from_str(yaml).unwrap();
         assert_eq!(role, Role::Developer);
     }
 
@@ -501,8 +525,8 @@ mod tests {
             },
         };
 
-        let yaml = serde_yaml::to_string(&config).unwrap();
-        let deserialized: RbacConfig = serde_yaml::from_str(&yaml).unwrap();
+        let yaml = serde_yaml_ng::to_string(&config).unwrap();
+        let deserialized: RbacConfig = serde_yaml_ng::from_str(&yaml).unwrap();
         assert_eq!(config, deserialized);
     }
 

@@ -8,7 +8,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use criterion::{black_box, BatchSize, BenchmarkId, Criterion, criterion_group, criterion_main};
+use criterion::{BatchSize, BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
 use futures_util::future::join_all;
 use serde_json::Value;
 
@@ -60,18 +60,25 @@ fn manager_with_mock_backend(
     let registry = Arc::new(ToolRegistry::new());
 
     // Register mock backend directly (skip child process)
-    manager.register_virtual_backend(name, Arc::clone(&mock) as Arc<dyn gatemini::backend::Backend>);
+    manager.register_virtual_backend(
+        name,
+        Arc::clone(&mock) as Arc<dyn gatemini::backend::Backend>,
+    );
 
     // Also store config so semaphores and retry configs are set up correctly
     {
-        let mut configs = manager.configs.try_write_for(Duration::from_secs(1)).unwrap();
+        let mut configs = manager
+            .configs
+            .try_write_for(Duration::from_secs(1))
+            .unwrap();
         configs.insert(name.to_string(), config);
     }
     // Manually install semaphore (add_backend would do this, but we're direct-registering)
     if max_concurrent > 0 {
-        manager
-            .call_semaphores
-            .insert(name.to_string(), Arc::new(tokio::sync::Semaphore::new(max_concurrent as usize)));
+        manager.call_semaphores.insert(
+            name.to_string(),
+            Arc::new(tokio::sync::Semaphore::new(max_concurrent as usize)),
+        );
     }
 
     (manager, mock)
@@ -97,7 +104,8 @@ fn bench_single_call(c: &mut Criterion) {
 }
 
 fn bench_10_concurrent(c: &mut Criterion) {
-    let (manager, mock) = manager_with_mock_backend("10-concurrent", Duration::from_millis(10), 100);
+    let (manager, mock) =
+        manager_with_mock_backend("10-concurrent", Duration::from_millis(10), 100);
     mock.reset();
 
     c.bench_function("call_tool_10_concurrent_10ms", |b| {
@@ -120,7 +128,8 @@ fn bench_10_concurrent(c: &mut Criterion) {
 }
 
 fn bench_100_concurrent(c: &mut Criterion) {
-    let (manager, mock) = manager_with_mock_backend("100-concurrent", Duration::from_millis(5), 200);
+    let (manager, mock) =
+        manager_with_mock_backend("100-concurrent", Duration::from_millis(5), 200);
     mock.reset();
 
     c.bench_function("call_tool_100_concurrent_5ms", |b| {
