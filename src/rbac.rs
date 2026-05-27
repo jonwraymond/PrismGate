@@ -12,6 +12,7 @@ use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 use tracing::{debug, warn};
+use rmcp::JsonSchema;
 
 use crate::registry::ToolRegistry;
 
@@ -20,7 +21,7 @@ use crate::registry::ToolRegistry;
 // ---------------------------------------------------------------------------
 
 /// RBAC privilege levels. Ordinal determines privilege: higher = more access.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, schemars::JsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum Role {
     /// Read-only: can list tools, search, and view tool info. Cannot execute.

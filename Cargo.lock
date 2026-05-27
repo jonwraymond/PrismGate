@@ -1090,6 +1090,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "cidr"
+version = "0.2.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6bdf600c45bd958cf2945c445264471cca8b6c8e67bc87b71affd6d7e5682621"
+
+[[package]]
 name = "cipher"
 version = "0.4.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2558,6 +2564,7 @@ dependencies = [
  "async-trait",
  "axum",
  "bitwarden",
+ "cidr",
  "clap 4.6.1",
  "clap_complete",
  "clap_mangen",
@@ -2577,6 +2584,7 @@ dependencies = [
  "rmcp",
  "rustls",
  "rustyscript",
+ "schemars 1.2.1",
  "serde",
  "serde_json",
  "serde_yaml_ng",
