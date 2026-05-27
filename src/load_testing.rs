@@ -181,7 +181,7 @@ impl LoadTestMockBackend {
 }
 
 /// Boxed trait object used for BackendManager registration.
-type LoadTestBackendDyn = Arc<dyn gatemini::backend::Backend>;
+type LoadTestBackendDyn = Arc<dyn crate::backend::Backend>;
 
 // ─── Implementation of `Backend` for `LoadTestMockBackend` ─────────────
 
@@ -189,7 +189,7 @@ type LoadTestBackendDyn = Arc<dyn gatemini::backend::Backend>;
 unsafe impl Send for LoadTestMockBackend {}
 unsafe impl Sync for LoadTestMockBackend {}
 
-impl gatemini::backend::Backend for LoadTestMockBackend {
+impl crate::backend::Backend for LoadTestMockBackend {
     fn name(&self) -> &str {
         &self.name
     }
