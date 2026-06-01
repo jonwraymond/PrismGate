@@ -275,7 +275,7 @@ pub struct BackendConfig {
 
     /// Instance mode: shared (default) or dedicated (per-session isolated instances).
     /// Dedicated mode gives each proxy session its own backend instance from a pool.
-    /// Only applies to stdio and cli-adapter transports; HTTP backends ignore it.
+    /// Applies to stdio, cli-adapter, and streamable-http transports.
     #[serde(default)]
     pub instance_mode: InstanceMode,
 
@@ -502,6 +502,34 @@ pub struct AdminConfig {
 
     #[serde(default = "default_allowed_cidrs")]
     pub allowed_cidrs: Vec<String>,
+
+    /// Optional API key required to access admin endpoints.
+    /// If None, authentication is disabled (use allowed_cidrs only).
+    #[serde(default)]
+    pub api_key: Option<String>,
+
+    /// Per-key rate limits: max requests per minute.
+    /// Default allows 20 req/min for anonymous (unauthenticated) requests.
+    #[serde(default = "default_rate_limits")]
+    pub rate_limits: Vec<RateLimitEntry>,
+}
+
+/// Per-key rate limit configuration.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct RateLimitEntry {
+    /// API key this limit applies to, or "anonymous" for unauthenticated requests.
+    pub key: String,
+    /// Maximum requests allowed per minute.
+    pub max_per_min: u32,
+}
+
+impl Default for RateLimitEntry {
+    fn default() -> Self {
+        Self {
+            key: "anonymous".to_string(),
+            max_per_min: 20,
+        }
+    }
 }
 
 /// TypeScript sandbox configuration.
@@ -633,6 +661,9 @@ fn default_admin_listen() -> String {
 fn default_allowed_cidrs() -> Vec<String> {
     vec!["127.0.0.1/32".to_string()]
 }
+fn default_rate_limits() -> Vec<RateLimitEntry> {
+    vec![RateLimitEntry::default()]
+}
 fn default_sandbox_timeout() -> Duration {
     Duration::from_secs(30)
 }
@@ -736,6 +767,8 @@ impl Default for AdminConfig {
             enabled: false,
             listen: default_admin_listen(),
             allowed_cidrs: default_allowed_cidrs(),
+            api_key: None,
+            rate_limits: default_rate_limits(),
         }
     }
 }
@@ -998,15 +1031,6 @@ impl Config {
                         );
                     }
                 }
-            }
-
-            if backend.instance_mode == InstanceMode::Dedicated
-                && backend.transport == Transport::StreamableHttp
-            {
-                tracing::warn!(
-                    backend = %name,
-                    "instance_mode: dedicated is not supported for streamable-http, forcing shared"
-                );
             }
 
             if backend.instance_mode == InstanceMode::Dedicated && backend.pool.max_instances == 0 {

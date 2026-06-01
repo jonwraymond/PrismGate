@@ -28,6 +28,7 @@ mod tracker;
 
 use anyhow::Result;
 use clap::Parser;
+use clap_complete::{Generator, shells};
 use rmcp::{ServiceExt, transport::stdio};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -35,7 +36,7 @@ use tracing::{info, warn};
 use tracing_subscriber::EnvFilter;
 
 /// Everything produced by shared initialization, ready for either direct or daemon mode.
-pub struct InitializedGateway {
+pub(crate) struct InitializedGateway {
     pub registry: Arc<registry::ToolRegistry>,
     pub backend_manager: Arc<backend::BackendManager>,
     pub tracker: Arc<tracker::CallTracker>,
@@ -383,7 +384,77 @@ async fn main() -> Result<()> {
         // Local diagnostics without daemon/backend initialization
         (Some(cli::Command::Doctor), _) => ipc::doctor::run(),
 
+        // Shell completion script generation
+        (Some(cli::Command::Completion { shell }), _) => {
+            run_completion(&shell);
+            Ok(())
+        }
+
+        // Dry-run: load + validate config, print summary, exit without starting backends
+        (_, true) => run_dry_run(&cli.config),
+
         // Default: proxy mode (auto-start daemon if needed)
         (None, false) => ipc::proxy::run(&cli.config).await,
     }
+}
+
+fn run_dry_run(config_path: &Path) -> Result<()> {
+    // Load dotenv (same as initialize — needed for env var interpolation)
+    config::load_dotenv(Some(config_path));
+
+    let prismgate_home = cli::prismgate_home();
+    let prismgate_cache_home = cli::prismgate_cache_home();
+    if !prismgate_home.exists() {
+        std::fs::create_dir_all(&prismgate_home)?;
+    }
+    if !prismgate_cache_home.exists() {
+        std::fs::create_dir_all(&prismgate_cache_home)?;
+    }
+
+    // Load config: env var expansion + YAML parse + validate()
+    let config = config::Config::load(config_path)?;
+
+    println!("gatemini --dry-run");
+    println!("config_file: {}", config_path.display());
+    println!("version: {}", env!("CARGO_PKG_VERSION"));
+    println!("log_level: {}", config.log_level);
+    println!("backends: {}", config.backends.len());
+    for (name, backend) in &config.backends {
+        println!(
+            "  {}: {:?} command={:?} url={:?}",
+            name,
+            backend.transport,
+            backend.command,
+            backend.url,
+        );
+    }
+    println!(
+        "allow_runtime_registration: {}",
+        config.allow_runtime_registration
+    );
+    println!("max_dynamic_backends: {}", config.max_dynamic_backends);
+    if !config.aliases.is_empty() {
+        println!("aliases: {}", config.aliases.len());
+    }
+    if !config.composite_tools.is_empty() {
+        println!("composite_tools: {}", config.composite_tools.len());
+    }
+    if let Some(semantic) = &config.semantic {
+        println!("semantic: enabled model={}", semantic.model_path);
+    } else {
+        println!("semantic: disabled");
+    }
+    println!("sandbox: max_concurrent={}", config.sandbox.max_concurrent_sandboxes);
+    println!("health: interval={:?} failure_threshold={}", config.health.interval, config.health.failure_threshold);
+    println!("admin: enabled={} listen={}", config.admin.enabled, config.admin.listen);
+    println!("daemon: idle_timeout={:?}", config.daemon.idle_timeout);
+    println!("config is valid");
+
+    // Note: We skip async secrets resolution here since it requires network.
+    // Config::load() already ran validate() which checks structural validity.
+    // If --dry-run is used with BWS-enabled configs, secrets that cannot be
+    // resolved will have been warned about by validate_no_unresolved_secretrefs()
+    // during Config::load(), so the user gets feedback either way.
+
+    Ok(())
 }

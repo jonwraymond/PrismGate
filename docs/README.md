@@ -19,6 +19,10 @@ Naming note:
 - [Token Efficiency](token-efficiency.md): where the context savings come from and how to measure them
 - [Telemetry](telemetry-strategy.md): what the code already tracks and what OTEL work is still proposed
 
+## Client setup
+
+- [Integration Guides](references/integration-guides.md): connect Cursor, Claude Desktop, Windsurf, Zed, and other MCP clients to PrismGate
+
 ## Benchmarks and references
 
 - [Search Quality](benchmarks/search-quality.md): code-backed search behavior plus a test methodology

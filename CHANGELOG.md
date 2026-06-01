@@ -1,5 +1,32 @@
 # Changelog
 
+## [Unreleased]
+
+### Features
+
+* feat: enable dedicated instance mode for streamable-http backends (HTTP connection pooling)
+
+## [1.15.0](https://github.com/jonwraymond/PrismGate/compare/v1.14.5...v1.15.0) (2026-05-25)
+
+
+### Features
+
+* feat(register): improve error messages with actionable guidance ([a19afea](https://github.com/jonwraymond/PrismGate/commit/a19afea))
+* feat: add branding assets (logo SVG, favicon, OG images) ([eee2523](https://github.com/jonwraymond/PrismGate/commit/eee2523))
+
+### Documentation
+
+* docs: add Security Policy (SECURITY.md) ([3231c0e](https://github.com/jonwraymond/PrismGate/commit/3231c0e))
+* docs: add Contributor Covenant Code of Conduct v2.1 ([a3e1715](https://github.com/jonwraymond/PrismGate/commit/a3e1715))
+
+### Tests
+
+* test: add comprehensive edge case and boundary tests ([639a56d](https://github.com/jonwraymond/PrismGate/commit/639a56d))
+
+### CI
+
+* ci(deny): reduce ignored advisories 13→12 by removing stale RUSTSEC-2026-0049 ([913a2e3](https://github.com/jonwraymond/PrismGate/commit/913a2e3))
+
 ## [1.14.4](https://github.com/jonwraymond/PrismGate/compare/v1.14.3...v1.14.4) (2026-04-23)
 
 

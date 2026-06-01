@@ -81,7 +81,7 @@ Prompts:
 ## Dedicated instance mode
 
 - `instance_mode: dedicated` gives each proxy session its own backend instance from a pool
-- only applies to `stdio` and `cli-adapter` transports; HTTP backends ignore it
+- applies to `stdio`, `cli-adapter`, and `streamable-http` transports
 - pool pre-warms `min_idle` instances (default 1), lazy-spawns on demand up to `max_instances` (default 20)
 - instances are recycled (stop + respawn) on session disconnect for clean state
 - session_id is threaded from daemon accept loop through GateminiServer → sandbox → BackendManager
