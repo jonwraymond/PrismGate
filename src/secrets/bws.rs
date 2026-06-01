@@ -23,7 +23,6 @@ impl BwsSdkProvider {
         use bitwarden::auth::login::AccessTokenLoginRequest;
         use bitwarden::secrets_manager::projects::ProjectsListRequest;
         use bitwarden::secrets_manager::secrets::{SecretIdentifiersRequest, SecretsGetRequest};
-        use bitwarden::secrets_manager::{ClientProjectsExt, ClientSecretsExt};
 
         // Resolve org ID: config → env var → error
         let org_id_str = match org_id {
