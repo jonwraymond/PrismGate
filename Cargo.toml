@@ -32,6 +32,7 @@ model2vec-rs = { version = "0.1", optional = true }
 serde = { version = ">=1.0.197, <1.0.220", features = ["derive"] }
 serde_json = "1"
 serde_yaml_ng = "0.10"
+schemars = "0.8"
 
 # Admin API (optional)
 axum = { version = "0.8", optional = true }
@@ -52,6 +53,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 
 # Secret resolution
 regex = "1"
+cidr = "0.2"
 bitwarden = { version = "2.0", features = ["secrets"] }
 uuid = { version = "1", features = ["serde"] }
 
@@ -69,6 +71,8 @@ thiserror = "2"
 
 # CLI
 clap = { version = "4", features = ["derive"] }
+clap_complete = "4"
+clap_mangen = "0.1"
 
 # Futures utilities
 futures = "0.3"
@@ -92,6 +96,25 @@ nix = { version = "0.31", features = ["signal", "user", "fs"] }
 
 [dev-dependencies]
 tempfile = "3"
+clap_mangen = "0.1"
+criterion = "0.5"
+
+[[bench]]
+name = "registry_search"
+harness = false
+
+[[bench]]
+name = "concurrent_calls"
+harness = false
+
+[[bench]]
+name = "multi_backend_load"
+harness = false
+
+[[bin]]
+name = "gen_manpages"
+path = "src/bin/gen_manpages.rs"
+required-features = ["clap_mangen"]
 
 [features]
 default = ["admin", "sandbox", "semantic"]
