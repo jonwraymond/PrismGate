@@ -140,6 +140,61 @@ pub struct Config {
     /// These are registered under a virtual `__composite` backend.
     #[serde(default)]
     pub composite_tools: HashMap<String, CompositeToolConfig>,
+
+    /// Tool groups: named collections of tools for scoped access and multi-agent isolation.
+    /// Each group can include tools by explicit name, by backend tag, or by backend name.
+    /// Groups can be exposed as scoped MCP endpoints (future) or used for filtered discovery.
+    #[serde(default)]
+    pub tool_groups: HashMap<String, ToolGroupConfig>,
+}
+
+/// How a tool qualifies for membership in a group.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum GroupMembership {
+    /// Explicit list of fully-qualified tool names (e.g. ["exa.web_search", "tavily.search"])
+    Explicit { tools: Vec<String> },
+    /// All tools from backends that have at least one matching tag.
+    ByTag { tag: String },
+    /// All tools from a specific backend.
+    ByBackend { backend: String },
+}
+
+/// Access control entry — future RBAC integration point.
+/// Currently informational; enforcement requires external middleware or per-session gating.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[serde(rename_all = "snake_case")]
+pub struct GroupPermission {
+    /// Principals that can see/use this group. Format: "user:<name>" or "role:<name>".
+    #[serde(default)]
+    pub allow: Vec<String>,
+    /// Principals explicitly denied from this group.
+    #[serde(default)]
+    pub deny: Vec<String>,
+}
+
+/// Configuration for a named tool group.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ToolGroupConfig {
+    /// Human-readable description of this group.
+    pub description: String,
+
+    /// How tools are added to this group.
+    #[serde(default)]
+    pub members: Vec<GroupMembership>,
+
+    /// Access control for this group. informational in this version.
+    #[serde(default)]
+    pub permissions: GroupPermission,
+
+    /// Whether this group is enabled. Default: true.
+    #[serde(default = "default_true_config")]
+    pub enabled: bool,
+
+    /// Backend tags inherited by all tools in this group.
+    /// When a group's tools appear in search results, these tags are included.
+    #[serde(default)]
+    pub tags: Vec<String>,
 }
 
 /// Configuration for a composite tool — a multi-step TypeScript snippet
