@@ -20,11 +20,13 @@ pub struct TraceParent {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[allow(dead_code)]
 pub struct TraceFlags(u8);
 
 impl TraceFlags {
     pub const SAMPLED: u8 = 0x01;
 
+    #[allow(dead_code)]
     pub fn sampled(&self) -> bool {
         self.0 & Self::SAMPLED != 0
     }
@@ -74,6 +76,7 @@ impl TraceParent {
 
     /// Parse a traceparent header value.
     /// Format: `00-{32 hex}-{16 hex}-{2 hex}`
+    #[allow(dead_code)]
     pub fn parse(s: &str) -> Option<Self> {
         let parts: Vec<&str> = s.split('-').collect();
         if parts.len() != 4 {
@@ -115,6 +118,7 @@ impl TraceParent {
     }
 
     /// Generate a new child span (new parent_id, same trace_id).
+    #[allow(dead_code)]
     pub fn child(&self) -> Self {
         let mut parent_id = [0u8; 8];
         random_bytes(&mut parent_id);
@@ -185,6 +189,7 @@ impl TraceContext {
     }
 
     /// Extract TraceContext from MCP `_meta` map.
+    #[allow(dead_code)]
     pub fn from_meta(meta: &serde_json::Map<String, serde_json::Value>) -> Self {
         let traceparent = meta
             .get("traceparent")
@@ -219,6 +224,7 @@ impl TraceContext {
     }
 
     /// Create a child context for a downstream call.
+    #[allow(dead_code)]
     pub fn child(&self) -> Self {
         Self {
             traceparent: self.traceparent.as_ref().map(|tp| tp.child()),
