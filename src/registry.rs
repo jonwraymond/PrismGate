@@ -321,8 +321,10 @@ impl ToolRegistry {
     #[allow(dead_code)]
     pub fn get_by_backend(&self, backend_name: &str) -> Vec<ToolEntry> {
         if let Some(names) = self.backend_tools.get(backend_name) {
+            let prefix = format!("{}.", backend_name);
             names
                 .iter()
+                .filter(|n| n.starts_with(&prefix))
                 .filter_map(|n| self.tools.get(n).map(|r| r.value().clone()))
                 .collect()
         } else {
