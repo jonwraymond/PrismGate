@@ -2475,6 +2475,7 @@ dependencies = [
  "model2vec-rs",
  "nix 0.31.3",
  "notify",
+ "rand 0.9.4",
  "regex",
  "reqwest 0.13.3",
  "rmcp",

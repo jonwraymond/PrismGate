@@ -20,6 +20,15 @@ use super::{
 };
 use crate::config::BackendConfig;
 use crate::registry::ToolEntry;
+use crate::trace_context::TraceContext;
+
+/// Inject W3C Trace Context into CallToolRequestParams _meta.
+fn inject_trace_meta(params: &mut CallToolRequestParams) {
+    let ctx = TraceContext::new_root();
+    let mut meta = Meta::new();
+    ctx.inject_meta(&mut meta);
+    params.set_meta(meta);
+}
 
 /// A streamable-HTTP MCP backend using rmcp's reqwest-based transport.
 pub struct HttpBackend {
@@ -151,6 +160,7 @@ impl Backend for HttpBackend {
         if let Some(args) = arguments.and_then(|v| v.as_object().cloned()) {
             params = params.with_arguments(args);
         }
+        inject_trace_meta(&mut params);
 
         debug!(backend = %self.name, tool = %tool_name, "calling tool via HTTP");
 

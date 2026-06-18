@@ -23,7 +23,9 @@ mod secrets;
 mod server;
 #[cfg(test)]
 mod testutil;
+mod tool_groups;
 mod tools;
+mod trace_context;
 mod tracker;
 
 use anyhow::Result;
