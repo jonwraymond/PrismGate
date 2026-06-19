@@ -24,6 +24,7 @@ mod server;
 #[cfg(test)]
 mod testutil;
 mod tools;
+mod trace_context;
 mod tracker;
 
 use anyhow::Result;

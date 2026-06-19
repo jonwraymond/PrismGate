@@ -5,7 +5,7 @@ use futures_util::{StreamExt, stream::BoxStream};
 use http::header::WWW_AUTHENTICATE;
 use reqwest::header::{ACCEPT, HeaderName, HeaderValue};
 use rmcp::{
-    model::{ClientJsonRpcMessage, ServerJsonRpcMessage},
+    model::{ClientJsonRpcMessage, ClientRequest, ServerJsonRpcMessage},
     transport::streamable_http_client::{
         AuthRequiredError, SseError, StreamableHttpClient, StreamableHttpError,
         StreamableHttpPostResponse,
@@ -15,8 +15,57 @@ use sse_stream::{Sse, SseStream};
 use tracing::debug;
 
 const HEADER_SESSION_ID: &str = "Mcp-Session-Id";
+const HEADER_MCP_METHOD: &str = "Mcp-Method";
+const HEADER_MCP_NAME: &str = "Mcp-Name";
+const HEADER_MCP_PROTOCOL_VERSION: &str = "MCP-Protocol-Version";
+const MCP_PROTOCOL_VERSION_VALUE: &str = "2026-07-28";
 const EVENT_STREAM_MIME_TYPE: &str = "text/event-stream";
 const JSON_MIME_TYPE: &str = "application/json";
+
+/// Extract Mcp-Method and Mcp-Name from a JSON-RPC client message for
+/// SEP-2243 header mirroring (MCP 2026-07-28 spec).
+fn mcp_headers_from_message(message: &ClientJsonRpcMessage) -> Vec<(HeaderName, HeaderValue)> {
+    let mut headers = Vec::new();
+
+    if let ClientJsonRpcMessage::Request(request) = message {
+        // Determine method from the JSON-RPC method field
+        let method_str = match &request.request {
+            ClientRequest::CallToolRequest(_) => "tools/call",
+            ClientRequest::ListToolsRequest(_) => "tools/list",
+            ClientRequest::ListResourcesRequest(_) => "resources/list",
+            ClientRequest::ReadResourceRequest(_) => "resources/read",
+            ClientRequest::ListPromptsRequest(_) => "prompts/list",
+            ClientRequest::GetPromptRequest(_) => "prompts/get",
+            ClientRequest::SetLevelRequest(_) => "logging/setLevel",
+            ClientRequest::ListResourceTemplatesRequest(_) => "resources/templates/list",
+            ClientRequest::CompleteRequest(_) => "completion/complete",
+            ClientRequest::PingRequest(_) => "ping",
+            _ => "",
+        };
+
+        if !method_str.is_empty()
+            && let Ok(val) = HeaderValue::from_str(method_str)
+        {
+            headers.push((HeaderName::from_static(HEADER_MCP_METHOD), val));
+        }
+
+        // Mcp-Name: tool/resource name for targeted methods
+        let name_str = match &request.request {
+            ClientRequest::CallToolRequest(params) => Some(params.params.name.as_ref()),
+            ClientRequest::ReadResourceRequest(params) => Some(params.params.uri.as_str()),
+            ClientRequest::GetPromptRequest(params) => Some(params.params.name.as_str()),
+            _ => None,
+        };
+
+        if let Some(name) = name_str
+            && let Ok(val) = HeaderValue::from_str(name)
+        {
+            headers.push((HeaderName::from_static(HEADER_MCP_NAME), val));
+        }
+    }
+
+    headers
+}
 
 /// A wrapper around `reqwest::Client` that tolerates missing Content-Type
 /// headers on POST responses. Some MCP servers (e.g., z.ai) return 200 OK
@@ -77,12 +126,17 @@ impl StreamableHttpClient for LenientClient {
         let mut request = self
             .inner
             .post(uri.as_ref())
-            .header(ACCEPT, [EVENT_STREAM_MIME_TYPE, JSON_MIME_TYPE].join(", "));
+            .header(ACCEPT, [EVENT_STREAM_MIME_TYPE, JSON_MIME_TYPE].join(", "))
+            .header(HEADER_MCP_PROTOCOL_VERSION, MCP_PROTOCOL_VERSION_VALUE);
         if let Some(auth_header) = auth_token {
             request = request.bearer_auth(auth_header);
         }
         if let Some(session_id) = session_id {
             request = request.header(HEADER_SESSION_ID, session_id.as_ref());
+        }
+        // SEP-2243: Inject Mcp-Method and Mcp-Name headers for MCP 2026-07-28 spec
+        for (name, value) in mcp_headers_from_message(&message) {
+            request = request.header(name, value);
         }
         for (name, value) in custom_headers {
             request = request.header(name, value);

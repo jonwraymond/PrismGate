@@ -375,7 +375,7 @@ impl ServerHandler for GateminiServer {
                 .enable_prompts()
                 .build(),
         )
-        .with_protocol_version(ProtocolVersion::V_2025_06_18)
+        .with_protocol_version(ProtocolVersion::V_2025_11_25)
         .with_instructions(
                 "gatemini is an MCP gateway that aggregates tools from multiple backend MCP servers.\n\n\
                  IMPORTANT: Backend tools (e.g. firecrawl_search, web_search_exa) are NOT direct MCP tools. \
