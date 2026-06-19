@@ -6,6 +6,19 @@
   "bump-minor-pre-major": false,
   "bump-patch-for-minor-pre-major": false,
   "changelog-path": "CHANGELOG.md",
+  "changelog-sections": [
+    "feat",
+    "fix",
+    "perf",
+    "refactor",
+    "docs",
+    "test",
+    "build",
+    "ci",
+    "chore",
+    "revert"
+  ],
+  "extra-label": "chore: breaking",
   "packages": {
     ".": {
       "component": "gatemini"
