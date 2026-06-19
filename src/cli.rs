@@ -1,6 +1,7 @@
 //! Command-line interface and standard platform path helpers.
 
 use clap::{Parser, Subcommand};
+use clap_complete::{Generator, shells};
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -42,6 +43,11 @@ pub struct Cli {
     #[arg(long)]
     pub direct: bool,
 
+    /// Validate the config file and exit without starting backends or the daemon.
+    /// Useful for testing config changes before deploying them.
+    #[arg(long)]
+    pub dry_run: bool,
+
     #[command(subcommand)]
     pub command: Option<Command>,
 }
@@ -74,6 +80,12 @@ pub enum Command {
     },
     /// Diagnose local proxy/daemon/runtime state without starting backends.
     Doctor,
+    /// Generate shell completion scripts for bash, zsh, and fish.
+    Completion {
+        /// Shell to generate completions for: bash, elvish, fish, powershell, zsh.
+        #[arg(value_name = "shell", default_value = "bash")]
+        shell: String,
+    },
 }
 
 fn parse_duration(value: &str) -> Result<Duration, String> {

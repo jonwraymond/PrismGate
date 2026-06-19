@@ -161,9 +161,9 @@ impl InstancePool {
                 Arc::new(b)
             }
             Transport::StreamableHttp => {
-                anyhow::bail!(
-                    "dedicated instance mode is not supported for streamable-http backends"
-                );
+                let b = super::http::HttpBackend::new(instance_name.clone(), self.config.clone());
+                b.start().await?;
+                Arc::new(b)
             }
         };
 

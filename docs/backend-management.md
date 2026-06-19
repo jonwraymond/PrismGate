@@ -126,7 +126,7 @@ Pool behavior:
 - on session disconnect, the assigned instance is stopped and a fresh one is spawned to maintain the idle pool
 - if all instances are busy, new sessions wait up to `acquire_timeout` (default: 30s) before failing
 
-Only `stdio` and `cli-adapter` transports support dedicated mode. HTTP backends ignore the setting.
+All three transports (stdio, cli-adapter, streamable-http) support dedicated mode.
 
 The pool implementation lives in `src/backend/pool.rs`. The health checker calls `restart_pool_primary()` instead of `restart_backend()` for dedicated backends.
 
