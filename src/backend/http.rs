@@ -66,6 +66,8 @@ impl Backend for HttpBackend {
 
         // Build transport config
         let mut transport_config = StreamableHttpClientTransportConfig::with_uri(url);
+        // MCP 2026-07-28: enable stateless transport (no session handshake required)
+        transport_config.allow_stateless = true;
 
         // Add auth header if present (look for Authorization header in config)
         if let Some(auth) = self.config.headers.get("Authorization") {

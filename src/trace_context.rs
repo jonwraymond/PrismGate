@@ -40,15 +40,21 @@ impl TraceFlags {
     }
 }
 
-/// Fill bytes from a UUID v4.
+/// Fill bytes from a UUID v4, guaranteeing non-zero result.
 fn random_bytes(buf: &mut [u8]) {
-    let mut offset = 0;
-    while offset < buf.len() {
-        let uuid = uuid::Uuid::new_v4();
-        let bytes = uuid.as_bytes();
-        let n = (buf.len() - offset).min(16);
-        buf[offset..offset + n].copy_from_slice(&bytes[..n]);
-        offset += n;
+    loop {
+        let mut offset = 0;
+        while offset < buf.len() {
+            let uuid = uuid::Uuid::new_v4();
+            let bytes = uuid.as_bytes();
+            let n = (buf.len() - offset).min(16);
+            buf[offset..offset + n].copy_from_slice(&bytes[..n]);
+            offset += n;
+        }
+        // Per W3C Trace Context, all-zero IDs are invalid.
+        if !buf.iter().all(|&b| b == 0) {
+            break;
+        }
     }
 }
 
@@ -75,7 +81,8 @@ impl TraceParent {
     }
 
     /// Parse a traceparent header value.
-    /// Format: `00-{32 hex}-{16 hex}-{2 hex}`
+    /// Format: `{2 hex}-{32 hex}-{16 hex}-{2 hex}`
+    /// Returns None for invalid inputs per W3C Trace Context spec.
     #[allow(dead_code)]
     pub fn parse(s: &str) -> Option<Self> {
         let parts: Vec<&str> = s.split('-').collect();
@@ -83,7 +90,15 @@ impl TraceParent {
             return None;
         }
 
-        let version = u8::from_str_radix(parts[0], 16).ok()?;
+        // Version must be exactly 2 hex chars; ff is reserved/invalid per spec.
+        let version_str = parts[0];
+        if version_str.len() != 2 {
+            return None;
+        }
+        let version = u8::from_str_radix(version_str, 16).ok()?;
+        if version == 0xff {
+            return None;
+        }
 
         let trace_id_hex = parts[1];
         if trace_id_hex.len() != 32 {
@@ -93,6 +108,10 @@ impl TraceParent {
         for i in 0..16 {
             trace_id[i] = u8::from_str_radix(&trace_id_hex[i * 2..i * 2 + 2], 16).ok()?;
         }
+        // All-zero trace_id is invalid per spec.
+        if trace_id.iter().all(|&b| b == 0) {
+            return None;
+        }
 
         let parent_id_hex = parts[2];
         if parent_id_hex.len() != 16 {
@@ -101,6 +120,10 @@ impl TraceParent {
         let mut parent_id = [0u8; 8];
         for i in 0..8 {
             parent_id[i] = u8::from_str_radix(&parent_id_hex[i * 2..i * 2 + 2], 16).ok()?;
+        }
+        // All-zero parent_id is invalid per spec.
+        if parent_id.iter().all(|&b| b == 0) {
+            return None;
         }
 
         let trace_flags_hex = parts[3];
@@ -270,7 +293,9 @@ mod tests {
         let parent = TraceParent::new();
         let child = parent.child();
         assert_eq!(parent.trace_id, child.trace_id);
-        // Parent ID should differ (probabilistic, but UUIDs won't collide)
+        // Child must have a different, non-zero parent_id.
+        assert_ne!(parent.parent_id, child.parent_id);
+        assert_ne!(child.parent_id, [0; 8]);
         assert_ne!(parent.parent_id, [0; 8]);
     }
 
