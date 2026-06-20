@@ -2478,6 +2478,7 @@ dependencies = [
  "regex",
  "reqwest 0.13.3",
  "rmcp",
+ "rusqlite",
  "rustls",
  "rustyscript",
  "serde",

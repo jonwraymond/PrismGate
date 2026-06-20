@@ -242,6 +242,8 @@ pub struct BackendManager {
     dedicated_pools: DashMap<String, Arc<pool::InstancePool>>,
     /// Per-backend memory statistics from RSS sampling.
     memory_stats: DashMap<String, memory::MemoryStats>,
+    /// Immutable audit log for tool invocations (MAAR alignment).
+    audit: std::sync::Mutex<Option<Arc<crate::audit::AuditLog>>>,
 }
 
 impl BackendManager {
@@ -261,6 +263,7 @@ impl BackendManager {
             tracker: None,
             dedicated_pools: DashMap::new(),
             memory_stats: DashMap::new(),
+            audit: std::sync::Mutex::new(None),
         })
     }
 
@@ -284,7 +287,13 @@ impl BackendManager {
             tracker,
             dedicated_pools: DashMap::new(),
             memory_stats: DashMap::new(),
+            audit: std::sync::Mutex::new(None),
         })
+    }
+
+    /// Set the audit log for recording tool invocations.
+    pub fn set_audit(&self, audit: Arc<crate::audit::AuditLog>) {
+        *self.audit.lock().unwrap() = Some(audit);
     }
 
     /// Start all backends from config, discover tools, register in registry.
@@ -555,10 +564,19 @@ impl BackendManager {
             })?;
             let instance = pool.acquire(sid).await?;
             let start = std::time::Instant::now();
-            let result = instance.call_tool(tool_name, arguments).await;
+            let arguments_for_call = arguments.clone();
+            let result = instance.call_tool(tool_name, arguments_for_call).await;
             if let Some(ref tracker) = self.tracker {
                 tracker.record(tool_name, backend_name, start.elapsed(), result.is_ok());
             }
+            self.record_audit(
+                backend_name,
+                tool_name,
+                arguments.as_ref(),
+                &result,
+                start.elapsed(),
+                session_id,
+            );
             return result;
         }
 
@@ -618,6 +636,7 @@ impl BackendManager {
             .map(|r| r.value().clone())
             .unwrap_or_default();
 
+        let arguments_for_retry = arguments.clone();
         let mut delay = retry.initial_delay;
         for attempt in 0..retry.max_retries {
             // Check if backend exists in the DashMap
@@ -632,7 +651,7 @@ impl BackendManager {
                     match state {
                         BackendState::Healthy => {
                             let start = std::time::Instant::now();
-                            let result = b.call_tool(tool_name, arguments).await;
+                            let result = b.call_tool(tool_name, arguments_for_retry.clone()).await;
                             if let Some(ref tracker) = self.tracker {
                                 tracker.record(
                                     tool_name,
@@ -641,6 +660,14 @@ impl BackendManager {
                                     result.is_ok(),
                                 );
                             }
+                            self.record_audit(
+                                backend_name,
+                                tool_name,
+                                arguments.as_ref(),
+                                &result,
+                                start.elapsed(),
+                                session_id,
+                            );
                             return result;
                         }
                         BackendState::Starting => {
@@ -656,11 +683,21 @@ impl BackendManager {
                         }
                         // Unhealthy or Stopped — fail immediately, no point retrying
                         _ => {
-                            anyhow::bail!(
-                                "backend '{}' is not available (state: {:?}). \
-                                 Check status: @gatemini://backend/{}",
+                            let err_msg = format!(
+                                "backend '{}' is not available (state: {:?})",
+                                backend_name, state
+                            );
+                            self.record_audit(
                                 backend_name,
-                                state,
+                                tool_name,
+                                arguments.as_ref(),
+                                &Err(anyhow::anyhow!("{}", err_msg)),
+                                Duration::ZERO,
+                                session_id,
+                            );
+                            anyhow::bail!(
+                                "{} Check status: @gatemini://backend/{}",
+                                err_msg,
                                 backend_name
                             );
                         }
@@ -682,35 +719,60 @@ impl BackendManager {
         }
 
         // All retries exhausted — produce a descriptive error
-        match self.backends.get(backend_name).map(|r| r.value().state()) {
+        let err_msg = match self.backends.get(backend_name).map(|r| r.value().state()) {
             Some(BackendState::Starting) => {
-                anyhow::bail!(
-                    "backend '{}' is still starting (retried {} times). \
-                     Tool '{}' is cached but the backend hasn't connected yet. \
-                     Check status: @gatemini://backend/{}",
-                    backend_name,
-                    retry.max_retries,
-                    tool_name,
-                    backend_name
+                format!(
+                    "backend '{}' is still starting (retried {} times)",
+                    backend_name, retry.max_retries
                 )
             }
             Some(state) => {
-                anyhow::bail!(
-                    "backend '{}' is not available (state: {:?}). \
-                     Check status: @gatemini://backend/{}",
-                    backend_name,
-                    state,
-                    backend_name
+                format!(
+                    "backend '{}' is not available (state: {:?})",
+                    backend_name, state
                 )
             }
             None => {
-                anyhow::bail!(
-                    "backend '{}' not found after {} retries. \
-                     It may not be configured or failed to start. \
-                     See all backends: @gatemini://backends",
-                    backend_name,
-                    retry.max_retries
+                format!(
+                    "backend '{}' not found after {} retries",
+                    backend_name, retry.max_retries
                 )
+            }
+        };
+        self.record_audit(
+            backend_name,
+            tool_name,
+            arguments.as_ref(),
+            &Err(anyhow::anyhow!("{}", err_msg)),
+            Duration::ZERO,
+            session_id,
+        );
+        anyhow::bail!("{}", err_msg);
+    }
+
+    /// Record a tool invocation in the audit log (if enabled).
+    fn record_audit(
+        &self,
+        backend_name: &str,
+        tool_name: &str,
+        arguments: Option<&Value>,
+        result: &Result<Value>,
+        duration: Duration,
+        session_id: Option<u64>,
+    ) {
+        if let Some(ref audit) = *self.audit.lock().unwrap() {
+            let success = result.is_ok();
+            let error = result.as_ref().err().map(|e| e.to_string());
+            if let Err(e) = audit.record(crate::audit::RecordParams {
+                backend_name,
+                tool_name,
+                arguments,
+                success,
+                error_message: error.as_deref(),
+                duration,
+                session_id,
+            }) {
+                warn!(error = %e, "failed to record audit entry");
             }
         }
     }
@@ -1250,6 +1312,7 @@ mod backend_manager_lifecycle_tests {
             },
             shutdown_grace_period: Duration::from_secs(1),
             max_memory_mb: None,
+            github_url: None,
         }
     }
 

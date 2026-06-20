@@ -373,6 +373,7 @@ mod tests {
             pool: Default::default(),
             shutdown_grace_period: Duration::from_millis(100),
             max_memory_mb: None,
+            github_url: None,
         }
     }
 
