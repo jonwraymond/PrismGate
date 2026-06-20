@@ -85,6 +85,9 @@ arc-swap = "1"
 # Async trait
 async-trait = "0.1"
 
+# Audit logging
+rusqlite = { version = "0.39", features = ["bundled"] }
+
 # Process group management and Unix IPC (unix-only)
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

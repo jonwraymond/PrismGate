@@ -140,6 +140,10 @@ pub struct Config {
     /// These are registered under a virtual `__composite` backend.
     #[serde(default)]
     pub composite_tools: HashMap<String, CompositeToolConfig>,
+
+    /// Audit logging configuration for immutable tool invocation records.
+    #[serde(default)]
+    pub audit: AuditConfig,
 }
 
 /// Configuration for a composite tool — a multi-step TypeScript snippet
@@ -185,6 +189,37 @@ pub struct BwsProviderConfig {
 
     /// Organization UUID. Falls back to BWS_ORG_ID env var.
     pub organization_id: Option<String>,
+}
+
+/// Audit logging configuration for immutable tool invocation records.
+/// Supports MAAR (MCP Audit and Accountability Requirements) alignment.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AuditConfig {
+    /// Enable immutable audit logging. Default: false.
+    #[serde(default)]
+    pub enabled: bool,
+
+    /// Path to the SQLite audit database. Default: platform cache directory / audit.db.
+    #[serde(default)]
+    pub db_path: Option<PathBuf>,
+
+    /// Maximum age of audit records before compaction. Default: 90 days.
+    #[serde(default = "default_audit_retention_days")]
+    pub retention_days: u32,
+}
+
+fn default_audit_retention_days() -> u32 {
+    90
+}
+
+impl Default for AuditConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            db_path: None,
+            retention_days: default_audit_retention_days(),
+        }
+    }
 }
 
 /// Per-backend configuration.
@@ -290,6 +325,12 @@ pub struct BackendConfig {
     /// Auto-restart backend if RSS exceeds this (MB). None = no limit.
     #[serde(default)]
     pub max_memory_mb: Option<u64>,
+
+    /// GitHub repository URL used for vetting (e.g. "https://github.com/owner/repo").
+    /// When set, the health checker fetches last-commit date, CI status, and known CVEs
+    /// to produce a vetting score. Set `vetting: { enabled: false }` in health config to disable.
+    #[serde(default)]
+    pub github_url: Option<String>,
 }
 
 /// Per-backend retry configuration for transient failures (Starting state).
@@ -489,6 +530,40 @@ pub struct HealthConfig {
         with = "humantime_duration"
     )]
     pub memory_restart_cooldown: Duration,
+
+    /// Vetting configuration for GitHub supply-chain checks (last commit, CVEs, CI).
+    /// Default: enabled with threshold 50, checked every 6 hours.
+    #[serde(default)]
+    pub vetting: VettingConfig,
+}
+
+/// Configuration for GitHub supply-chain vetting.
+/// Added to HealthConfig as `vetting:` subsection.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct VettingConfig {
+    /// Whether to enable vetting checks. Default: true.
+    #[serde(default = "default_vetting_enabled")]
+    pub enabled: bool,
+
+    /// How often to re-fetch GitHub metadata per backend. Default: 6h.
+    #[serde(default = "default_vetting_interval", with = "humantime_duration")]
+    pub interval: Duration,
+
+    /// Vetting score below which a server is flagged as concerning. Default: 50.
+    #[serde(default = "default_vetting_threshold")]
+    pub threshold: u8,
+}
+
+fn default_vetting_enabled() -> bool {
+    true
+}
+
+fn default_vetting_interval() -> Duration {
+    Duration::from_secs(6 * 3600)
+}
+
+fn default_vetting_threshold() -> u8 {
+    50
 }
 
 /// Admin API configuration.
@@ -726,6 +801,17 @@ impl Default for HealthConfig {
             drain_timeout: default_drain_timeout(),
             memory_check_interval: default_memory_check_interval(),
             memory_restart_cooldown: default_memory_restart_cooldown(),
+            vetting: VettingConfig::default(),
+        }
+    }
+}
+
+impl Default for VettingConfig {
+    fn default() -> Self {
+        Self {
+            enabled: default_vetting_enabled(),
+            interval: default_vetting_interval(),
+            threshold: default_vetting_threshold(),
         }
     }
 }

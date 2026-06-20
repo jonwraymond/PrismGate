@@ -487,6 +487,7 @@ mod tests {
             pool: PoolConfig::default(),
             shutdown_grace_period: Duration::from_secs(5),
             max_memory_mb: None,
+            github_url: None,
         }
     }
 
