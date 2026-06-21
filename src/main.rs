@@ -3,6 +3,7 @@
 //! This file wires together config loading, tracing, secrets, cache restore,
 //! backend startup, and mode dispatch for proxy, direct, and daemon execution.
 
+mod access;
 mod admin;
 mod backend;
 mod cache;
@@ -272,6 +273,7 @@ async fn run_direct(gw: InitializedGateway) -> Result<()> {
         sandbox_semaphore,
         Some(0), // direct mode uses session_id 0
         gw.config.sandbox.output.clone(),
+        gw.config.access_control.clone(),
     );
 
     info!("starting MCP stdio server (direct mode)");
