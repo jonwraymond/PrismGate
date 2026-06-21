@@ -40,6 +40,7 @@ mod tests {
             Arc::new(Semaphore::new(8)),
             None,
             Default::default(),
+            Default::default(),
         );
 
         let (client_io, server_io) = tokio::io::duplex(65536);
@@ -120,6 +121,7 @@ mod tests {
             10,
             Arc::new(Semaphore::new(8)),
             None,
+            Default::default(),
             Default::default(),
         );
 

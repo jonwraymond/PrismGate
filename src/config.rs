@@ -7,6 +7,8 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, LazyLock, Once};
 use std::time::Duration;
 
+use crate::access::AccessControlConfig;
+
 static DOTENV_ONCE: Once = Once::new();
 static SECRETREF_RE: LazyLock<regex::Regex> =
     LazyLock::new(|| regex::Regex::new(r"secretref:[^:\s]+:[\w/.\-]+").unwrap());
@@ -140,6 +142,11 @@ pub struct Config {
     /// These are registered under a virtual `__composite` backend.
     #[serde(default)]
     pub composite_tools: HashMap<String, CompositeToolConfig>,
+
+    /// Access control configuration for tool-level RBAC.
+    /// When set, restricts which backend tools can be called through the gateway.
+    #[serde(default)]
+    pub access_control: AccessControlConfig,
 }
 
 /// Configuration for a composite tool — a multi-step TypeScript snippet
