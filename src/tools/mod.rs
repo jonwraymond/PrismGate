@@ -3,3 +3,4 @@ pub mod discovery;
 pub mod json_chunker;
 pub mod register;
 pub mod sandbox;
+pub mod sanitize;
