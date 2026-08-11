@@ -177,7 +177,7 @@ impl StreamableHttpClient for LenientClient {
 
         match content_type {
             Some(ct) if ct.as_bytes().starts_with(EVENT_STREAM_MIME_TYPE.as_bytes()) => {
-                let event_stream = SseStream::from_byte_stream(response.bytes_stream()).boxed();
+                let event_stream = SseStream::from_bytes_stream(response.bytes_stream()).boxed();
                 Ok(StreamableHttpPostResponse::Sse(
                     event_stream,
                     session_id_val,

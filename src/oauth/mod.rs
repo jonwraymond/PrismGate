@@ -6,7 +6,7 @@
 //! - Token storage and automatic refresh
 //! - Browser-based user consent flow
 
-#![allow(unused_imports)]
+#![allow(unused_imports, dead_code)]
 
 pub mod callback_server;
 pub mod config;
