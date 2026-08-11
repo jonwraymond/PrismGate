@@ -46,7 +46,7 @@ impl EncryptionKeyManager {
                 let mut key = [0u8; 32];
                 OsRng.fill_bytes(&mut key);
                 
-                let key_b64 = BASE64.encode(&key);
+                let key_b64 = BASE64.encode(key);
                 self.entry
                     .set_password(&key_b64)
                     .context("failed to store encryption key in keyring")?;

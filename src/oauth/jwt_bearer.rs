@@ -159,7 +159,7 @@ impl JwtBearerClient {
 mod tests {
     use super::*;
 
-    #[test]
+   #[test]
     fn test_jwt_claims_creation() {
         let claims = JwtBearerClaims::new(
             "test-client".to_string(),
@@ -180,7 +180,7 @@ mod tests {
 MIIEpAIBAAKCAQEA0Z3VS5JJcds3xfn/ygWyF0qHJgKhKPxnXKJpKKQCPXDKqMYz
 -----END RSA PRIVATE KEY-----";
 
-        let claims = JwtBearerClaims::new(
+        let _claims = JwtBearerClaims::new(
             "test-client".to_string(),
             "https://auth.example.com/token".to_string(),
         );

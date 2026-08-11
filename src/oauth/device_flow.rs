@@ -89,7 +89,7 @@ impl DeviceFlowClient {
             .client
             .post(&self.device_authorization_endpoint)
             .header("Content-Type", "application/x-www-form-urlencoded")
-            .body(serde_urlencoded::to_string(&params).context("failed to encode params")?)
+            .body(serde_urlencoded::to_string(params).context("failed to encode params")?)
             .send()
             .await
             .context("failed to request device authorization")?;
@@ -130,11 +130,11 @@ impl DeviceFlowClient {
                 ("client_id", &self.client_id),
             ];
 
-            let response = self
+           let response = self
                 .client
                 .post(&self.token_endpoint)
                 .header("Content-Type", "application/x-www-form-urlencoded")
-                .body(serde_urlencoded::to_string(&params).context("failed to encode params")?)
+                .body(serde_urlencoded::to_string(params).context("failed to encode params")?)
                 .send()
                 .await
                 .context("failed to poll for token")?;
