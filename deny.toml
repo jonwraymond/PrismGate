@@ -38,15 +38,22 @@ allow = [
 exceptions = [
     { allow = ["GPL-3.0-only"], crate = "bitwarden" },
     { allow = ["GPL-3.0-only"], crate = "bitwarden-api-api" },
+    { allow = ["GPL-3.0-only"], crate = "bitwarden-api-base" },
     { allow = ["GPL-3.0-only"], crate = "bitwarden-api-identity" },
+    { allow = ["GPL-3.0-only"], crate = "bitwarden-api-key-connector" },
+    { allow = ["GPL-3.0-only"], crate = "bitwarden-auth" },
     { allow = ["GPL-3.0-only"], crate = "bitwarden-core" },
+    { allow = ["GPL-3.0-only"], crate = "bitwarden-core-macro" },
     { allow = ["GPL-3.0-only"], crate = "bitwarden-crypto" },
     { allow = ["GPL-3.0-only"], crate = "bitwarden-encoding" },
     { allow = ["GPL-3.0-only"], crate = "bitwarden-error" },
     { allow = ["GPL-3.0-only"], crate = "bitwarden-error-macro" },
     { allow = ["GPL-3.0-only"], crate = "bitwarden-generators" },
+    { allow = ["GPL-3.0-only"], crate = "bitwarden-organizations" },
+    { allow = ["GPL-3.0-only"], crate = "bitwarden-policies" },
     { allow = ["GPL-3.0-only"], crate = "bitwarden-sm" },
     { allow = ["GPL-3.0-only"], crate = "bitwarden-state" },
+    { allow = ["GPL-3.0-only"], crate = "bitwarden-state-bridge-macro" },
     { allow = ["GPL-3.0-only"], crate = "bitwarden-threading" },
     { allow = ["GPL-3.0-only"], crate = "bitwarden-uuid" },
     { allow = ["GPL-3.0-only"], crate = "bitwarden-uuid-macro" },
@@ -64,12 +71,32 @@ expression = "GPL-3.0-only"
 license-files = []
 
 [[licenses.clarify]]
+crate = "bitwarden-api-base"
+expression = "GPL-3.0-only"
+license-files = []
+
+[[licenses.clarify]]
 crate = "bitwarden-api-identity"
 expression = "GPL-3.0-only"
 license-files = []
 
 [[licenses.clarify]]
+crate = "bitwarden-api-key-connector"
+expression = "GPL-3.0-only"
+license-files = []
+
+[[licenses.clarify]]
+crate = "bitwarden-auth"
+expression = "GPL-3.0-only"
+license-files = []
+
+[[licenses.clarify]]
 crate = "bitwarden-core"
+expression = "GPL-3.0-only"
+license-files = []
+
+[[licenses.clarify]]
+crate = "bitwarden-core-macro"
 expression = "GPL-3.0-only"
 license-files = []
 
@@ -99,12 +126,27 @@ expression = "GPL-3.0-only"
 license-files = []
 
 [[licenses.clarify]]
+crate = "bitwarden-organizations"
+expression = "GPL-3.0-only"
+license-files = []
+
+[[licenses.clarify]]
+crate = "bitwarden-policies"
+expression = "GPL-3.0-only"
+license-files = []
+
+[[licenses.clarify]]
 crate = "bitwarden-sm"
 expression = "GPL-3.0-only"
 license-files = []
 
 [[licenses.clarify]]
 crate = "bitwarden-state"
+expression = "GPL-3.0-only"
+license-files = []
+
+[[licenses.clarify]]
+crate = "bitwarden-state-bridge-macro"
 expression = "GPL-3.0-only"
 license-files = []
 
