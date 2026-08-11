@@ -15,6 +15,7 @@ mod integration_inventory;
 mod ipc;
 #[cfg(test)]
 mod mcp_compliance_tests;
+mod oauth;
 mod prompts;
 mod registry;
 mod resources;
