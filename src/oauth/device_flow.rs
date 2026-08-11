@@ -4,8 +4,8 @@
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
-use std::time::{Duration, Instant};
 use std::collections::HashMap;
+use std::time::{Duration, Instant};
 
 /// Device authorization response from the authorization server.
 #[derive(Debug, Deserialize)]
@@ -130,7 +130,7 @@ impl DeviceFlowClient {
                 ("client_id", &self.client_id),
             ];
 
-           let response = self
+            let response = self
                 .client
                 .post(&self.token_endpoint)
                 .header("Content-Type", "application/x-www-form-urlencoded")
@@ -206,13 +206,13 @@ impl DeviceFlowClient {
         println!("Please visit: {}", auth_response.verification_uri);
         println!("And enter code: {}", auth_response.user_code);
         println!();
-        
+
         if let Some(complete_uri) = &auth_response.verification_uri_complete {
             println!("Or visit this URL directly:");
             println!("{}", complete_uri);
             println!();
         }
-        
+
         println!("Waiting for authorization...");
         println!();
 

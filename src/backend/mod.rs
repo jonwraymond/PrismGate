@@ -1247,7 +1247,7 @@ mod backend_manager_lifecycle_tests {
                 max_instances: 1,
                 acquire_timeout: Duration::from_secs(1),
                 replenish_delay: Duration::from_secs(1),
-           },
+            },
             shutdown_grace_period: Duration::from_secs(1),
             max_memory_mb: None,
             oauth: None,

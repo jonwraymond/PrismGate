@@ -1,11 +1,11 @@
 //! Token encryption at rest using system keyring and AES-GCM.
 
 use aes_gcm::{
-    aead::{Aead, KeyInit, OsRng},
     Aes256Gcm, Nonce,
+    aead::{Aead, KeyInit, OsRng},
 };
 use anyhow::{Context, Result};
-use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
+use base64::{Engine, engine::general_purpose::STANDARD as BASE64};
 use keyring::Entry;
 use rand::RngCore;
 
@@ -20,8 +20,7 @@ pub struct EncryptionKeyManager {
 impl EncryptionKeyManager {
     /// Create a new encryption key manager.
     pub fn new() -> Result<Self> {
-        let entry = Entry::new(SERVICE_NAME, KEY_NAME)
-            .context("failed to create keyring entry")?;
+        let entry = Entry::new(SERVICE_NAME, KEY_NAME).context("failed to create keyring entry")?;
         Ok(Self { entry })
     }
 
@@ -32,11 +31,11 @@ impl EncryptionKeyManager {
                 let key_bytes = BASE64
                     .decode(&key_b64)
                     .context("failed to decode encryption key")?;
-                
+
                 if key_bytes.len() != 32 {
                     anyhow::bail!("invalid encryption key length");
                 }
-                
+
                 let mut key = [0u8; 32];
                 key.copy_from_slice(&key_bytes);
                 Ok(key)
@@ -45,12 +44,12 @@ impl EncryptionKeyManager {
                 // Generate new key
                 let mut key = [0u8; 32];
                 OsRng.fill_bytes(&mut key);
-                
+
                 let key_b64 = BASE64.encode(key);
                 self.entry
                     .set_password(&key_b64)
                     .context("failed to store encryption key in keyring")?;
-                
+
                 Ok(key)
             }
         }
@@ -125,12 +124,12 @@ mod tests {
         let _ = manager.delete_key();
     }
 
-   #[test]
+    #[test]
     fn test_key_persistence() {
         // This test verifies that encryption keys persist in the system keyring.
         // However, in test environments (especially CI), keyring access may not work reliably.
         // The encrypt_decrypt test already verifies the core encryption functionality.
-        // 
+        //
         // If you want to test key persistence manually:
         // 1. Run: cargo test oauth::encryption::tests::test_encrypt_decrypt
         // 2. Check that the key persists in your system keyring

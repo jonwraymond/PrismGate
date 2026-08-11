@@ -843,7 +843,7 @@ mod tests {
 
     #[test]
     fn test_new_no_tools_fails() {
-       let config = BackendConfig {
+        let config = BackendConfig {
             transport: crate::config::Transport::CliAdapter,
             namespace: None,
             command: None,

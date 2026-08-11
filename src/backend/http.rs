@@ -19,9 +19,9 @@ use super::{
     store_state,
 };
 use crate::config::BackendConfig;
+use crate::oauth::TokenStore;
 use crate::registry::ToolEntry;
 use crate::trace_context::TraceContext;
-use crate::oauth::TokenStore;
 
 /// Inject W3C Trace Context into CallToolRequestParams _meta.
 fn inject_trace_meta(params: &mut CallToolRequestParams) {
@@ -68,7 +68,7 @@ impl Backend for HttpBackend {
         // Handle OAuth authentication if configured
         let oauth_token = if let Some(oauth_config) = &self.config.oauth {
             let store = TokenStore::new()?;
-            
+
             // Try to load existing token
             match store.get(&self.name) {
                 Ok(Some(token)) if !token.is_expired() => {
@@ -84,7 +84,14 @@ impl Backend for HttpBackend {
                         backend = %self.name,
                         "refreshing expired OAuth token"
                     );
-                    match crate::oauth::refresh_token(&self.name, url, oauth_config, token.refresh_token.as_ref().unwrap()).await {
+                    match crate::oauth::refresh_token(
+                        &self.name,
+                        url,
+                        oauth_config,
+                        token.refresh_token.as_ref().unwrap(),
+                    )
+                    .await
+                    {
                         Ok(new_token) => Some(new_token),
                         Err(e) => {
                             warn!(
@@ -92,7 +99,8 @@ impl Backend for HttpBackend {
                                 error = %e,
                                 "failed to refresh token, starting new OAuth flow"
                             );
-                            let token = crate::oauth::authenticate(&self.name, url, oauth_config).await?;
+                            let token =
+                                crate::oauth::authenticate(&self.name, url, oauth_config).await?;
                             Some(token)
                         }
                     }
@@ -122,7 +130,7 @@ impl Backend for HttpBackend {
         } else {
             self.config.headers.get("Authorization").cloned()
         };
-        
+
         if let Some(auth) = auth_header {
             // Strip "Bearer " prefix if present — rmcp adds it back
             let token = auth.strip_prefix("Bearer ").unwrap_or(&auth);

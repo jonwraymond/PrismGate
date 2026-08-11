@@ -73,7 +73,7 @@ impl IntrospectionClient {
         let mut params = std::collections::HashMap::new();
         params.insert("token", token);
         params.insert("client_id", &self.client_id);
-        
+
         if let Some(secret) = &self.client_secret {
             params.insert("client_secret", secret);
         }

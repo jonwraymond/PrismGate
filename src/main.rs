@@ -386,23 +386,29 @@ async fn main() -> Result<()> {
         (Some(cli::Command::Doctor), _) => ipc::doctor::run(),
 
         // OAuth authentication
-        (Some(cli::Command::Auth {
-            backend,
-            url,
-            client_id,
-            scopes,
-        }), _) => {
-           let config = oauth::OAuthConfig {
+        (
+            Some(cli::Command::Auth {
+                backend,
+                url,
+                client_id,
+                scopes,
+            }),
+            _,
+        ) => {
+            let config = oauth::OAuthConfig {
                 discover: true,
                 authorization_url: None,
                 token_url: None,
                 client_id: client_id.clone(),
                 client_secret: None,
-                scopes: scopes.as_ref().map(|s| s.split(',').map(String::from).collect()).unwrap_or_default(),
+                scopes: scopes
+                    .as_ref()
+                    .map(|s| s.split(',').map(String::from).collect())
+                    .unwrap_or_default(),
                 redirect_uri: "http://localhost:8080/callback".to_string(),
                 callback_port: 8080,
             };
-            
+
             match oauth::authenticate(backend, url, &config).await {
                 Ok(token) => {
                     println!("✓ Authentication successful!");

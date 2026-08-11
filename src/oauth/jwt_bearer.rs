@@ -3,7 +3,7 @@
 //! Service-to-service authentication using signed JWTs.
 
 use anyhow::{Context, Result};
-use jsonwebtoken::{encode, Algorithm, EncodingKey, Header};
+use jsonwebtoken::{Algorithm, EncodingKey, Header, encode};
 use serde::{Deserialize, Serialize};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -92,8 +92,8 @@ impl JwtBearerClient {
         client_id: String,
         private_key_pem: &[u8],
     ) -> Result<Self> {
-        let private_key = EncodingKey::from_ec_pem(private_key_pem)
-            .context("failed to parse EC private key")?;
+        let private_key =
+            EncodingKey::from_ec_pem(private_key_pem).context("failed to parse EC private key")?;
 
         Ok(Self {
             client: reqwest::Client::new(),
@@ -112,8 +112,8 @@ impl JwtBearerClient {
         let mut header = Header::new(self.algorithm);
         header.typ = Some("JWT".to_string());
 
-        let assertion = encode(&header, &claims, &self.private_key)
-            .context("failed to encode JWT")?;
+        let assertion =
+            encode(&header, &claims, &self.private_key).context("failed to encode JWT")?;
 
         // Request token
         let scope = scopes.join(" ");
@@ -142,9 +142,9 @@ impl JwtBearerClient {
             .await
             .context("failed to parse token response")?;
 
-        let expires_at = token_response.expires_in.map(|secs| {
-            chrono::Utc::now() + chrono::Duration::seconds(secs as i64)
-        });
+        let expires_at = token_response
+            .expires_in
+            .map(|secs| chrono::Utc::now() + chrono::Duration::seconds(secs as i64));
 
         Ok(crate::oauth::OAuthToken {
             access_token: token_response.access_token,
@@ -159,7 +159,7 @@ impl JwtBearerClient {
 mod tests {
     use super::*;
 
-   #[test]
+    #[test]
     fn test_jwt_claims_creation() {
         let claims = JwtBearerClaims::new(
             "test-client".to_string(),

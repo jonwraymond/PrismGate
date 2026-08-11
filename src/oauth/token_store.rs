@@ -3,7 +3,7 @@
 //! Tokens are encrypted at rest using AES-256-GCM with keys stored in the system keyring.
 
 use anyhow::{Context, Result};
-use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
+use base64::{Engine, engine::general_purpose::STANDARD as BASE64};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
@@ -125,16 +125,16 @@ impl TokenStore {
     /// Get a token for a backend.
     pub fn get(&self, backend_name: &str) -> Result<Option<OAuthToken>> {
         let cache = self.load_cache()?;
-        
+
         if let Some(encrypted_b64) = cache.tokens.get(backend_name) {
             let encrypted = BASE64
                 .decode(encrypted_b64)
                 .context("failed to decode encrypted token")?;
-            
+
             let decrypted = self.encryption.decrypt(&encrypted)?;
-            let token: OAuthToken = serde_json::from_slice(&decrypted)
-                .context("failed to deserialize token")?;
-            
+            let token: OAuthToken =
+                serde_json::from_slice(&decrypted).context("failed to deserialize token")?;
+
             Ok(Some(token))
         } else {
             Ok(None)
@@ -144,13 +144,12 @@ impl TokenStore {
     /// Store a token for a backend.
     pub fn store(&self, backend_name: &str, token: &OAuthToken) -> Result<()> {
         let mut cache = self.load_cache()?;
-        
-        let serialized = serde_json::to_vec(token)
-            .context("failed to serialize token")?;
-        
+
+        let serialized = serde_json::to_vec(token).context("failed to serialize token")?;
+
         let encrypted = self.encryption.encrypt(&serialized)?;
         let encrypted_b64 = BASE64.encode(&encrypted);
-        
+
         cache.tokens.insert(backend_name.to_string(), encrypted_b64);
         self.save_cache(&cache)?;
         Ok(())

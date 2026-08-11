@@ -128,13 +128,13 @@ impl OAuthFlow {
             .context("failed to parse token response")?;
 
         let mut token = self.token_response_to_oauth_token(token_response);
-        
+
         // OAuth 2.1: If no new refresh token, keep the old one (but warn)
         if self.oauth21_mode && token.refresh_token.is_none() {
             eprintln!("Warning: OAuth 2.1 mode enabled but server didn't rotate refresh token");
             token.refresh_token = Some(refresh_token.to_string());
         }
-        
+
         Ok(token)
     }
 
@@ -203,9 +203,9 @@ impl OAuthFlow {
 
     /// Convert a token response to an OAuthToken.
     fn token_response_to_oauth_token(&self, response: TokenResponse) -> OAuthToken {
-        let expires_at = response.expires_in.map(|secs| {
-            chrono::Utc::now() + chrono::Duration::seconds(secs as i64)
-        });
+        let expires_at = response
+            .expires_in
+            .map(|secs| chrono::Utc::now() + chrono::Duration::seconds(secs as i64));
 
         OAuthToken {
             access_token: response.access_token,
