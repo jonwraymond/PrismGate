@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.17.0](https://github.com/jonwraymond/PrismGate/compare/v1.16.0...v1.17.0) (2026-08-11)
+
+
+### Features
+
+* Add comprehensive OAuth 2.1 support with multiple grant types ([#139](https://github.com/jonwraymond/PrismGate/issues/139)) ([09e0aee](https://github.com/jonwraymond/PrismGate/commit/09e0aee3d12aee02e413b20b0bfae12b9c798d7e))
+
+
+### Bug Fixes
+
+* Address clippy warnings in OAuth implementation ([e634952](https://github.com/jonwraymond/PrismGate/commit/e634952a7125e5873ae41f865f8e1e4ca2082099))
+
 ## [1.16.0](https://github.com/jonwraymond/PrismGate/compare/v1.15.0...v1.16.0) (2026-08-11)
 
 
