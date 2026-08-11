@@ -385,6 +385,40 @@ async fn main() -> Result<()> {
         // Local diagnostics without daemon/backend initialization
         (Some(cli::Command::Doctor), _) => ipc::doctor::run(),
 
+        // OAuth authentication
+        (Some(cli::Command::Auth {
+            backend,
+            url,
+            client_id,
+            scopes,
+        }), _) => {
+           let config = oauth::OAuthConfig {
+                discover: true,
+                authorization_url: None,
+                token_url: None,
+                client_id: client_id.clone(),
+                client_secret: None,
+                scopes: scopes.as_ref().map(|s| s.split(',').map(String::from).collect()).unwrap_or_default(),
+                redirect_uri: "http://localhost:8080/callback".to_string(),
+                callback_port: 8080,
+            };
+            
+            match oauth::authenticate(backend, url, &config).await {
+                Ok(token) => {
+                    println!("✓ Authentication successful!");
+                    if let Some(expires_at) = token.expires_at {
+                        println!("  Expires at: {}", expires_at);
+                    }
+                    println!("  Scopes: {}", token.scopes.join(", "));
+                    Ok(())
+                }
+                Err(e) => {
+                    eprintln!("✗ Authentication failed: {}", e);
+                    Err(e)
+                }
+            }
+        }
+
         // Default: proxy mode (auto-start daemon if needed)
         (None, false) => ipc::proxy::run(&cli.config).await,
     }

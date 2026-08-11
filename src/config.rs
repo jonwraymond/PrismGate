@@ -290,6 +290,10 @@ pub struct BackendConfig {
     /// Auto-restart backend if RSS exceeds this (MB). None = no limit.
     #[serde(default)]
     pub max_memory_mb: Option<u64>,
+
+    /// OAuth 2.0 configuration for this backend.
+    #[serde(default)]
+    pub oauth: Option<crate::oauth::OAuthConfig>,
 }
 
 /// Per-backend retry configuration for transient failures (Starting state).

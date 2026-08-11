@@ -484,9 +484,10 @@ mod tests {
             adapter_file: None,
             health_check: None,
             instance_mode: InstanceMode::Shared,
-            pool: PoolConfig::default(),
+           pool: PoolConfig::default(),
             shutdown_grace_period: Duration::from_secs(5),
             max_memory_mb: None,
+            oauth: None,
         }
     }
 

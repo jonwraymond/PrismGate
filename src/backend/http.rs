@@ -21,6 +21,7 @@ use super::{
 use crate::config::BackendConfig;
 use crate::registry::ToolEntry;
 use crate::trace_context::TraceContext;
+use crate::oauth::TokenStore;
 
 /// Inject W3C Trace Context into CallToolRequestParams _meta.
 fn inject_trace_meta(params: &mut CallToolRequestParams) {
@@ -64,15 +65,67 @@ impl Backend for HttpBackend {
             .as_deref()
             .ok_or_else(|| anyhow::anyhow!("HTTP backend '{}' missing url", self.name))?;
 
+        // Handle OAuth authentication if configured
+        let oauth_token = if let Some(oauth_config) = &self.config.oauth {
+            let store = TokenStore::new()?;
+            
+            // Try to load existing token
+            match store.get(&self.name) {
+                Ok(Some(token)) if !token.is_expired() => {
+                    info!(
+                        backend = %self.name,
+                        "using cached OAuth token"
+                    );
+                    Some(token)
+                }
+                Ok(Some(token)) if token.has_refresh_token() => {
+                    // Token expired but we have a refresh token
+                    info!(
+                        backend = %self.name,
+                        "refreshing expired OAuth token"
+                    );
+                    match crate::oauth::refresh_token(&self.name, url, oauth_config, token.refresh_token.as_ref().unwrap()).await {
+                        Ok(new_token) => Some(new_token),
+                        Err(e) => {
+                            warn!(
+                                backend = %self.name,
+                                error = %e,
+                                "failed to refresh token, starting new OAuth flow"
+                            );
+                            let token = crate::oauth::authenticate(&self.name, url, oauth_config).await?;
+                            Some(token)
+                        }
+                    }
+                }
+                _ => {
+                    // No token or expired without refresh token - start OAuth flow
+                    info!(
+                        backend = %self.name,
+                        "starting OAuth authentication flow"
+                    );
+                    let token = crate::oauth::authenticate(&self.name, url, oauth_config).await?;
+                    Some(token)
+                }
+            }
+        } else {
+            None
+        };
+
         // Build transport config
         let mut transport_config = StreamableHttpClientTransportConfig::with_uri(url);
         // MCP 2026-07-28: enable stateless transport (no session handshake required)
         transport_config.allow_stateless = true;
 
-        // Add auth header if present (look for Authorization header in config)
-        if let Some(auth) = self.config.headers.get("Authorization") {
+        // Add auth header: OAuth token takes precedence over static config
+        let auth_header = if let Some(token) = oauth_token {
+            Some(token.access_token)
+        } else {
+            self.config.headers.get("Authorization").cloned()
+        };
+        
+        if let Some(auth) = auth_header {
             // Strip "Bearer " prefix if present — rmcp adds it back
-            let token = auth.strip_prefix("Bearer ").unwrap_or(auth);
+            let token = auth.strip_prefix("Bearer ").unwrap_or(&auth);
             transport_config = transport_config.auth_header(token);
         }
 

@@ -843,7 +843,7 @@ mod tests {
 
     #[test]
     fn test_new_no_tools_fails() {
-        let config = BackendConfig {
+       let config = BackendConfig {
             transport: crate::config::Transport::CliAdapter,
             namespace: None,
             command: None,
@@ -854,6 +854,7 @@ mod tests {
             headers: Default::default(),
             timeout: Duration::from_secs(30),
             max_concurrent_calls: None,
+            oauth: None,
             semaphore_timeout: Duration::from_secs(60),
             required_keys: Vec::new(),
             retry: Default::default(),

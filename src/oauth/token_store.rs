@@ -1,11 +1,15 @@
 //! Secure token storage and retrieval.
+//!
+//! Tokens are encrypted at rest using AES-256-GCM with keys stored in the system keyring.
 
 use anyhow::{Context, Result};
+use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
-use std::time::{SystemTime, UNIX_EPOCH};
+
+use super::encryption::EncryptionKeyManager;
 
 /// An OAuth access token with metadata.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -16,54 +20,54 @@ pub struct OAuthToken {
     /// Optional refresh token
     pub refresh_token: Option<String>,
 
-    /// Token type (usually "Bearer")
-    #[serde(default = "default_token_type")]
-    pub token_type: String,
-
-    /// Unix timestamp when the token expires
-    pub expires_at: u64,
+    /// When the token expires
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expires_at: Option<chrono::DateTime<chrono::Utc>>,
 
     /// Scopes granted with this token
     #[serde(default)]
     pub scopes: Vec<String>,
 }
 
-fn default_token_type() -> String {
-    "Bearer".to_string()
-}
-
 impl OAuthToken {
     /// Check if the token is expired (with 60s buffer).
     pub fn is_expired(&self) -> bool {
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
+        if let Some(expires_at) = self.expires_at {
+            let now = chrono::Utc::now();
+            let buffer = chrono::Duration::seconds(60);
+            now >= expires_at - buffer
+        } else {
+            false // No expiry means never expired
+        }
+    }
 
-        // Consider expired if within 60 seconds of expiry
-        now >= self.expires_at.saturating_sub(60)
+    /// Check if this token has a refresh token.
+    pub fn has_refresh_token(&self) -> bool {
+        self.refresh_token.is_some()
     }
 
     /// Get seconds until expiry.
     pub fn seconds_until_expiry(&self) -> i64 {
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
-
-        self.expires_at as i64 - now as i64
+        if let Some(expires_at) = self.expires_at {
+            let now = chrono::Utc::now();
+            (expires_at - now).num_seconds()
+        } else {
+            i64::MAX // No expiry
+        }
     }
 }
 
 /// Persistent token storage.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 struct TokenCache {
-    tokens: HashMap<String, OAuthToken>,
+    /// Encrypted tokens (base64-encoded ciphertext)
+    tokens: HashMap<String, String>,
 }
 
 /// Token store for OAuth tokens.
 pub struct TokenStore {
     cache_path: PathBuf,
+    encryption: EncryptionKeyManager,
 }
 
 impl TokenStore {
@@ -76,7 +80,12 @@ impl TokenStore {
             fs::create_dir_all(parent).context("failed to create oauth cache directory")?;
         }
 
-        Ok(Self { cache_path })
+        let encryption = EncryptionKeyManager::new()?;
+
+        Ok(Self {
+            cache_path,
+            encryption,
+        })
     }
 
     /// Load the token cache from disk.
@@ -116,13 +125,33 @@ impl TokenStore {
     /// Get a token for a backend.
     pub fn get(&self, backend_name: &str) -> Result<Option<OAuthToken>> {
         let cache = self.load_cache()?;
-        Ok(cache.tokens.get(backend_name).cloned())
+        
+        if let Some(encrypted_b64) = cache.tokens.get(backend_name) {
+            let encrypted = BASE64
+                .decode(encrypted_b64)
+                .context("failed to decode encrypted token")?;
+            
+            let decrypted = self.encryption.decrypt(&encrypted)?;
+            let token: OAuthToken = serde_json::from_slice(&decrypted)
+                .context("failed to deserialize token")?;
+            
+            Ok(Some(token))
+        } else {
+            Ok(None)
+        }
     }
 
     /// Store a token for a backend.
     pub fn store(&self, backend_name: &str, token: &OAuthToken) -> Result<()> {
         let mut cache = self.load_cache()?;
-        cache.tokens.insert(backend_name.to_string(), token.clone());
+        
+        let serialized = serde_json::to_vec(token)
+            .context("failed to serialize token")?;
+        
+        let encrypted = self.encryption.encrypt(&serialized)?;
+        let encrypted_b64 = BASE64.encode(&encrypted);
+        
+        cache.tokens.insert(backend_name.to_string(), encrypted_b64);
         self.save_cache(&cache)?;
         Ok(())
     }

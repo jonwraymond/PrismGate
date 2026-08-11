@@ -3,22 +3,35 @@
 //! This module provides:
 //! - RFC 8414 OAuth discovery
 //! - Authorization code flow with PKCE (RFC 7636)
+//! - Device authorization flow (RFC 8628)
+//! - Token introspection (RFC 7662)
+//! - JWT bearer grant (RFC 7523)
 //! - Token storage and automatic refresh
+//! - Token encryption at rest
 //! - Browser-based user consent flow
+//! - OAuth 2.1 compliance (mandatory PKCE, refresh token rotation)
 
 #![allow(unused_imports, dead_code)]
 
 pub mod callback_server;
 pub mod config;
+pub mod device_flow;
 pub mod discovery;
+pub mod encryption;
 pub mod flow;
+pub mod introspection;
+pub mod jwt_bearer;
 pub mod pkce;
 pub mod token_store;
 
 pub use callback_server::CallbackServer;
 pub use config::OAuthConfig;
+pub use device_flow::DeviceFlowClient;
 pub use discovery::discover_oauth_endpoints;
+pub use encryption::EncryptionKeyManager;
 pub use flow::OAuthFlow;
+pub use introspection::IntrospectionClient;
+pub use jwt_bearer::JwtBearerClient;
 pub use pkce::PkceChallenge;
 pub use token_store::{OAuthToken, TokenStore};
 
