@@ -16,6 +16,8 @@ ignore = [
     "RUSTSEC-2026-0009", # DoS via stack exhaustion (transitive dep)
     "RUSTSEC-2026-0044", # AWS-LC X.509 Name Constraints Bypass (transitive via rustls)
     "RUSTSEC-2026-0048", # AWS-LC CRL Distribution Point scope check (transitive via rustls)
+    "RUSTSEC-2026-0097", # Rand is unsound with a custom logger using `rand::rng()`
+    "RUSTSEC-2026-0249", # smartstring is unmaintained (transitive dep)
 ]
 
 [licenses]
