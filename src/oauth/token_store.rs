@@ -39,7 +39,7 @@ impl OAuthToken {
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_secs();
-        
+
         // Consider expired if within 60 seconds of expiry
         now >= self.expires_at.saturating_sub(60)
     }
@@ -50,7 +50,7 @@ impl OAuthToken {
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_secs();
-        
+
         self.expires_at as i64 - now as i64
     }
 }
@@ -69,15 +69,13 @@ pub struct TokenStore {
 impl TokenStore {
     /// Create a new token store using the default cache location.
     pub fn new() -> Result<Self> {
-        let cache_path = crate::cli::prismgate_cache_home()
-            .join("oauth_tokens.json");
-        
+        let cache_path = crate::cli::prismgate_cache_home().join("oauth_tokens.json");
+
         // Ensure parent directory exists
         if let Some(parent) = cache_path.parent() {
-            fs::create_dir_all(parent)
-                .context("failed to create oauth cache directory")?;
+            fs::create_dir_all(parent).context("failed to create oauth cache directory")?;
         }
-        
+
         Ok(Self { cache_path })
     }
 
@@ -87,23 +85,22 @@ impl TokenStore {
             return Ok(TokenCache::default());
         }
 
-        let contents = fs::read_to_string(&self.cache_path)
-            .context("failed to read token cache")?;
-        
-        let cache: TokenCache = serde_json::from_str(&contents)
-            .context("failed to parse token cache")?;
-        
+        let contents =
+            fs::read_to_string(&self.cache_path).context("failed to read token cache")?;
+
+        let cache: TokenCache =
+            serde_json::from_str(&contents).context("failed to parse token cache")?;
+
         Ok(cache)
     }
 
     /// Save the token cache to disk.
     fn save_cache(&self, cache: &TokenCache) -> Result<()> {
-        let contents = serde_json::to_string_pretty(cache)
-            .context("failed to serialize token cache")?;
-        
-        fs::write(&self.cache_path, contents)
-            .context("failed to write token cache")?;
-        
+        let contents =
+            serde_json::to_string_pretty(cache).context("failed to serialize token cache")?;
+
+        fs::write(&self.cache_path, contents).context("failed to write token cache")?;
+
         // Set restrictive permissions (Unix only)
         #[cfg(unix)]
         {
@@ -112,7 +109,7 @@ impl TokenStore {
             perms.set_mode(0o600); // rw-------
             fs::set_permissions(&self.cache_path, perms)?;
         }
-        
+
         Ok(())
     }
 

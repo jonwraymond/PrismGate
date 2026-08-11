@@ -54,10 +54,7 @@ pub async fn discover_oauth_endpoints(base_url: &str) -> Result<OAuthMetadata> {
         .context("failed to fetch OAuth metadata")?;
 
     if !response.status().is_success() {
-        anyhow::bail!(
-            "OAuth discovery failed: HTTP {}",
-            response.status()
-        );
+        anyhow::bail!("OAuth discovery failed: HTTP {}", response.status());
     }
 
     let metadata: OAuthMetadata = response

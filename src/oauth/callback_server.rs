@@ -10,7 +10,7 @@ use warp::Filter;
 pub struct CallbackResult {
     /// Authorization code from OAuth provider
     pub code: String,
-    
+
     /// State parameter (for CSRF protection)
     pub state: Option<String>,
 }
@@ -47,20 +47,19 @@ impl CallbackServer {
         let routes = callback;
 
         // Start server
-        let (addr, server) = warp::serve(routes)
-            .bind_with_graceful_shutdown(
-                ([127, 0, 0, 1], self.port),
-                async move {
-                    // Wait until we have a result
-                    loop {
-                        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-                        let guard = result_shutdown.lock().await;
-                        if guard.is_some() {
-                            break;
-                        }
+        let (addr, server) = warp::serve(routes).bind_with_graceful_shutdown(
+            ([127, 0, 0, 1], self.port),
+            async move {
+                // Wait until we have a result
+                loop {
+                    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+                    let guard = result_shutdown.lock().await;
+                    if guard.is_some() {
+                        break;
                     }
-                },
-            );
+                }
+            },
+        );
 
         eprintln!("OAuth callback server listening on http://{}", addr);
 

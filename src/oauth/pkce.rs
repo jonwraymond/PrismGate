@@ -1,8 +1,8 @@
 //! PKCE (Proof Key for Code Exchange) implementation - RFC 7636.
 
 use anyhow::Result;
-use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
+use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use rand::Rng;
 use sha2::{Digest, Sha256};
 
@@ -11,10 +11,10 @@ use sha2::{Digest, Sha256};
 pub struct PkceChallenge {
     /// The code verifier (random string)
     pub verifier: String,
-    
+
     /// The code challenge (SHA256 hash of verifier)
     pub challenge: String,
-    
+
     /// The challenge method (always "S256")
     pub method: String,
 }
@@ -24,10 +24,10 @@ impl PkceChallenge {
     pub fn new() -> Result<Self> {
         // Generate random verifier (43-128 characters)
         let verifier = Self::generate_verifier()?;
-        
+
         // Compute SHA256 challenge
         let challenge = Self::compute_challenge(&verifier)?;
-        
+
         Ok(Self {
             verifier,
             challenge,
@@ -64,11 +64,11 @@ mod tests {
     #[test]
     fn test_pkce_generation() {
         let pkce = PkceChallenge::new().unwrap();
-        
+
         assert!(!pkce.verifier.is_empty());
         assert!(!pkce.challenge.is_empty());
         assert_eq!(pkce.method, "S256");
-        
+
         // Verifier and challenge should be different
         assert_ne!(pkce.verifier, pkce.challenge);
     }
@@ -77,7 +77,7 @@ mod tests {
     fn test_pkce_deterministic() {
         let verifier = "test_verifier_12345";
         let challenge = PkceChallenge::compute_challenge(verifier).unwrap();
-        
+
         // Same verifier should produce same challenge
         let challenge2 = PkceChallenge::compute_challenge(verifier).unwrap();
         assert_eq!(challenge, challenge2);

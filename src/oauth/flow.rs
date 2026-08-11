@@ -6,11 +6,8 @@ use std::collections::HashMap;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use super::{
-    callback_server::CallbackServer,
-    config::OAuthConfig,
-    discovery::discover_oauth_endpoints,
-    pkce::PkceChallenge,
-    token_store::OAuthToken,
+    callback_server::CallbackServer, config::OAuthConfig, discovery::discover_oauth_endpoints,
+    pkce::PkceChallenge, token_store::OAuthToken,
 };
 
 /// OAuth 2.0 authorization flow.
@@ -70,7 +67,7 @@ impl OAuthFlow {
         // Open browser
         eprintln!("Opening browser for authorization...");
         eprintln!("URL: {}", auth_url);
-        
+
         if let Err(e) = open::that(&auth_url) {
             eprintln!("Failed to open browser: {}", e);
             eprintln!("Please open this URL manually: {}", auth_url);
@@ -120,8 +117,8 @@ impl OAuthFlow {
 
     /// Build the authorization URL.
     fn build_authorization_url(&self, pkce: Option<&PkceChallenge>) -> Result<String> {
-        let mut url = url::Url::parse(&self.authorization_url)
-            .context("invalid authorization URL")?;
+        let mut url =
+            url::Url::parse(&self.authorization_url).context("invalid authorization URL")?;
 
         url.query_pairs_mut()
             .append_pair("response_type", "code")
@@ -143,11 +140,7 @@ impl OAuthFlow {
     }
 
     /// Exchange authorization code for access token.
-    async fn exchange_code(
-        &self,
-        code: &str,
-        pkce: Option<&PkceChallenge>,
-    ) -> Result<OAuthToken> {
+    async fn exchange_code(&self, code: &str, pkce: Option<&PkceChallenge>) -> Result<OAuthToken> {
         let client = reqwest::Client::new();
 
         let mut params = HashMap::new();

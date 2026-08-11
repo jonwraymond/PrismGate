@@ -8,19 +8,19 @@
 
 #![allow(unused_imports)]
 
+pub mod callback_server;
 pub mod config;
 pub mod discovery;
 pub mod flow;
 pub mod pkce;
 pub mod token_store;
-pub mod callback_server;
 
+pub use callback_server::CallbackServer;
 pub use config::OAuthConfig;
 pub use discovery::discover_oauth_endpoints;
 pub use flow::OAuthFlow;
 pub use pkce::PkceChallenge;
 pub use token_store::{OAuthToken, TokenStore};
-pub use callback_server::CallbackServer;
 
 use anyhow::Result;
 
@@ -41,10 +41,10 @@ pub async fn authenticate(
 ) -> Result<OAuthToken> {
     let flow = OAuthFlow::new(base_url, config).await?;
     let token = flow.authorize().await?;
-    
+
     let store = TokenStore::new()?;
     store.store(backend_name, &token)?;
-    
+
     Ok(token)
 }
 
@@ -57,9 +57,9 @@ pub async fn refresh_token(
 ) -> Result<OAuthToken> {
     let flow = OAuthFlow::new(base_url, config).await?;
     let token = flow.refresh(refresh_token).await?;
-    
+
     let store = TokenStore::new()?;
     store.store(backend_name, &token)?;
-    
+
     Ok(token)
 }
