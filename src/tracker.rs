@@ -235,7 +235,7 @@ impl CallTracker {
                 bytes_returned: *r.value(),
             })
             .collect();
-        per_tool.sort_by(|a, b| b.bytes_returned.cmp(&a.bytes_returned));
+        per_tool.sort_by_key(|stat| std::cmp::Reverse(stat.bytes_returned));
 
         SessionStats {
             uptime_seconds: uptime,

@@ -208,6 +208,45 @@ mod tests {
         daemon_handle.abort();
     }
 
+    /// A pre-generation daemon can unlink the promoted public socket when it
+    /// exits. The active promoted daemon should repair the path so future MCP
+    /// clients can still connect without restarting the daemon.
+    #[tokio::test]
+    async fn test_daemon_repairs_missing_public_socket() {
+        let (socket_path, daemon_handle, _mock, _tmp) = spawn_test_daemon(Duration::ZERO).await;
+        let self_pid = crate::ipc::socket::read_pid(&socket_path).unwrap();
+
+        std::fs::remove_file(&socket_path).unwrap();
+        std::fs::remove_file(crate::ipc::socket::pid_path(&socket_path)).unwrap();
+        std::fs::remove_file(crate::ipc::socket::generation_info_path(&socket_path)).unwrap();
+
+        tokio::time::timeout(Duration::from_secs(3), async {
+            loop {
+                if socket_path.exists()
+                    && crate::ipc::socket::read_pid(&socket_path) == Some(self_pid)
+                    && crate::ipc::socket::read_generation_info(&socket_path)
+                        .map(|info| info.role == crate::ipc::socket::GenerationRole::Active)
+                        .unwrap_or(false)
+                {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(50)).await;
+            }
+        })
+        .await
+        .expect("daemon should repair missing public socket");
+
+        let (peer, service_handle) = connect_client(&socket_path).await;
+        let tools = peer.list_all_tools().await.unwrap();
+        assert_eq!(tools.len(), 7);
+
+        drop(peer);
+        service_handle.abort();
+        let _ = service_handle.await;
+        daemon_handle.abort();
+        let _ = daemon_handle.await;
+    }
+
     /// idle_timeout=500ms, connect + disconnect, wait 1s. Daemon should exit.
     #[tokio::test]
     async fn test_idle_shutdown_with_no_clients() {

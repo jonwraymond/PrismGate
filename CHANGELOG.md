@@ -1,5 +1,63 @@
 # Changelog
 
+## [1.14.4](https://github.com/jonwraymond/PrismGate/compare/v1.14.3...v1.14.4) (2026-04-23)
+
+
+### Bug Fixes
+
+* reap nonresponsive idle proxy clients ([eebc280](https://github.com/jonwraymond/PrismGate/commit/eebc280d6621202f2e8afb47c677cd6dc11bf369))
+* reap nonresponsive idle proxy clients ([c7a3016](https://github.com/jonwraymond/PrismGate/commit/c7a3016ba8ed63c64f921846817d6bb468340be0))
+* update rustls webpki advisory dependency ([0b6b899](https://github.com/jonwraymond/PrismGate/commit/0b6b89901d7a8d0a3492eed5a29ceb629ae1e9fe))
+
+## [1.14.3](https://github.com/jonwraymond/PrismGate/compare/v1.14.2...v1.14.3) (2026-04-15)
+
+
+### Bug Fixes
+
+* detach daemon process session when spawning ([dafff8b](https://github.com/jonwraymond/PrismGate/commit/dafff8bea027647b5284359d80e39fc67ff5d197))
+* detach daemon process session when spawning ([7fbd601](https://github.com/jonwraymond/PrismGate/commit/7fbd6014fbc12a1fb9dad75cefa608a838e17535))
+
+## [1.14.2](https://github.com/jonwraymond/PrismGate/compare/v1.14.1...v1.14.2) (2026-04-15)
+
+
+### Bug Fixes
+
+* detach daemon stderr from spawning clients ([f91b491](https://github.com/jonwraymond/PrismGate/commit/f91b49175e7cc250acd7eb74ed0093d3ee3f7ca5))
+* detach daemon stderr from spawning clients ([00e8f52](https://github.com/jonwraymond/PrismGate/commit/00e8f52a9b8ab72f7ec1459be517d3af18ebe12f))
+
+## [1.14.1](https://github.com/jonwraymond/PrismGate/compare/v1.14.0...v1.14.1) (2026-04-15)
+
+
+### Bug Fixes
+
+* rebind promoted daemon socket after legacy cleanup ([7262bf1](https://github.com/jonwraymond/PrismGate/commit/7262bf1fd144cc4c60d1309ec45df873274f469a))
+* rebind promoted daemon socket after legacy cleanup ([127b99e](https://github.com/jonwraymond/PrismGate/commit/127b99e4dd63ec3b0d12cec369e43a3158092736))
+
+## [1.14.0](https://github.com/jonwraymond/PrismGate/compare/v1.13.0...v1.14.0) (2026-04-15)
+
+
+### Features
+
+* add generational daemon hot upgrade ([887370e](https://github.com/jonwraymond/PrismGate/commit/887370ed5bb78fd49300d33ab8426a5d1b878d55))
+* add generational daemon hot upgrade ([a35112b](https://github.com/jonwraymond/PrismGate/commit/a35112b82c67bd9087843ca98d530cb44b2bc909))
+
+## [1.13.0](https://github.com/jonwraymond/PrismGate/compare/v1.12.2...v1.13.0) (2026-04-14)
+
+
+### Features
+
+* add gatemini doctor diagnostics ([79bfb76](https://github.com/jonwraymond/PrismGate/commit/79bfb764d40455a82b501fa3e18227c18506545d))
+
+
+### Bug Fixes
+
+* account for dedicated pool capacity ([e2f998e](https://github.com/jonwraymond/PrismGate/commit/e2f998e4e4c933e70328c39823d2de50a3bbaaff))
+* clean up backend lifecycle state on replacement ([decbcb2](https://github.com/jonwraymond/PrismGate/commit/decbcb231fabdc9c432d3bbba90fe51e7f3e523b))
+* harden backend lifecycle stability ([ce44d5e](https://github.com/jonwraymond/PrismGate/commit/ce44d5e28c92576f71d95fe29ff29e46eee975f7))
+* kill cli adapter process groups on timeout ([ba67505](https://github.com/jonwraymond/PrismGate/commit/ba67505128a1d12fd7dcf298c3f554705f972ed0))
+* respect backend shutdown grace periods ([b74e612](https://github.com/jonwraymond/PrismGate/commit/b74e6120804030aea9f0dd1bda3e83da8f3fc5db))
+* restart full dedicated backends during health recovery ([3ec624e](https://github.com/jonwraymond/PrismGate/commit/3ec624e1c858b4476b731524e2b30a5a930f4fd4))
+
 ## [1.12.2](https://github.com/jonwraymond/PrismGate/compare/v1.12.1...v1.12.2) (2026-04-14)
 
 

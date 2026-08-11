@@ -125,7 +125,7 @@ Proxy mode is not just a raw byte pipe. It also:
 - caches the MCP initialize request and initialized notification
 - replays that cached handshake when reconnecting
 - tracks in-flight JSON-RPC request IDs so daemon restarts become retryable request errors instead of transport loss
-- treats quiet clients as live sessions; it exits only when client stdio closes, stdout breaks, or the parent process is gone
+- preserves quiet clients while work is in flight, then uses MCP `ping` liveness probes to reap nonresponsive idle clients whose stdio pipes were left open by a parent process
 
 <p align="center">
   <img src="docs/diagrams/proxy-startup.svg" alt="Gatemini proxy startup" width="760">
