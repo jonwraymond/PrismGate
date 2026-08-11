@@ -107,6 +107,38 @@ backends:
     url: "https://mcp.deepwiki.com/mcp"
     timeout: 90s
 
+  # ── OAuth 2.0 backends ──────────────────────────────────────────────
+
+  # OAuth-enabled backend with auto-discovery
+  # Run `gatemini auth oauth-backend --url https://api.example.com --client-id YOUR_CLIENT_ID --scopes read,write`
+  # to authenticate before using this backend
+  # oauth-backend:
+  #   transport: streamable-http
+  #   url: "https://api.example.com/mcp"
+  #   timeout: 60s
+  #   oauth:
+  #     discover: true                    # Auto-discover OAuth endpoints from /.well-known/oauth-authorization-server
+  #     client_id: "YOUR_CLIENT_ID"
+  #     scopes: ["read", "write"]
+  #     use_pkce: true                    # Use PKCE for enhanced security (recommended)
+  #     callback_port: 8080               # Local port for OAuth callback
+
+  # OAuth-enabled backend with manual endpoints
+  # oauth-manual:
+  #   transport: streamable-http
+  #   url: "https://api.example.com/mcp"
+  #   timeout: 60s
+  #   oauth:
+  #     discover: false
+  #     authorization_url: "https://auth.example.com/oauth/authorize"
+  #     token_url: "https://auth.example.com/oauth/token"
+  #     client_id: "YOUR_CLIENT_ID"
+  #     client_secret: "${OAUTH_CLIENT_SECRET}"  # Optional, for confidential clients
+  #     scopes: ["api.read", "api.write"]
+  #     use_pkce: true
+  #     redirect_uri: "http://localhost:8080/callback"
+  #     callback_port: 8080
+
 health:
   interval: 30s
   timeout: 5s

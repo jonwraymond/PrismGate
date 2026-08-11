@@ -74,6 +74,20 @@ pub enum Command {
     },
     /// Diagnose local proxy/daemon/runtime state without starting backends.
     Doctor,
+    /// Authenticate with an OAuth 2.0 provider.
+    Auth {
+        /// Backend name to authenticate.
+        backend: String,
+        /// OAuth provider base URL.
+        #[arg(long)]
+        url: String,
+        /// Client ID.
+        #[arg(long)]
+        client_id: String,
+        /// OAuth scopes (comma-separated).
+        #[arg(long)]
+        scopes: Option<String>,
+    },
 }
 
 fn parse_duration(value: &str) -> Result<Duration, String> {

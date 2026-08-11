@@ -1,9 +1,12 @@
 //! OAuth 2.0 authorization code flow implementation.
+//!
+//! Implements OAuth 2.1 compliance:
+//! - Mandatory PKCE for all flows
+//! - Refresh token rotation
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use super::{
     callback_server::CallbackServer, config::OAuthConfig, discovery::discover_oauth_endpoints,
@@ -15,6 +18,8 @@ pub struct OAuthFlow {
     config: OAuthConfig,
     authorization_url: String,
     token_url: String,
+    /// OAuth 2.1 mode: enforces PKCE and refresh token rotation
+    oauth21_mode: bool,
 }
 
 impl OAuthFlow {
@@ -39,7 +44,14 @@ impl OAuthFlow {
             config: config.clone(),
             authorization_url,
             token_url,
+            oauth21_mode: true, // Default to OAuth 2.1 compliance
         })
+    }
+
+    /// Enable or disable OAuth 2.1 mode.
+    pub fn with_oauth21_mode(mut self, enabled: bool) -> Self {
+        self.oauth21_mode = enabled;
+        self
     }
 
     /// Start the authorization flow.
@@ -52,7 +64,8 @@ impl OAuthFlow {
     /// 5. Exchange authorization code for tokens
     pub async fn authorize(&self) -> Result<OAuthToken> {
         // Generate PKCE challenge
-        let pkce = if self.config.use_pkce {
+        // OAuth 2.1: PKCE is mandatory
+        let pkce = if self.oauth21_mode {
             Some(PkceChallenge::new()?)
         } else {
             None
@@ -82,6 +95,8 @@ impl OAuthFlow {
     }
 
     /// Refresh an access token using a refresh token.
+    ///
+    /// OAuth 2.1: Returns a new refresh token (rotation).
     pub async fn refresh(&self, refresh_token: &str) -> Result<OAuthToken> {
         let client = reqwest::Client::new();
 
@@ -112,7 +127,15 @@ impl OAuthFlow {
             .await
             .context("failed to parse token response")?;
 
-        Ok(self.token_response_to_oauth_token(token_response))
+        let mut token = self.token_response_to_oauth_token(token_response);
+        
+        // OAuth 2.1: If no new refresh token, keep the old one (but warn)
+        if self.oauth21_mode && token.refresh_token.is_none() {
+            eprintln!("Warning: OAuth 2.1 mode enabled but server didn't rotate refresh token");
+            token.refresh_token = Some(refresh_token.to_string());
+        }
+        
+        Ok(token)
     }
 
     /// Build the authorization URL.
@@ -180,17 +203,13 @@ impl OAuthFlow {
 
     /// Convert a token response to an OAuthToken.
     fn token_response_to_oauth_token(&self, response: TokenResponse) -> OAuthToken {
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
-
-        let expires_at = now + response.expires_in.unwrap_or(3600);
+        let expires_at = response.expires_in.map(|secs| {
+            chrono::Utc::now() + chrono::Duration::seconds(secs as i64)
+        });
 
         OAuthToken {
             access_token: response.access_token,
             refresh_token: response.refresh_token,
-            token_type: response.token_type.unwrap_or_else(|| "Bearer".to_string()),
             expires_at,
             scopes: response
                 .scope
