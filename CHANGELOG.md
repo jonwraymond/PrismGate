@@ -1,5 +1,24 @@
 # Changelog
 
+## [1.16.0](https://github.com/jonwraymond/PrismGate/compare/v1.15.0...v1.16.0) (2026-08-11)
+
+
+### Features
+
+* Add OAuth 2.0 authorization code flow with PKCE support ([#137](https://github.com/jonwraymond/PrismGate/issues/137)) ([862d4eb](https://github.com/jonwraymond/PrismGate/commit/862d4ebcbfdba15e1e11ae5cdac9caadc0272892))
+* MCP 2026-07-28 spec compliance — headers, stateless, trace hardening ([62609a8](https://github.com/jonwraymond/PrismGate/commit/62609a8fc4b661d7997a1582f7908c9ab362073f))
+* MCP 2026-07-28 spec compliance — headers, stateless, trace hardening ([4227ec6](https://github.com/jonwraymond/PrismGate/commit/4227ec6c428fe62fed7c8fad68619b216a39da4b))
+
+
+### Bug Fixes
+
+* Add new bitwarden crates to license exceptions ([53763ca](https://github.com/jonwraymond/PrismGate/commit/53763ca6fffe3ca59a8ff85fa949108aeb9a922e))
+* Add RUSTSEC-2026-0097 and RUSTSEC-2026-0249 to ignore list ([b10855d](https://github.com/jonwraymond/PrismGate/commit/b10855dd15a65268ae9c1a32c6ad3b36d5443d6d))
+* add trace_context module and fix build ([f4fa220](https://github.com/jonwraymond/PrismGate/commit/f4fa220abe5be96adae9b1e7c0fc77d196e2a1b3))
+* Allow dead code in OAuth module and fix deprecated SseStream method ([e89fd0c](https://github.com/jonwraymond/PrismGate/commit/e89fd0cca59b3f826c862c455abeb1bc1e389afa))
+* remove deprecated bitwarden ClientProjectsExt/ClientSecretsExt imports ([#128](https://github.com/jonwraymond/PrismGate/issues/128)) ([9c8fec8](https://github.com/jonwraymond/PrismGate/commit/9c8fec8859f1d89f5f2280bb230ad6de973c4a45))
+* wire trace_context into HTTP backend, suppress dead_code warnings ([19edd4a](https://github.com/jonwraymond/PrismGate/commit/19edd4a22013ecb83ca8327ac368ed6fa61d7e14))
+
 ## [1.15.0](https://github.com/jonwraymond/PrismGate/compare/v1.14.4...v1.15.0) (2026-08-11)
 
 
