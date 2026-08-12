@@ -35,6 +35,11 @@ pub struct OAuthConfig {
     /// Local callback server port (defaults to 8080)
     #[serde(default = "default_callback_port")]
     pub callback_port: u16,
+
+    /// Optional OAuth resource indicator (RFC 8707).
+    /// Required by some MCP authorization servers (e.g. Workfront).
+    #[serde(default)]
+    pub resource: Option<String>,
 }
 
 fn default_redirect_uri() -> String {

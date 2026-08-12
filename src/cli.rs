@@ -87,6 +87,9 @@ pub enum Command {
         /// OAuth scopes (comma-separated).
         #[arg(long)]
         scopes: Option<String>,
+        /// Optional OAuth resource indicator (RFC 8707).
+        #[arg(long)]
+        resource: Option<String>,
     },
 }
 

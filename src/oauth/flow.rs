@@ -77,11 +77,13 @@ impl OAuthFlow {
         // Start callback server
         let server = CallbackServer::new(self.config.callback_port);
 
-        // Open browser
+        // Open browser.
+        // Long authorize URLs (e.g. Workfront DCR client_ids) can break macOS `open`
+        // when passed directly. Prefer a tiny local HTML redirect file.
         eprintln!("Opening browser for authorization...");
         eprintln!("URL: {}", auth_url);
 
-        if let Err(e) = open::that(&auth_url) {
+        if let Err(e) = open_authorization_url(&auth_url) {
             eprintln!("Failed to open browser: {}", e);
             eprintln!("Please open this URL manually: {}", auth_url);
         }
@@ -109,9 +111,11 @@ impl OAuthFlow {
             params.insert("client_secret", secret);
         }
 
+        // RFC 6749 §4.1.3 / §6: token endpoint expects application/x-www-form-urlencoded
         let response = client
             .post(&self.token_url)
-            .json(&params)
+            .header("Content-Type", "application/x-www-form-urlencoded")
+            .body(serde_urlencoded::to_string(&params).context("failed to encode params")?)
             .send()
             .await
             .context("failed to refresh token")?;
@@ -153,6 +157,10 @@ impl OAuthFlow {
                 .append_pair("scope", &self.config.scopes.join(" "));
         }
 
+        if let Some(ref resource) = self.config.resource {
+            url.query_pairs_mut().append_pair("resource", resource);
+        }
+
         if let Some(pkce) = pkce {
             url.query_pairs_mut()
                 .append_pair("code_challenge", &pkce.challenge)
@@ -176,13 +184,19 @@ impl OAuthFlow {
             params.insert("client_secret", secret);
         }
 
+        if let Some(ref resource) = self.config.resource {
+            params.insert("resource", resource);
+        }
+
         if let Some(pkce) = pkce {
             params.insert("code_verifier", &pkce.verifier);
         }
 
+        // RFC 6749 §4.1.3: token endpoint expects application/x-www-form-urlencoded
         let response = client
             .post(&self.token_url)
-            .json(&params)
+            .header("Content-Type", "application/x-www-form-urlencoded")
+            .body(serde_urlencoded::to_string(&params).context("failed to encode params")?)
             .send()
             .await
             .context("failed to exchange authorization code")?;
@@ -226,4 +240,41 @@ struct TokenResponse {
     expires_in: Option<u64>,
     refresh_token: Option<String>,
     scope: Option<String>,
+}
+
+/// Open an authorization URL in the system browser.
+///
+/// Always open via a temporary HTML redirect file. Passing long authorize
+/// URLs directly to macOS `open` can mangle the query string (especially with
+/// Workfront DCR client ids).
+fn open_authorization_url(auth_url: &str) -> Result<()> {
+    let escaped = auth_url
+        .replace('&', "&amp;")
+        .replace('"', "&quot;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;");
+    let js_url = serde_json::to_string(auth_url).context("failed to encode auth URL as JSON")?;
+    let html = format!(
+        r#"<!doctype html>
+<html><head>
+<meta charset="utf-8">
+<meta http-equiv="refresh" content="0;url={url}">
+<title>Gatemini OAuth</title>
+</head><body>
+<p>Redirecting to authorization server…</p>
+<p><a href="{url}">Continue</a></p>
+<script>window.location.replace({js_url});</script>
+</body></html>"#,
+        url = escaped,
+        js_url = js_url,
+    );
+
+    let path = std::env::temp_dir().join(format!(
+        "gatemini-oauth-{}-{}.html",
+        std::process::id(),
+        chrono::Utc::now().timestamp_millis()
+    ));
+    std::fs::write(&path, html).with_context(|| format!("failed to write {}", path.display()))?;
+    open::that(&path).with_context(|| format!("failed to open {}", path.display()))?;
+    Ok(())
 }

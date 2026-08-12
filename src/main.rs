@@ -392,6 +392,7 @@ async fn main() -> Result<()> {
                 url,
                 client_id,
                 scopes,
+                resource,
             }),
             _,
         ) => {
@@ -407,6 +408,7 @@ async fn main() -> Result<()> {
                     .unwrap_or_default(),
                 redirect_uri: "http://localhost:8080/callback".to_string(),
                 callback_port: 8080,
+                resource: resource.clone(),
             };
 
             match oauth::authenticate(backend, url, &config).await {
