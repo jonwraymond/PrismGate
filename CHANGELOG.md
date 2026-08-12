@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.18.0](https://github.com/jonwraymond/PrismGate/compare/v1.17.0...v1.18.0) (2026-08-12)
+
+
+### Features
+
+* **oauth:** Add RFC 8707 resource indicator and improve error handling ([f3e5fe7](https://github.com/jonwraymond/PrismGate/commit/f3e5fe77bf75d68199a6e1684a136ea65897e770))
+
 ## [1.17.0](https://github.com/jonwraymond/PrismGate/compare/v1.16.0...v1.17.0) (2026-08-11)
 
 
