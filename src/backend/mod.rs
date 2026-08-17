@@ -13,6 +13,7 @@ pub mod stdio;
 #[cfg(test)]
 mod concurrency_tests;
 
+use crate::tools::sanitize::sanitize_description;
 use anyhow::Result;
 use async_trait::async_trait;
 use dashmap::DashMap;
@@ -95,10 +96,16 @@ pub(crate) fn map_tools_to_entries(
         .into_iter()
         .map(|t| {
             let name = t.name.to_string();
+            let name_for_desc = name.clone();
             ToolEntry {
                 original_name: name.clone(),
                 name,
-                description: t.description.unwrap_or_default().to_string(),
+                description: sanitize_description(
+                    &t.description.unwrap_or_default(),
+                    &name_for_desc,
+                    backend_name,
+                )
+                .sanitized,
                 backend_name: backend_name.to_string(),
                 input_schema: serde_json::to_value(&t.input_schema)
                     .unwrap_or(Value::Object(Default::default())),

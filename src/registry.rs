@@ -6,6 +6,7 @@ use std::sync::Arc;
 
 #[cfg(feature = "semantic")]
 use crate::embeddings::EmbeddingIndex;
+use crate::tools::sanitize::sanitize_description;
 
 /// A tool entry in the registry, linking a tool to its backend.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -144,12 +145,23 @@ impl ToolRegistry {
                 tool.original_name.clone()
             };
 
+            // Sanitize description against poisoning attacks before registration
+            let sanitized = sanitize_description(&tool.description, &original, backend_name);
+            if sanitized.was_modified {
+                tracing::warn!(
+                    backend = %backend_name,
+                    tool = %original,
+                    actions = ?sanitized.actions,
+                    "Tool description sanitized during registration"
+                );
+            }
+
             // Always register the namespaced key
             let ns_key = format!("{}.{}", namespace, original);
             let ns_entry = ToolEntry {
                 name: ns_key.clone(),
                 original_name: original.clone(),
-                description: tool.description.clone(),
+                description: sanitized.sanitized.clone(),
                 backend_name: backend_name.to_string(),
                 input_schema: tool.input_schema.clone(),
                 tags: tool.tags.clone(),
