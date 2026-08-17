@@ -14,6 +14,7 @@ use rmcp::{
 use serde::Deserialize;
 use serde_json::Value;
 
+use crate::access::AccessControlConfig;
 use crate::backend::BackendManager;
 use crate::registry::ToolRegistry;
 
@@ -119,6 +120,8 @@ pub struct GateminiServer {
     pub session_id: Option<u64>,
     /// Output processing configuration (auto-chunking, smart truncation).
     pub output_config: crate::config::OutputConfig,
+    /// Access control configuration for tool-level RBAC.
+    pub access_control: AccessControlConfig,
     #[allow(dead_code)]
     tool_router: ToolRouter<Self>,
 }
@@ -135,6 +138,7 @@ impl GateminiServer {
         sandbox_semaphore: Arc<Semaphore>,
         session_id: Option<u64>,
         output_config: crate::config::OutputConfig,
+        access_control: AccessControlConfig,
     ) -> Self {
         Self {
             registry,
@@ -146,6 +150,7 @@ impl GateminiServer {
             sandbox_semaphore,
             session_id,
             output_config,
+            access_control,
             tool_router: Self::tool_router(),
         }
     }
@@ -352,6 +357,7 @@ impl GateminiServer {
             self.session_id,
             params.intent.as_deref(),
             &self.output_config,
+            &self.access_control,
         )
         .await;
 

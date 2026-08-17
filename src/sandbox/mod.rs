@@ -13,6 +13,8 @@ use serde_json::Value;
 use tracing::{debug, info, warn};
 
 #[cfg(feature = "sandbox")]
+use crate::access::AccessControlConfig;
+#[cfg(feature = "sandbox")]
 use crate::backend::BackendManager;
 #[cfg(feature = "sandbox")]
 use crate::registry::ToolRegistry;
@@ -30,6 +32,7 @@ pub async fn execute(
     timeout: Duration,
     max_heap_size: Option<usize>,
     session_id: Option<u64>,
+    access_control: AccessControlConfig,
 ) -> Result<String> {
     let main_handle = tokio::runtime::Handle::current();
     let manager = Arc::clone(manager);
@@ -59,6 +62,7 @@ pub async fn execute(
                 timeout,
                 heap_size,
                 session_id,
+                access_control,
             );
             let _ = tx.send(result);
         })?;
@@ -79,6 +83,7 @@ fn run_sandbox(
     timeout: Duration,
     max_heap_size: usize,
     session_id: Option<u64>,
+    access_control: AccessControlConfig,
 ) -> Result<String> {
     use rustyscript::{Module, Runtime, RuntimeOptions};
     use std::pin::Pin;
@@ -96,6 +101,7 @@ fn run_sandbox(
     let mgr = manager;
     let handle = main_handle;
     let reg = registry;
+    let ac = access_control;
     runtime
         .register_async_function(
             "__call_tool",
@@ -104,6 +110,7 @@ fn run_sandbox(
                 let mgr = mgr.clone();
                 let handle = handle.clone();
                 let reg = reg.clone();
+                let ac = ac.clone();
                 Box::pin(async move {
                     if args.len() < 2 {
                         return Err(rustyscript::Error::Runtime(
@@ -124,6 +131,14 @@ fn run_sandbox(
                             rustyscript::Error::Runtime("tool_name must be a string".to_string())
                         })?
                         .to_string();
+
+                    // Access control check — deny if this backend+tool pair is blocked
+                    if !ac.check(&backend_name, &tool_name) {
+                        return Err(rustyscript::Error::Runtime(format!(
+                            "access denied: tool '{}.{}' is blocked by access control policy",
+                            backend_name, tool_name
+                        )));
+                    }
 
                     let arguments = if args.len() > 2 && !args[2].is_null() {
                         Some(args[2].clone())

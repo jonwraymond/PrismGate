@@ -201,6 +201,7 @@ pub async fn run(gw: InitializedGateway, bound: BoundSocket) -> Result<()> {
                                 Arc::clone(&sandbox_semaphore),
                                 Some(session_id),
                                 output_config.clone(),
+                                gw.config.access_control.clone(),
                             );
 
                             let notify = Arc::clone(&session_change);
