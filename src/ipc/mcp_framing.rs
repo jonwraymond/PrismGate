@@ -80,6 +80,32 @@ pub fn classify(line: &[u8]) -> McpMessage {
     McpMessage::Other
 }
 
+/// Build a JSON-RPC "method not found" (-32601) error response for a raw
+/// request line, if that line is answerable.
+///
+/// Returns `None` when the line isn't a request we can reply to: invalid
+/// JSON, or a notification (no `id`) — the JSON-RPC spec forbids sending a
+/// response to a notification, since the sender isn't listening for one.
+pub fn method_not_found_response(line: &[u8]) -> Option<Vec<u8>> {
+    let val: serde_json::Value = serde_json::from_slice(line).ok()?;
+    let obj = val.as_object()?;
+    let method = obj.get("method").and_then(|m| m.as_str())?;
+    let id = obj.get("id")?.clone();
+
+    let response = serde_json::json!({
+        "jsonrpc": "2.0",
+        "id": id,
+        "error": {
+            "code": -32601,
+            "message": format!("Method not found: {method}"),
+        }
+    });
+
+    let mut bytes = serde_json::to_vec(&response).ok()?;
+    bytes.push(b'\n');
+    Some(bytes)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -122,6 +148,44 @@ mod tests {
     #[test]
     fn classify_empty() {
         assert_eq!(classify(b""), McpMessage::Other);
+    }
+
+    #[test]
+    fn method_not_found_for_pre_handshake_probe() {
+        // Copilot CLI's actual observed probe: a request before `initialize`.
+        let line = br#"{"jsonrpc":"2.0","id":1,"method":"server/discover"}"#;
+        let response = method_not_found_response(line).expect("request has an id, must reply");
+        let val: serde_json::Value = serde_json::from_slice(&response).unwrap();
+        assert_eq!(val["jsonrpc"], "2.0");
+        assert_eq!(val["id"], 1);
+        assert_eq!(val["error"]["code"], -32601);
+        assert!(response.ends_with(b"\n"));
+    }
+
+    #[test]
+    fn method_not_found_preserves_string_id() {
+        let line = br#"{"jsonrpc":"2.0","id":"abc-123","method":"server/discover"}"#;
+        let response = method_not_found_response(line).unwrap();
+        let val: serde_json::Value = serde_json::from_slice(&response).unwrap();
+        assert_eq!(val["id"], "abc-123");
+    }
+
+    #[test]
+    fn method_not_found_none_for_notification() {
+        // No `id` — a notification. The spec forbids replying to it.
+        let line = br#"{"jsonrpc":"2.0","method":"notifications/some-probe"}"#;
+        assert_eq!(method_not_found_response(line), None);
+    }
+
+    #[test]
+    fn method_not_found_none_for_invalid_json() {
+        assert_eq!(method_not_found_response(b"not json"), None);
+    }
+
+    #[test]
+    fn method_not_found_none_for_missing_method() {
+        let line = br#"{"jsonrpc":"2.0","id":1}"#;
+        assert_eq!(method_not_found_response(line), None);
     }
 
     #[tokio::test]

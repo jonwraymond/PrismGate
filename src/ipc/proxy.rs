@@ -465,17 +465,42 @@ where
     let (mut sock_read, mut sock_write) = stream.into_split();
 
     // 1. Read initialize request from stdin → cache → forward to socket
-    let initialize_request = mcp_framing::read_line(&mut stdin)
-        .await
-        .context("failed to read initialize request from stdin")?;
-    if initialize_request.is_empty() {
-        bail!("stdin closed before sending initialize request");
-    }
-    debug_assert_eq!(
-        mcp_framing::classify(&initialize_request),
-        mcp_framing::McpMessage::InitializeRequest,
-        "first message should be initialize request"
-    );
+    //
+    // Some clients (e.g. GitHub Copilot CLI) send a non-standard probe method
+    // — observed: `server/discover` — before the real `initialize` request.
+    // The old code here only checked the first line's shape with
+    // `debug_assert_eq!`, which compiles to nothing in release builds, so a
+    // probe was blindly forwarded to the daemon's socket as if it were
+    // `initialize`. The daemon then choked on it and closed the connection,
+    // which the client saw as gatemini being unreachable.
+    //
+    // Fix: loop on stdin until we actually see an `InitializeRequest`. Any
+    // other *request* (has an `id`) gets answered directly, without ever
+    // touching the daemon, with a real JSON-RPC "method not found" error.
+    // Notifications (no `id`) before the handshake completes are silently
+    // dropped — there is nothing to reply to and the spec forbids it.
+    let initialize_request = loop {
+        let line = mcp_framing::read_line(&mut stdin)
+            .await
+            .context("failed to read initialize request from stdin")?;
+        if line.is_empty() {
+            bail!("stdin closed before sending initialize request");
+        }
+        if mcp_framing::classify(&line) == mcp_framing::McpMessage::InitializeRequest {
+            break line;
+        }
+        if let Some(response) = mcp_framing::method_not_found_response(&line) {
+            stdout
+                .write_all(&response)
+                .await
+                .context("failed to write pre-handshake method-not-found response")?;
+            stdout
+                .flush()
+                .await
+                .context("failed to flush pre-handshake method-not-found response")?;
+        }
+        // else: not a request we can answer (e.g. a bare notification) — drop and keep waiting.
+    };
     sock_write
         .write_all(&initialize_request)
         .await
