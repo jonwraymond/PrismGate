@@ -66,6 +66,15 @@ pub enum Command {
     Stop,
     /// Restart a running daemon (stop + let proxies auto-spawn new).
     Restart,
+    /// Clear shared daemon history/statistics without restarting backends.
+    Purge {
+        /// Confirm clearing shared state for ALL connected clients.
+        #[arg(long, required = true)]
+        yes: bool,
+        /// Custom daemon socket (does not start a daemon).
+        #[arg(long)]
+        socket: Option<PathBuf>,
+    },
     /// Hot-upgrade the daemon without breaking existing MCP client connections.
     Upgrade {
         /// Timeout for staging and promoting the new daemon generation.
@@ -121,6 +130,12 @@ fn parse_duration(value: &str) -> Result<Duration, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn cli_purge_requires_explicit_confirmation() {
+        assert!(Cli::try_parse_from(["gatemini", "purge"]).is_err());
+        assert!(Cli::try_parse_from(["gatemini", "purge", "--yes"]).is_ok());
+    }
 
     #[test]
     fn cli_accepts_doctor_command() {

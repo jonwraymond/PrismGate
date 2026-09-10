@@ -14,7 +14,7 @@ use crate::registry::ToolRegistry;
 /// 2. If that fails and the sandbox feature is enabled, acquire sandbox semaphore
 ///    and execute in the V8 sandbox
 /// 3. If sandbox is not available, return an error
-#[allow(unused_variables, clippy::too_many_arguments)]
+#[allow(dead_code, unused_variables, clippy::too_many_arguments)]
 pub async fn handle_call_tool_chain(
     registry: &Arc<ToolRegistry>,
     manager: &Arc<BackendManager>,
@@ -26,12 +26,41 @@ pub async fn handle_call_tool_chain(
     intent: Option<&str>,
     output_config: &crate::config::OutputConfig,
 ) -> Result<String> {
+    handle_call_tool_chain_with_tracker(
+        registry,
+        manager,
+        code,
+        timeout,
+        max_output_size,
+        sandbox_semaphore,
+        session_id,
+        intent,
+        output_config,
+        None,
+    )
+    .await
+}
+
+/// Execute a chain with optional output telemetry, preserving the legacy handler API.
+#[allow(unused_variables, clippy::too_many_arguments)]
+pub async fn handle_call_tool_chain_with_tracker(
+    registry: &Arc<ToolRegistry>,
+    manager: &Arc<BackendManager>,
+    code: &str,
+    timeout: Option<u64>,
+    max_output_size: Option<usize>,
+    sandbox_semaphore: &Semaphore,
+    session_id: Option<u64>,
+    intent: Option<&str>,
+    output_config: &crate::config::OutputConfig,
+    tracker: Option<&crate::tracker::CallTracker>,
+) -> Result<String> {
     let max_output = max_output_size.unwrap_or(200_000);
 
     // Try to parse as a direct tool call (fast path — no V8, no semaphore needed).
     // Pattern: `await manual_name.tool_name({...})` or JSON with tool_name + arguments
     if let Some(result) = try_direct_tool_call(registry, manager, code, session_id).await {
-        return result.map(|v| process_output(v, intent, output_config, max_output));
+        return result.map(|v| process_output(v, intent, output_config, max_output, tracker));
     }
 
     // Fall back to full TypeScript sandbox — acquire semaphore first
@@ -59,7 +88,13 @@ pub async fn handle_call_tool_chain(
             session_id,
         )
         .await?;
-        return Ok(process_output(result, intent, output_config, max_output));
+        return Ok(process_output(
+            result,
+            intent,
+            output_config,
+            max_output,
+            tracker,
+        ));
     }
 
     #[cfg(not(feature = "sandbox"))]
@@ -331,6 +366,7 @@ fn process_output(
     intent: Option<&str>,
     config: &crate::config::OutputConfig,
     max_output: usize,
+    tracker: Option<&crate::tracker::CallTracker>,
 ) -> String {
     let raw_bytes = raw.len();
 
@@ -365,27 +401,43 @@ fn process_output(
         after_intent
     };
 
-    // Stage 3: Truncation (smart head/tail or simple cutoff based on config)
-    let final_output = if config.smart_truncation {
-        truncate_output(&after_chunk, max_output)
+    // Stage 3: Byte budgets supplement the line-aware head/tail selection.
+    // Keep the legacy pipeline unchanged when smart truncation is disabled.
+    let is_json =
+        config.smart_truncation && serde_json::from_str::<serde_json::Value>(&after_chunk).is_ok();
+    let mut final_output = if is_json {
+        crate::truncate::truncate_json(&after_chunk, max_output)
+    } else if config.smart_truncation {
+        crate::truncate::cap_bytes(&truncate_output(&after_chunk, max_output), max_output)
     } else {
         simple_truncate(&after_chunk, max_output)
     };
 
-    // Stage 4: Append size metadata when pipeline reduced output significantly
+    // Metadata must not invalidate JSON or breach the smart output budget.
     let returned_bytes = final_output.len();
-    if raw_bytes > returned_bytes + 200 {
+    if !is_json && raw_bytes.saturating_sub(returned_bytes) > 200 {
         let saved_pct = ((raw_bytes - returned_bytes) as f64 / raw_bytes as f64 * 100.0) as u32;
-        format!(
-            "{}\n\n[Output: {:.1}KB returned, {:.1}KB processed, {}% reduced]",
-            final_output,
+        let metadata = format!(
+            "\n\n[Output: {:.1}KB returned, {:.1}KB processed, {}% reduced]",
             returned_bytes as f64 / 1024.0,
             raw_bytes as f64 / 1024.0,
             saved_pct
-        )
-    } else {
-        final_output
+        );
+        if !config.smart_truncation || metadata.len() <= max_output.saturating_sub(returned_bytes) {
+            final_output.push_str(&metadata);
+        }
     }
+
+    // Count the complete UTF-8 payload, including metadata, once per chain.
+    // Chains can combine several backend tools, so do not attribute to one backend.
+    if let Some(tracker) = tracker {
+        tracker.record_bytes(
+            "call_tool_chain",
+            final_output.len() as u64,
+            raw_bytes as u64,
+        );
+    }
+    final_output
 }
 
 /// Simple head-only truncation (legacy behavior, used when smart_truncation=false).
@@ -665,6 +717,50 @@ mod direct_parser_tests {
 #[cfg(test)]
 mod truncation_tests {
     use super::*;
+
+    #[test]
+    fn smart_pipeline_enforces_byte_budget_including_metadata() {
+        let config = crate::config::OutputConfig {
+            auto_chunk_json: false,
+            ..Default::default()
+        };
+        let raw = format!("{}\nlast line", "🦀".repeat(1000));
+        for budget in 0..256 {
+            let output = process_output(raw.clone(), None, &config, budget, None);
+            assert!(
+                output.len() <= budget,
+                "budget {budget}: {} bytes",
+                output.len()
+            );
+        }
+    }
+
+    #[test]
+    fn smart_pipeline_keeps_json_valid_and_legacy_output_unchanged() {
+        let mut config = crate::config::OutputConfig {
+            auto_chunk_json: false,
+            ..Default::default()
+        };
+        let raw = serde_json::json!({"data": "🦀".repeat(300)}).to_string();
+        for budget in 1..160 {
+            let output = process_output(raw.clone(), None, &config, budget, None);
+            assert!(output.len() <= budget);
+            assert!(serde_json::from_str::<Value>(&output).is_ok());
+        }
+        config.smart_truncation = false;
+        let expected = simple_truncate(&raw, 100);
+        let returned = expected.len();
+        let percent = ((raw.len() - returned) as f64 / raw.len() as f64 * 100.0) as u32;
+        assert_eq!(
+            process_output(raw.clone(), None, &config, 100, None),
+            format!(
+                "{expected}\n\n[Output: {:.1}KB returned, {:.1}KB processed, {}% reduced]",
+                returned as f64 / 1024.0,
+                raw.len() as f64 / 1024.0,
+                percent
+            )
+        );
+    }
 
     #[test]
     fn test_truncate_preserves_small() {

@@ -22,6 +22,13 @@ use tokio::sync::Semaphore;
 // --- Parameter structs for each meta-tool ---
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct PurgeSessionParams {
+    /// Must be true. Clears shared gateway tracker state for ALL clients.
+    /// Does not erase client conversation context or backend-owned data.
+    pub confirm: bool,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct RegisterManualParams {
     /// The call template for the manual backend endpoint.
     pub manual_call_template: Value,
@@ -37,6 +44,9 @@ pub struct DeregisterManualParams {
 pub struct SearchToolsParams {
     /// A natural language description of the task.
     pub task_description: String,
+    /// Stable agent/context ID when multiple agents share this connection. Reuse the same ID across search_tools and tool_info; omitted IDs share this session's budget.
+    #[serde(default)]
+    pub agent_id: Option<String>,
     /// Maximum number of results to return.
     #[serde(default = "default_limit")]
     pub limit: u32,
@@ -64,6 +74,9 @@ fn default_page_size() -> u32 {
 pub struct ToolInfoParams {
     /// Name of the tool to get information for.
     pub tool_name: String,
+    /// Stable agent/context ID, matching search_tools. Omit for a session-local budget.
+    #[serde(default)]
+    pub agent_id: Option<String>,
     /// Detail level: "brief" returns name, backend, first-sentence description, parameter names (~200 tokens). "full" returns complete schema (~10k tokens). Default: "brief".
     #[serde(default = "default_detail")]
     pub detail: String,
@@ -117,6 +130,8 @@ pub struct GateminiServer {
     pub sandbox_semaphore: Arc<Semaphore>,
     /// Session ID for dedicated instance pool routing. None for direct mode legacy.
     pub session_id: Option<u64>,
+    /// Shared by server clones, never by unrelated connections.
+    discovery_guard: Arc<crate::flood_guard::FloodGuard>,
     /// Output processing configuration (auto-chunking, smart truncation).
     pub output_config: crate::config::OutputConfig,
     #[allow(dead_code)]
@@ -145,6 +160,7 @@ impl GateminiServer {
             max_dynamic_backends,
             sandbox_semaphore,
             session_id,
+            discovery_guard: Arc::new(crate::flood_guard::FloodGuard::default()),
             output_config,
             tool_router: Self::tool_router(),
         }
@@ -153,6 +169,25 @@ impl GateminiServer {
 
 #[tool_router]
 impl GateminiServer {
+    #[tool(
+        description = "Explicit clean slate: clears shared gateway call history, usage, latency and context statistics for ALL clients. Requires confirm=true. Preserves backend processes, health, tools and configuration. Does not erase client conversations or backend-owned memory. Calls completing afterwards count as new activity."
+    )]
+    async fn purge_session(
+        &self,
+        Parameters(params): Parameters<PurgeSessionParams>,
+    ) -> Result<CallToolResult, McpError> {
+        if !params.confirm {
+            return Ok(CallToolResult::error(vec![Content::text(
+                "Purge requires confirm=true; shared tracker state for all clients will be cleared.",
+            )]));
+        }
+        self.tracker.reset();
+        crate::cache::save(&self.cache_path, &self.registry, Some(&self.tracker)).await;
+        Ok(CallToolResult::success(vec![Content::text(
+            "Shared gateway history and statistics purged. Backend runtime and health preserved. Client conversation context and backend-owned memory are unchanged.",
+        )]))
+    }
+
     #[tool(description = "Registers a new tool provider by providing its call template.")]
     async fn register_manual(
         &self,
@@ -227,6 +262,14 @@ impl GateminiServer {
         &self,
         Parameters(params): Parameters<SearchToolsParams>,
     ) -> Result<CallToolResult, McpError> {
+        let decision = self
+            .discovery_guard
+            .check(self.session_id.unwrap_or(0), params.agent_id.as_deref());
+        if let crate::flood_guard::Decision::HardBlocked { .. } = decision {
+            return Ok(CallToolResult::error(vec![Content::text(
+                decision.notice().unwrap(),
+            )]));
+        }
         let filter_tags: Option<Vec<String>> = params.tag.map(|t| vec![t]);
         let filter_ref = filter_tags.as_deref();
         let tracker_ref = Some(self.tracker.as_ref());
@@ -238,7 +281,9 @@ impl GateminiServer {
                 params.limit,
                 filter_ref,
                 tracker_ref,
-            );
+                decision,
+            )
+            .map_err(|_| McpError::internal_error("Discovery flood guard blocked", None))?;
             serde_json::to_string_pretty(&results)
         } else {
             let results = crate::tools::discovery::handle_search(
@@ -247,11 +292,17 @@ impl GateminiServer {
                 params.limit,
                 filter_ref,
                 tracker_ref,
-            );
+                decision,
+            )
+            .map_err(|_| McpError::internal_error("Discovery flood guard blocked", None))?;
             serde_json::to_string_pretty(&results)
         }
         .map_err(|e| McpError::internal_error(e.to_string(), None))?;
-        Ok(CallToolResult::success(vec![Content::text(json)]))
+        let mut content = vec![Content::text(json)];
+        if let Some(notice) = decision.notice() {
+            content.push(Content::text(notice));
+        }
+        Ok(CallToolResult::success(content))
     }
 
     #[tool(description = "Returns a list of all tool names currently registered.")]
@@ -280,7 +331,15 @@ impl GateminiServer {
         &self,
         Parameters(params): Parameters<ToolInfoParams>,
     ) -> Result<CallToolResult, McpError> {
-        let json = if params.detail == "full" {
+        let decision = self
+            .discovery_guard
+            .check(self.session_id.unwrap_or(0), params.agent_id.as_deref());
+        if let crate::flood_guard::Decision::HardBlocked { .. } = decision {
+            return Ok(CallToolResult::error(vec![Content::text(
+                decision.notice().unwrap(),
+            )]));
+        }
+        let json = if params.detail == "full" && decision == crate::flood_guard::Decision::Normal {
             let result =
                 crate::tools::discovery::handle_tool_info(&self.registry, &params.tool_name);
             match result {
@@ -308,7 +367,11 @@ impl GateminiServer {
                 }
             }
         };
-        Ok(CallToolResult::success(vec![Content::text(json)]))
+        let mut content = vec![Content::text(json)];
+        if let Some(notice) = decision.notice() {
+            content.push(Content::text(notice));
+        }
+        Ok(CallToolResult::success(content))
     }
 
     #[tool(description = "Get required environment variables for a registered tool.")]
@@ -342,7 +405,7 @@ impl GateminiServer {
         &self,
         Parameters(params): Parameters<CallToolChainParams>,
     ) -> Result<CallToolResult, McpError> {
-        let result = crate::tools::sandbox::handle_call_tool_chain(
+        let result = crate::tools::sandbox::handle_call_tool_chain_with_tracker(
             &self.registry,
             &self.backend_manager,
             &params.code,
@@ -352,6 +415,7 @@ impl GateminiServer {
             self.session_id,
             params.intent.as_deref(),
             &self.output_config,
+            Some(self.tracker.as_ref()),
         )
         .await;
 
@@ -362,6 +426,181 @@ impl GateminiServer {
                 e
             ))])),
         }
+    }
+}
+
+#[cfg(test)]
+mod flood_tests {
+    use super::*;
+    use crate::testutil::{MockBackend, insert_mock};
+    use std::time::Duration;
+
+    #[tokio::test]
+    async fn discovery_budget_is_shared_across_tools_not_agents() {
+        let registry = ToolRegistry::new();
+        let manager = BackendManager::new();
+        insert_mock(
+            &manager,
+            &registry,
+            &MockBackend::new("guard", Duration::ZERO),
+        )
+        .await;
+        let mut server = GateminiServer::new(
+            registry,
+            manager,
+            Arc::new(crate::tracker::CallTracker::new()),
+            PathBuf::new(),
+            false,
+            0,
+            Arc::new(Semaphore::new(1)),
+            Some(7),
+            Default::default(),
+        );
+        server.discovery_guard = Arc::new(crate::flood_guard::FloodGuard::new(
+            1,
+            3,
+            Duration::from_secs(60),
+        ));
+        let search = |agent: &str, brief| {
+            Parameters(SearchToolsParams {
+                task_description: "returns".into(),
+                agent_id: Some(agent.into()),
+                limit: 10,
+                brief,
+                tag: None,
+            })
+        };
+        let first = server.search_tools(search("a", true)).await.unwrap();
+        assert_ne!(first.is_error, Some(true));
+        let data: Value = serde_json::from_str(&first.content[0].as_text().unwrap().text).unwrap();
+        assert!(data.as_array().unwrap().len() > 1);
+        let second = server
+            .clone()
+            .search_tools(search("a", false))
+            .await
+            .unwrap();
+        let data: Value = serde_json::from_str(&second.content[0].as_text().unwrap().text).unwrap();
+        assert_eq!(data.as_array().unwrap().len(), 1);
+        assert!(
+            second.content[1]
+                .as_text()
+                .unwrap()
+                .text
+                .contains("soft cap")
+        );
+        let info = server
+            .tool_info(Parameters(ToolInfoParams {
+                tool_name: "echo_tool".into(),
+                agent_id: Some("a".into()),
+                detail: "full".into(),
+            }))
+            .await
+            .unwrap();
+        assert_ne!(info.is_error, Some(true));
+        let data: Value = serde_json::from_str(&info.content[0].as_text().unwrap().text).unwrap();
+        assert!(data.get("input_schema").is_none());
+        assert!(info.content[1].as_text().unwrap().text.contains("brief"));
+        let blocked = server.search_tools(search("a", true)).await.unwrap();
+        assert_eq!(blocked.is_error, Some(true));
+        assert!(
+            blocked.content[0]
+                .as_text()
+                .unwrap()
+                .text
+                .contains("Retry after")
+        );
+        let blocked = server
+            .tool_info(Parameters(ToolInfoParams {
+                tool_name: "echo_tool".into(),
+                agent_id: Some("a".into()),
+                detail: "full".into(),
+            }))
+            .await
+            .unwrap();
+        assert_eq!(blocked.is_error, Some(true));
+        let other = server.search_tools(search("b", true)).await.unwrap();
+        assert_ne!(other.is_error, Some(true));
+        assert_eq!(other.content.len(), 1);
+    }
+}
+
+#[cfg(test)]
+mod telemetry_tests {
+    use super::*;
+    use crate::testutil::{MockBackend, insert_mock};
+    use crate::tracker::CallTracker;
+    use std::time::Duration;
+
+    #[cfg(feature = "sandbox")]
+    #[tokio::test]
+    async fn sandbox_records_output_bytes() {
+        let tracker = CallTracker::new();
+        let raw_value = serde_json::json!({"text": "é".repeat(2_000)});
+        let output = crate::tools::sandbox::handle_call_tool_chain_with_tracker(
+            &ToolRegistry::new(),
+            &BackendManager::new(),
+            "const text = 'é'.repeat(2000);\nreturn {text};",
+            None,
+            Some(100),
+            &Semaphore::new(1),
+            None,
+            None,
+            &Default::default(),
+            Some(&tracker),
+        )
+        .await
+        .unwrap();
+        let stats = tracker.session_stats();
+        assert_eq!(stats.total_bytes_returned, output.len() as u64);
+        // The sandbox serializes the returned value as pretty JSON.
+        assert_eq!(
+            stats.total_bytes_processed,
+            serde_json::to_string_pretty(&raw_value).unwrap().len() as u64
+        );
+        assert!(stats.reduction_pct > 90.0);
+    }
+
+    #[tokio::test]
+    async fn call_tool_chain_records_processed_and_returned_bytes() {
+        let tracker = Arc::new(CallTracker::new());
+        let manager = BackendManager::new();
+        let registry = ToolRegistry::new();
+        let mock = MockBackend::new("telemetry", Duration::ZERO);
+        insert_mock(&manager, &registry, &mock).await;
+        let server = GateminiServer::new(
+            registry,
+            manager,
+            Arc::clone(&tracker),
+            PathBuf::new(),
+            false,
+            0,
+            Arc::new(Semaphore::new(0)),
+            None,
+            crate::config::OutputConfig {
+                smart_truncation: false,
+                ..Default::default()
+            },
+        );
+        let arguments = serde_json::json!({"text": "é".repeat(2_000)});
+        let raw = serde_json::to_string_pretty(&arguments).unwrap();
+        let result = server
+            .call_tool_chain(Parameters(CallToolChainParams {
+                code: serde_json::json!({"tool": "telemetry.echo_tool", "arguments": arguments})
+                    .to_string(),
+                timeout: None,
+                max_output_size: Some(100),
+                intent: None,
+            }))
+            .await
+            .unwrap();
+        assert_ne!(result.is_error, Some(true));
+        let output = &result.content[0].as_text().unwrap().text;
+        assert!(output.contains("[Output:"));
+        let stats = tracker.session_stats();
+        assert_eq!(stats.total_bytes_processed, raw.len() as u64);
+        assert_eq!(stats.total_bytes_returned, output.len() as u64);
+        assert!(stats.reduction_pct > 90.0);
+        assert_eq!(stats.per_tool[0].name, "call_tool_chain");
     }
 }
 
