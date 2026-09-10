@@ -20,6 +20,7 @@ mod oauth;
 mod prompts;
 mod registry;
 mod resources;
+mod result_store;
 mod sandbox;
 mod secrets;
 mod server;

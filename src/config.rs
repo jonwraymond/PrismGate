@@ -531,6 +531,9 @@ pub struct SandboxConfig {
 /// Set individual flags to false to disable specific behaviors.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OutputConfig {
+    /// Retain raw results above this byte threshold; 0 disables handles. Default: 65536.
+    #[serde(default = "default_result_handle_threshold")]
+    pub result_handle_threshold: usize,
     /// Auto-chunk large JSON outputs (>10KB) into key-path summaries.
     /// When true, JSON responses exceeding the threshold are replaced with
     /// a compact summary showing paths, identities, and sizes. Default: true.
@@ -547,12 +550,17 @@ pub struct OutputConfig {
     pub chunk_threshold: usize,
 }
 
+fn default_result_handle_threshold() -> usize {
+    65536
+}
+
 impl Default for OutputConfig {
     fn default() -> Self {
         Self {
             auto_chunk_json: true,
             smart_truncation: true,
             chunk_threshold: default_chunk_threshold(),
+            result_handle_threshold: default_result_handle_threshold(),
         }
     }
 }

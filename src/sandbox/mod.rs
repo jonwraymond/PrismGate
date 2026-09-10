@@ -10,7 +10,7 @@ use anyhow::Result;
 #[cfg(feature = "sandbox")]
 use serde_json::Value;
 #[cfg(feature = "sandbox")]
-use tracing::{debug, info, warn};
+use tracing::debug;
 
 #[cfg(feature = "sandbox")]
 use crate::backend::BackendManager;
@@ -91,6 +91,9 @@ fn run_sandbox(
     })
     .map_err(|e| anyhow::anyhow!("failed to create sandbox runtime: {e}"))?;
 
+    bridge::register_data_helpers(&mut runtime, session_id)
+        .map_err(|e| anyhow::anyhow!("failed to register data helpers: {e}"))?;
+
     // Register __call_tool: dispatches tool calls to the main tokio runtime
     // where the rmcp backend services live.
     let mgr = manager;
@@ -132,8 +135,7 @@ fn run_sandbox(
                     };
 
                     // Dispatch to the main tokio runtime where rmcp services live
-                    let mgr_for_restart = mgr.clone();
-                    let args_for_retry = arguments.clone();
+                    let capture = bridge::capture_requested(args.get(3))?;
                     let bn = backend_name.clone();
                     let tn = tool_name.clone();
                     let sid = session_id;
@@ -147,47 +149,12 @@ fn run_sandbox(
                         })?;
 
                     match result {
-                        Ok(value) => Ok(value),
+                        Ok(value) => bridge::capture_output(session_id, capture, value),
                         Err(e) => {
                             let err_str = e.to_string();
 
-                            // On-demand restart for stopped backends
-                            if err_str.contains("not available") && err_str.contains("Stopped") {
-                                info!(backend = %backend_name, tool = %tool_name,
-                                      "attempting on-demand restart for stopped backend");
-                                let restart_reg = reg.clone();
-                                let restart_bn = backend_name.clone();
-                                let restart_mgr = mgr_for_restart.clone();
-                                let restart_result = handle
-                                    .spawn(async move {
-                                        restart_mgr.restart_backend(&restart_bn, &restart_reg).await
-                                    })
-                                    .await
-                                    .map_err(|e| rustyscript::Error::Runtime(format!("restart join: {e}")))
-                                    .and_then(|r| r.map_err(|e| rustyscript::Error::Runtime(format!("restart failed: {e}"))));
-
-                                if let Ok(tool_count) = restart_result {
-                                    info!(backend = %backend_name, tools = tool_count, "on-demand restart succeeded, retrying call");
-                                    // Retry the tool call once
-                                    let retry_mgr = mgr_for_restart;
-                                    let retry_bn = backend_name.clone();
-                                    let retry_tn = tool_name.clone();
-                                    let retry_sid = session_id;
-                                    let retry_result = handle
-                                        .spawn(async move {
-                                            retry_mgr.call_tool(&retry_bn, &retry_tn, args_for_retry, retry_sid).await
-                                        })
-                                        .await
-                                        .map_err(|e| rustyscript::Error::Runtime(format!("retry join: {e}")))?;
-                                    return match retry_result {
-                                        Ok(value) => Ok(value),
-                                        Err(e) => Err(rustyscript::Error::Runtime(e.to_string())),
-                                    };
-                                } else {
-                                    warn!(backend = %backend_name, "on-demand restart failed, returning enhanced error");
-                                    // Intentionally falls through to the "not available" error enhancement below
-                                }
-                            }
+                            // Never restart/replay an operation after dispatch: side effects
+                            // may already have occurred. Let the caller decide recovery.
 
                             // Enhance error if tool is cached but backend isn't ready
                             if (err_str.contains("not found") || err_str.contains("still starting"))
