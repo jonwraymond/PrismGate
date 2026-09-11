@@ -68,6 +68,99 @@ fn first_sentence(text: &str) -> String {
     }
 }
 
+/// Strip non-essential description components per arxiv 2602.14878.
+///
+/// Preserves the `Limitations:` block because it contains high-leverage
+/// operational cues. Removes `Parameters:`, `Key features:`, `You should:`,
+/// `When to use:`, `Examples:`, and `Guidelines:` sections.
+///
+/// The result is clamped to 240 chars at a sentence boundary.
+fn minimize_description(text: &str) -> String {
+    let non_essential = [
+        "parameters:",
+        "key features:",
+        "you should:",
+        "when to use:",
+        "examples:",
+        "guidelines:",
+    ];
+
+    let mut preserved = Vec::new();
+    let mut limitations = Vec::new();
+
+    for para in text.split("\n\n") {
+        let trimmed = para.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let first = trimmed.lines().next().unwrap_or("").trim().to_lowercase();
+
+        if first.starts_with("limitations:") {
+            limitations.push(trimmed);
+        } else if non_essential.iter().any(|pat| first.starts_with(pat)) {
+            // skip non-essential section
+        } else {
+            preserved.push(trimmed);
+        }
+    }
+
+    let mut result = preserved.join(" ");
+    if !limitations.is_empty() {
+        if !result.is_empty() {
+            result.push(' ');
+        }
+        result.push_str(&limitations.join(" "));
+    }
+
+    // Clamp to 240 chars at a sentence boundary.
+    if result.len() > 240 {
+        if let Some(idx) = result[..240].rfind(". ") {
+            result = result[..=idx].to_string();
+        } else if let Some(idx) = result[..240].rfind(".\n") {
+            result = result[..=idx].to_string();
+        } else {
+            result = format!("{}...", &result[..237]);
+        }
+    }
+
+    result
+}
+
+/// Prune per-parameter `description` fields in a JSON schema to their first sentence.
+///
+/// This reduces token usage while preserving the high-leverage operational cues
+/// identified in arxiv 2602.14878 RQ-3.
+fn prune_schema_descriptions(schema: &mut Value) {
+    let Some(obj) = schema.as_object_mut() else {
+        return;
+    };
+    let Some(properties) = obj.get_mut("properties").and_then(|p| p.as_object_mut()) else {
+        return;
+    };
+
+    for (_, value) in properties.iter_mut() {
+        let Some(prop_obj) = value.as_object_mut() else {
+            continue;
+        };
+        if let Some(desc) = prop_obj.get("description").and_then(|d| d.as_str()) {
+            let minimized = first_sentence(desc);
+            if !minimized.is_empty() {
+                prop_obj.insert("description".to_string(), Value::String(minimized));
+            }
+        }
+    }
+
+    // Recurse into nested object properties if present
+    for (_, value) in properties.iter_mut() {
+        prune_schema_descriptions(value);
+    }
+
+    // Also recurse into `items` for array schemas
+    if let Some(items) = obj.get_mut("items") {
+        prune_schema_descriptions(items);
+    }
+}
+
 /// Extract parameter names from a JSON schema's `properties` object.
 fn extract_param_names(schema: &Value) -> Vec<String> {
     schema
@@ -142,7 +235,7 @@ pub fn handle_search_brief(
             BriefSearchResult {
                 name: e.name,
                 backend: e.backend_name,
-                description: first_sentence(&e.description),
+                description: minimize_description(&e.description),
                 call,
                 try_also,
             }
@@ -206,7 +299,7 @@ pub fn handle_tool_info_brief(
         BriefToolInfoResult {
             name: e.name,
             backend: e.backend_name,
-            description: first_sentence(&e.description),
+            description: minimize_description(&e.description),
             parameters,
             call,
         }
@@ -298,5 +391,55 @@ mod tests {
     #[test]
     fn test_sanitize_js_name_empty() {
         assert_eq!(sanitize_js_name(""), "_unnamed");
+    }
+
+    #[test]
+    fn test_minimize_description_strips_sections() {
+        let input = "Search the web.\n\nParameters:\n- query (string): the search terms\n- limit (integer): max results\n\nKey features:\n- returns JSON\n\nLimitations:\n- requires API key";
+        let result = minimize_description(input);
+        assert!(result.contains("Search the web"));
+        assert!(!result.contains("Parameters:"));
+        assert!(!result.contains("Key features:"));
+        assert!(result.contains("Limitations"));
+    }
+
+    #[test]
+    fn test_minimize_description_clamps_long() {
+        let input = "A very long description. ".repeat(20);
+        let result = minimize_description(&input);
+        assert!(result.len() <= 240, "got len {}", result.len());
+    }
+
+    #[test]
+    fn test_minimize_description_preserves_short() {
+        let input = "Short description.";
+        let result = minimize_description(input);
+        assert_eq!(result, "Short description.");
+    }
+
+    #[test]
+    fn test_prune_schema_descriptions() {
+        let mut schema = serde_json::json!({
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "The search query. Should be concise."
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Maximum number of results to return."
+                }
+            }
+        });
+        prune_schema_descriptions(&mut schema);
+        let query_desc = schema["properties"]["query"]["description"]
+            .as_str()
+            .unwrap();
+        let limit_desc = schema["properties"]["limit"]["description"]
+            .as_str()
+            .unwrap();
+        assert_eq!(query_desc, "The search query.");
+        assert_eq!(limit_desc, "Maximum number of results to return.");
     }
 }
