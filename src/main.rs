@@ -10,6 +10,7 @@ mod cli;
 mod config;
 #[cfg(feature = "semantic")]
 mod embeddings;
+mod flood_guard;
 #[cfg(test)]
 mod integration_inventory;
 mod ipc;
@@ -19,14 +20,18 @@ mod oauth;
 mod prompts;
 mod registry;
 mod resources;
+mod result_store;
 mod sandbox;
 mod secrets;
 mod server;
+#[cfg(feature = "session-store")]
+mod session;
 #[cfg(test)]
 mod testutil;
 mod tools;
 mod trace_context;
 mod tracker;
+mod truncate;
 
 use anyhow::Result;
 use clap::Parser;
@@ -367,6 +372,8 @@ async fn main() -> Result<()> {
             };
             ipc::daemon::run(gw, bound).await
         }
+
+        (Some(cli::Command::Purge { yes: _, socket }), _) => ipc::purge::run(socket.clone()).await,
 
         // Status check
         (Some(cli::Command::Status), _) => ipc::status::run(),

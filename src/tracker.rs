@@ -63,7 +63,9 @@ pub struct CallTracker {
     /// Total raw bytes processed before truncation/filtering.
     bytes_processed: AtomicU64,
     /// Session start time for uptime calculation.
-    session_start: Instant,
+    session_start: Mutex<Instant>,
+    /// Serializes reset against complete tracker mutations.
+    reset_gate: Mutex<()>,
 }
 
 impl CallTracker {
@@ -81,12 +83,29 @@ impl CallTracker {
             max_recent,
             bytes_returned: DashMap::new(),
             bytes_processed: AtomicU64::new(0),
-            session_start: Instant::now(),
+            session_start: Mutex::new(Instant::now()),
+            reset_gate: Mutex::new(()),
         }
+    }
+
+    /// Clear shared gateway history and statistics without touching backend runtime.
+    /// Calls completing after this boundary are recorded as new activity.
+    pub fn reset(&self) {
+        let _gate = self.reset_gate.lock().unwrap_or_else(|e| e.into_inner());
+        self.recent
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clear();
+        self.usage_counts.clear();
+        self.latency.clear();
+        self.bytes_returned.clear();
+        self.bytes_processed.store(0, Ordering::Relaxed);
+        *self.session_start.lock().unwrap_or_else(|e| e.into_inner()) = Instant::now();
     }
 
     /// Record a completed tool call. Called from BackendManager::call_tool.
     pub fn record(&self, tool_name: &str, backend_name: &str, duration: Duration, success: bool) {
+        let _gate = self.reset_gate.lock().unwrap_or_else(|e| e.into_inner());
         let event = CallEvent {
             tool_name: tool_name.to_string(),
             backend_name: backend_name.to_string(),
@@ -146,6 +165,7 @@ impl CallTracker {
 
     /// Load usage counts from cache (additive — merges with existing).
     pub fn load_usage(&self, counts: HashMap<String, u64>) {
+        let _gate = self.reset_gate.lock().unwrap_or_else(|e| e.into_inner());
         for (tool, count) in counts {
             self.usage_counts
                 .entry(tool)
@@ -201,6 +221,7 @@ impl CallTracker {
     /// `returned` = bytes actually sent to context (after truncation).
     /// `processed` = raw bytes before truncation.
     pub fn record_bytes(&self, tool_name: &str, returned: u64, processed: u64) {
+        let _gate = self.reset_gate.lock().unwrap_or_else(|e| e.into_inner());
         self.bytes_returned
             .entry(tool_name.to_string())
             .and_modify(|b| *b += returned)
@@ -213,7 +234,12 @@ impl CallTracker {
         let total_calls: u64 = self.usage_counts.iter().map(|r| *r.value()).sum();
         let total_bytes_returned: u64 = self.bytes_returned.iter().map(|r| *r.value()).sum();
         let total_bytes_processed = self.bytes_processed.load(Ordering::Relaxed);
-        let uptime = self.session_start.elapsed().as_secs_f64();
+        let uptime = self
+            .session_start
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .elapsed()
+            .as_secs_f64();
 
         let savings_ratio = if total_bytes_returned > 0 {
             total_bytes_processed as f64 / total_bytes_returned as f64
@@ -275,6 +301,28 @@ pub struct ToolByteStat {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reset_clears_history_usage_bytes_and_latency() {
+        let tracker = CallTracker::new();
+        tracker.record("old", "healthy_backend", Duration::from_millis(5), true);
+        tracker.record_bytes("old", 10, 100);
+        let before = tracker.session_stats().uptime_seconds;
+        tracker.reset();
+        assert!(tracker.recent_calls(10).is_empty());
+        assert!(tracker.snapshot_usage().is_empty());
+        assert!(tracker.backends_with_latency().is_empty());
+        let stats = tracker.session_stats();
+        assert_eq!(stats.total_calls, 0);
+        assert_eq!(stats.total_bytes_returned, 0);
+        assert_eq!(stats.total_bytes_processed, 0);
+        assert!(stats.per_tool.is_empty());
+        assert!(stats.uptime_seconds < before + 0.1);
+        tracker.reset(); // idempotent, still accepts new calls
+        tracker.record("new", "healthy_backend", Duration::from_millis(1), true);
+        assert_eq!(tracker.usage_count("new"), 1);
+        assert_eq!(tracker.recent_calls(10).len(), 1);
+    }
 
     #[test]
     fn test_record_and_recent() {
@@ -523,6 +571,54 @@ mod tests {
         assert!((stats.reduction_pct - 99.0).abs() < 0.1);
         // Tokens saved: (10000 - 100) / 4 = 2475
         assert_eq!(stats.estimated_tokens_saved, 2475);
+    }
+
+    #[test]
+    fn test_session_stats_zero_returned() {
+        let tracker = CallTracker::new();
+        tracker.record_bytes("call_tool_chain", 0, 10_000);
+        let stats = tracker.session_stats();
+        assert_eq!(stats.total_calls, 0); // Byte accounting does not invent backend calls.
+        assert_eq!(stats.total_bytes_returned, 0);
+        assert_eq!(stats.total_bytes_processed, 10_000);
+        assert_eq!(stats.savings_ratio, 1.0); // Finite fallback when division is undefined.
+        assert_eq!(stats.reduction_pct, 100.0);
+        assert_eq!(stats.estimated_tokens_saved, 2_500);
+        assert_eq!(stats.per_tool[0].calls, 0);
+        assert!(serde_json::to_string(&stats).is_ok());
+    }
+
+    #[test]
+    fn test_session_stats_large_reduction_ratio() {
+        let tracker = CallTracker::new();
+        tracker.record_bytes("call_tool_chain", 1, 1_000_000_000);
+        let stats = tracker.session_stats();
+        assert_eq!(stats.savings_ratio, 1_000_000_000.0);
+        assert!((stats.reduction_pct - 99.9999999).abs() < 1e-9);
+        assert_eq!(stats.estimated_tokens_saved, 249_999_999);
+    }
+
+    #[test]
+    fn test_session_stats_output_expansion() {
+        let tracker = CallTracker::new();
+        tracker.record_bytes("call_tool_chain", 200, 100);
+        let stats = tracker.session_stats();
+        assert_eq!(stats.savings_ratio, 0.5);
+        assert_eq!(stats.reduction_pct, -100.0);
+        assert_eq!(stats.estimated_tokens_saved, 0);
+    }
+
+    #[test]
+    fn test_session_stats_zero_byte_record() {
+        let tracker = CallTracker::new();
+        tracker.record_bytes("call_tool_chain", 0, 0);
+        let stats = tracker.session_stats();
+        assert_eq!(stats.total_bytes_processed, 0);
+        assert_eq!(stats.total_bytes_returned, 0);
+        assert_eq!(stats.savings_ratio, 1.0);
+        assert_eq!(stats.reduction_pct, 0.0);
+        assert_eq!(stats.estimated_tokens_saved, 0);
+        assert_eq!(stats.per_tool.len(), 1);
     }
 
     #[test]

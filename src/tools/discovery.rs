@@ -102,15 +102,17 @@ pub fn handle_search(
     limit: u32,
     filter_tags: Option<&[String]>,
     tracker: Option<&crate::tracker::CallTracker>,
-) -> Vec<SearchResult> {
-    search_tools(registry, query, limit, filter_tags, tracker)
+    decision: crate::flood_guard::Decision,
+) -> Result<Vec<SearchResult>, crate::flood_guard::Decision> {
+    let limit = decision.limit(limit)?;
+    Ok(search_tools(registry, query, limit, filter_tags, tracker)
         .into_iter()
         .map(|e| SearchResult {
             name: e.name,
             description: e.description,
             backend: e.backend_name,
         })
-        .collect()
+        .collect())
 }
 
 /// Handle search_tools with brief=true: returns compact results.
@@ -120,8 +122,10 @@ pub fn handle_search_brief(
     limit: u32,
     filter_tags: Option<&[String]>,
     tracker: Option<&crate::tracker::CallTracker>,
-) -> Vec<BriefSearchResult> {
-    search_tools(registry, query, limit, filter_tags, tracker)
+    decision: crate::flood_guard::Decision,
+) -> Result<Vec<BriefSearchResult>, crate::flood_guard::Decision> {
+    let limit = decision.limit(limit)?;
+    Ok(search_tools(registry, query, limit, filter_tags, tracker)
         .into_iter()
         .map(|e| {
             let orig = if e.original_name.is_empty() {
@@ -143,7 +147,7 @@ pub fn handle_search_brief(
                 try_also,
             }
         })
-        .collect()
+        .collect())
 }
 
 /// Handle list_tools with pagination.

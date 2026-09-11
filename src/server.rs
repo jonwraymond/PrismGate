@@ -22,6 +22,25 @@ use tokio::sync::Semaphore;
 // --- Parameter structs for each meta-tool ---
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct ReadResultParams {
+    /// Handle returned by call_tool_chain on this connection. Expires after 30 minutes or eviction.
+    pub handle: String,
+    /// UTF-8 byte offset (default 0).
+    pub offset: Option<usize>,
+    /// Page byte limit, clamped to 4..16384 (default 4096).
+    pub limit: Option<usize>,
+    /// Optional case-sensitive literal search starting at offset.
+    pub query: Option<String>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct PurgeSessionParams {
+    /// Must be true. Clears shared gateway tracker state for ALL clients.
+    /// Does not erase client conversation context or backend-owned data.
+    pub confirm: bool,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct RegisterManualParams {
     /// The call template for the manual backend endpoint.
     pub manual_call_template: Value,
@@ -37,6 +56,9 @@ pub struct DeregisterManualParams {
 pub struct SearchToolsParams {
     /// A natural language description of the task.
     pub task_description: String,
+    /// Stable agent/context ID when multiple agents share this connection. Reuse the same ID across search_tools and tool_info; omitted IDs share this session's budget.
+    #[serde(default)]
+    pub agent_id: Option<String>,
     /// Maximum number of results to return.
     #[serde(default = "default_limit")]
     pub limit: u32,
@@ -64,6 +86,9 @@ fn default_page_size() -> u32 {
 pub struct ToolInfoParams {
     /// Name of the tool to get information for.
     pub tool_name: String,
+    /// Stable agent/context ID, matching search_tools. Omit for a session-local budget.
+    #[serde(default)]
+    pub agent_id: Option<String>,
     /// Detail level: "brief" returns name, backend, first-sentence description, parameter names (~200 tokens). "full" returns complete schema (~10k tokens). Default: "brief".
     #[serde(default = "default_detail")]
     pub detail: String,
@@ -95,13 +120,48 @@ pub struct CallToolChainParams {
     pub code: String,
     /// Optional timeout in milliseconds (default: 30000).
     pub timeout: Option<u64>,
-    /// Optional maximum output size in characters (default: 200000).
+    /// Optional maximum output size in UTF-8 bytes (default: 200000).
     pub max_output_size: Option<usize>,
-    /// Optional intent description. When provided and output exceeds 5KB,
-    /// automatically filters to sections matching this intent instead of
-    /// returning the full raw output.
+    /// Single-query alias for structured retrieval (default 8 hits / 16000 bytes).
+    /// No matches return []; explicit retrieval takes precedence.
     #[serde(default)]
     pub intent: Option<String>,
+    /// Structured result search: queries, top_k, neighbors and max_bytes.
+    /// Returns a bounded JSON evidence array; no matches return [].
+    #[serde(default)]
+    pub retrieval: Option<crate::tools::retrieval::RetrievalOptions>,
+}
+
+#[cfg(feature = "session-store")]
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct SessionSearchParams {
+    /// FTS5 match query over persisted session events (categories, tool names, payload summaries, outcomes). Empty query with resume=true returns the most recent events instead.
+    #[serde(default)]
+    pub query: Option<String>,
+    /// Return the most recent events for this session instead of a ranked search.
+    #[serde(default)]
+    pub resume: bool,
+    /// Compact resume card: open handles, recent tools, decisions, constraints.
+    #[serde(default)]
+    pub card: bool,
+    /// Optional category filter for resume mode (tool, backend, file).
+    #[serde(default)]
+    pub category: Option<String>,
+    /// Maximum hits to return (default 20, max 200).
+    #[serde(default)]
+    pub limit: Option<usize>,
+}
+
+#[cfg(feature = "session-store")]
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct SessionNoteParams {
+    /// Kind of durable fact: decision, constraint, or note.
+    pub kind: String,
+    /// Short payload to persist. Keep it under a few hundred characters.
+    pub text: String,
+    /// Optional label for notes.
+    #[serde(default)]
+    pub name: Option<String>,
 }
 
 /// The MCP server exposed to Claude Code over stdio.
@@ -117,8 +177,12 @@ pub struct GateminiServer {
     pub sandbox_semaphore: Arc<Semaphore>,
     /// Session ID for dedicated instance pool routing. None for direct mode legacy.
     pub session_id: Option<u64>,
+    /// Shared by server clones, never by unrelated connections.
+    discovery_guard: Arc<crate::flood_guard::FloodGuard>,
+    result_store: Arc<crate::result_store::ResultStore>,
     /// Output processing configuration (auto-chunking, smart truncation).
     pub output_config: crate::config::OutputConfig,
+    pub session_store: crate::session::SessionEventStore,
     #[allow(dead_code)]
     tool_router: ToolRouter<Self>,
 }
@@ -145,14 +209,73 @@ impl GateminiServer {
             max_dynamic_backends,
             sandbox_semaphore,
             session_id,
+            discovery_guard: Arc::new(crate::flood_guard::FloodGuard::default()),
+            result_store: Arc::new(crate::result_store::ResultStore::default()),
             output_config,
+            session_store: crate::session::SessionEventStore::default(),
             tool_router: Self::tool_router(),
         }
+    }
+    #[cfg(feature = "session-store")]
+    fn session_key(&self) -> String {
+        self.session_id
+            .map(|id| format!("session-{id}"))
+            .unwrap_or_else(|| "direct".to_string())
     }
 }
 
 #[tool_router]
 impl GateminiServer {
+    #[tool(
+        description = "Read or search a retained raw tool result by handle without rerunning its backend. Session-local; expires after 30 minutes or FIFO eviction. Returns a bounded UTF-8 page and next_offset. Literal query searches from offset."
+    )]
+    async fn read_result(
+        &self,
+        Parameters(params): Parameters<ReadResultParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let offset = params.offset.unwrap_or(0);
+        let limit = params.limit.unwrap_or(4096);
+        let page = if let Some(query) = params.query.as_deref() {
+            self.result_store
+                .search(&params.handle, query, offset, limit)
+        } else {
+            self.result_store.read(&params.handle, offset, limit)
+        };
+        match page {
+            Some(page) => Ok(CallToolResult::success(vec![Content::text(
+                serde_json::to_string(&page)
+                    .map_err(|e| McpError::internal_error(e.to_string(), None))?,
+            )])),
+            None => Ok(CallToolResult::error(vec![Content::text(
+                "Result unavailable (expired, evicted, unknown handle, invalid offset, or no match).",
+            )])),
+        }
+    }
+
+    #[tool(
+        description = "Explicit clean slate: clears shared gateway call history, usage, latency and context statistics for ALL clients. Requires confirm=true. Preserves backend processes, health, tools and configuration. Does not erase client conversations or backend-owned memory. Calls completing afterwards count as new activity."
+    )]
+    async fn purge_session(
+        &self,
+        Parameters(params): Parameters<PurgeSessionParams>,
+    ) -> Result<CallToolResult, McpError> {
+        if !params.confirm {
+            return Ok(CallToolResult::error(vec![Content::text(
+                "Purge requires confirm=true; shared tracker state for all clients will be cleared.",
+            )]));
+        }
+        self.tracker.reset();
+        #[cfg(feature = "session-store")]
+        {
+            let key = self.session_key();
+            let _ = self.session_store.purge_session(&key).await;
+        }
+        crate::cache::save(&self.cache_path, &self.registry, Some(&self.tracker)).await;
+        Ok(CallToolResult::success(vec![Content::text(
+            "Shared gateway history and statistics purged. Backend runtime and health preserved. Client conversation context and backend-owned memory are unchanged.",
+        )]))
+    }
+
     #[tool(description = "Registers a new tool provider by providing its call template.")]
     async fn register_manual(
         &self,
@@ -227,6 +350,14 @@ impl GateminiServer {
         &self,
         Parameters(params): Parameters<SearchToolsParams>,
     ) -> Result<CallToolResult, McpError> {
+        let decision = self
+            .discovery_guard
+            .check(self.session_id.unwrap_or(0), params.agent_id.as_deref());
+        if let crate::flood_guard::Decision::HardBlocked { .. } = decision {
+            return Ok(CallToolResult::error(vec![Content::text(
+                decision.notice().unwrap(),
+            )]));
+        }
         let filter_tags: Option<Vec<String>> = params.tag.map(|t| vec![t]);
         let filter_ref = filter_tags.as_deref();
         let tracker_ref = Some(self.tracker.as_ref());
@@ -238,7 +369,9 @@ impl GateminiServer {
                 params.limit,
                 filter_ref,
                 tracker_ref,
-            );
+                decision,
+            )
+            .map_err(|_| McpError::internal_error("Discovery flood guard blocked", None))?;
             serde_json::to_string_pretty(&results)
         } else {
             let results = crate::tools::discovery::handle_search(
@@ -247,11 +380,17 @@ impl GateminiServer {
                 params.limit,
                 filter_ref,
                 tracker_ref,
-            );
+                decision,
+            )
+            .map_err(|_| McpError::internal_error("Discovery flood guard blocked", None))?;
             serde_json::to_string_pretty(&results)
         }
         .map_err(|e| McpError::internal_error(e.to_string(), None))?;
-        Ok(CallToolResult::success(vec![Content::text(json)]))
+        let mut content = vec![Content::text(json)];
+        if let Some(notice) = decision.notice() {
+            content.push(Content::text(notice));
+        }
+        Ok(CallToolResult::success(content))
     }
 
     #[tool(description = "Returns a list of all tool names currently registered.")]
@@ -280,7 +419,15 @@ impl GateminiServer {
         &self,
         Parameters(params): Parameters<ToolInfoParams>,
     ) -> Result<CallToolResult, McpError> {
-        let json = if params.detail == "full" {
+        let decision = self
+            .discovery_guard
+            .check(self.session_id.unwrap_or(0), params.agent_id.as_deref());
+        if let crate::flood_guard::Decision::HardBlocked { .. } = decision {
+            return Ok(CallToolResult::error(vec![Content::text(
+                decision.notice().unwrap(),
+            )]));
+        }
+        let json = if params.detail == "full" && decision == crate::flood_guard::Decision::Normal {
             let result =
                 crate::tools::discovery::handle_tool_info(&self.registry, &params.tool_name);
             match result {
@@ -308,7 +455,11 @@ impl GateminiServer {
                 }
             }
         };
-        Ok(CallToolResult::success(vec![Content::text(json)]))
+        let mut content = vec![Content::text(json)];
+        if let Some(notice) = decision.notice() {
+            content.push(Content::text(notice));
+        }
+        Ok(CallToolResult::success(content))
     }
 
     #[tool(description = "Get required environment variables for a registered tool.")]
@@ -335,6 +486,87 @@ impl GateminiServer {
         }
     }
 
+    #[cfg(feature = "session-store")]
+    #[tool(
+        description = "Search the persistent session event store (SQLite FTS5). Use query for ranked BM25 search. Use resume=true for recent events, card=true for a compact resume card (open handles, decisions, constraints). Survives context compaction. Fetch retained payloads with read_result."
+    )]
+    async fn session_search(
+        &self,
+        Parameters(params): Parameters<SessionSearchParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let limit = params.limit.unwrap_or(20).clamp(1, 200);
+        let key = self.session_key();
+        if params.card {
+            return match self.session_store.resume_card(&key).await {
+                Ok(card) => {
+                    let json = serde_json::to_string_pretty(&card)
+                        .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+                    Ok(CallToolResult::success(vec![Content::text(json)]))
+                }
+                Err(e) => Ok(CallToolResult::error(vec![Content::text(format!(
+                    "Resume card failed: {e:#}"
+                ))])),
+            };
+        }
+        let result = if params.resume {
+            self.session_store
+                .resume_summary(&key, params.category.as_deref(), limit)
+                .await
+        } else {
+            let query = params.query.unwrap_or_default();
+            if query.is_empty() {
+                return Ok(CallToolResult::error(vec![Content::text(
+                    "Provide a query, or set resume=true for recent events.",
+                )]));
+            }
+            self.session_store.search(&query, limit).await
+        };
+        match result {
+            Ok(hits) => {
+                let json = serde_json::to_string_pretty(&hits)
+                    .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+                Ok(CallToolResult::success(vec![Content::text(json)]))
+            }
+            Err(e) => Ok(CallToolResult::error(vec![Content::text(format!(
+                "Session search failed: {e:#}"
+            ))])),
+        }
+    }
+
+    #[cfg(feature = "session-store")]
+    #[tool(
+        description = "Persist a durable session fact that should survive compaction: kind=decision|constraint|note. Do not store raw tool output here — use result handles. After compact, call session_search(resume=true) or session_search(card=true)."
+    )]
+    async fn session_note(
+        &self,
+        Parameters(params): Parameters<SessionNoteParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let key = self.session_key();
+        let event = match params.kind.as_str() {
+            "decision" => crate::session::extract::decision_event(&key, &params.text),
+            "constraint" => crate::session::extract::constraint_event(&key, &params.text),
+            "note" => crate::session::extract::note_event(
+                &key,
+                params.name.as_deref().unwrap_or("note"),
+                &params.text,
+            ),
+            other => {
+                return Ok(CallToolResult::error(vec![Content::text(format!(
+                    "Unknown kind '{other}'. Use decision, constraint, or note."
+                ))]));
+            }
+        };
+        match self.session_store.record(event).await {
+            Ok(()) => Ok(CallToolResult::success(vec![Content::text(format!(
+                "Recorded {} for session {key}.",
+                params.kind
+            ))])),
+            Err(e) => Ok(CallToolResult::error(vec![Content::text(format!(
+                "Failed to record session note: {e:#}"
+            ))])),
+        }
+    }
+
     #[tool(
         description = "Execute TypeScript code with direct access to all registered tools as hierarchical functions (e.g., manual.tool()). IMPORTANT: the tool result is the value your code returns. `console.log(...)` output is not returned; if you do not return a value, the result is usually `null`."
     )]
@@ -342,7 +574,7 @@ impl GateminiServer {
         &self,
         Parameters(params): Parameters<CallToolChainParams>,
     ) -> Result<CallToolResult, McpError> {
-        let result = crate::tools::sandbox::handle_call_tool_chain(
+        let result = crate::tools::sandbox::handle_call_tool_chain_with_store(
             &self.registry,
             &self.backend_manager,
             &params.code,
@@ -352,16 +584,366 @@ impl GateminiServer {
             self.session_id,
             params.intent.as_deref(),
             &self.output_config,
+            Some(self.tracker.as_ref()),
+            params.retrieval.as_ref(),
+            Some(self.result_store.as_ref()),
         )
         .await;
 
         match result {
-            Ok(output) => Ok(CallToolResult::success(vec![Content::text(output)])),
-            Err(e) => Ok(CallToolResult::error(vec![Content::text(format!(
-                "{:#}",
-                e
-            ))])),
+            Ok(output) => {
+                #[cfg(feature = "session-store")]
+                {
+                    let key = self.session_key();
+                    let mut event = crate::session::extract::tool_call_event(
+                        &key,
+                        "call_tool_chain",
+                        "sandbox",
+                        "ok",
+                    )
+                    .with_bytes(output.len() as u64, output.len() as u64);
+                    if let Ok(value) = serde_json::from_str::<serde_json::Value>(&output)
+                        && let Some(handle) = value.get("result_handle").and_then(|v| v.as_str())
+                    {
+                        let total = value
+                            .get("total_bytes")
+                            .and_then(|v| v.as_u64())
+                            .unwrap_or(output.len() as u64);
+                        event = crate::session::extract::handle_event(
+                            &key,
+                            handle,
+                            total,
+                            "call_tool_chain",
+                        );
+                        if let Some(raw) = self.result_store.raw(handle) {
+                            let indexed = crate::session::overflow::index_overflow(
+                                &self.session_store,
+                                &key,
+                                handle,
+                                &raw,
+                                "call_tool_chain",
+                                params.intent.as_deref(),
+                            )
+                            .await;
+                            let mut pointer = value.clone();
+                            pointer["sections"] = serde_json::json!(indexed.sections);
+                            pointer["try_also"] = serde_json::json!(indexed.try_also);
+                            pointer["preview"] = serde_json::json!(indexed.preview);
+                            let serialized = serde_json::to_string(&pointer).unwrap_or(output);
+                            let _ = self.session_store.record(event).await;
+                            return Ok(CallToolResult::success(vec![Content::text(serialized)]));
+                        }
+                    }
+                    let _ = self.session_store.record(event).await;
+                }
+                Ok(CallToolResult::success(vec![Content::text(output)]))
+            }
+            Err(e) => {
+                #[cfg(feature = "session-store")]
+                {
+                    let event = crate::session::extract::tool_call_event(
+                        &self.session_key(),
+                        "call_tool_chain",
+                        "sandbox",
+                        "error",
+                    );
+                    let _ = self.session_store.record(event).await;
+                }
+                Ok(CallToolResult::error(vec![Content::text(format!(
+                    "{:#}",
+                    e
+                ))]))
+            }
         }
+    }
+}
+
+#[cfg(test)]
+mod flood_tests {
+    use super::*;
+    use crate::testutil::{MockBackend, insert_mock};
+    use std::time::Duration;
+
+    #[tokio::test]
+    async fn discovery_budget_is_shared_across_tools_not_agents() {
+        let registry = ToolRegistry::new();
+        let manager = BackendManager::new();
+        insert_mock(
+            &manager,
+            &registry,
+            &MockBackend::new("guard", Duration::ZERO),
+        )
+        .await;
+        let mut server = GateminiServer::new(
+            registry,
+            manager,
+            Arc::new(crate::tracker::CallTracker::new()),
+            PathBuf::new(),
+            false,
+            0,
+            Arc::new(Semaphore::new(1)),
+            Some(7),
+            Default::default(),
+        );
+        server.discovery_guard = Arc::new(crate::flood_guard::FloodGuard::new(
+            1,
+            3,
+            Duration::from_secs(60),
+        ));
+        let search = |agent: &str, brief| {
+            Parameters(SearchToolsParams {
+                task_description: "returns".into(),
+                agent_id: Some(agent.into()),
+                limit: 10,
+                brief,
+                tag: None,
+            })
+        };
+        let first = server.search_tools(search("a", true)).await.unwrap();
+        assert_ne!(first.is_error, Some(true));
+        let data: Value = serde_json::from_str(&first.content[0].as_text().unwrap().text).unwrap();
+        assert!(data.as_array().unwrap().len() > 1);
+        let second = server
+            .clone()
+            .search_tools(search("a", false))
+            .await
+            .unwrap();
+        let data: Value = serde_json::from_str(&second.content[0].as_text().unwrap().text).unwrap();
+        assert_eq!(data.as_array().unwrap().len(), 1);
+        assert!(
+            second.content[1]
+                .as_text()
+                .unwrap()
+                .text
+                .contains("soft cap")
+        );
+        let info = server
+            .tool_info(Parameters(ToolInfoParams {
+                tool_name: "echo_tool".into(),
+                agent_id: Some("a".into()),
+                detail: "full".into(),
+            }))
+            .await
+            .unwrap();
+        assert_ne!(info.is_error, Some(true));
+        let data: Value = serde_json::from_str(&info.content[0].as_text().unwrap().text).unwrap();
+        assert!(data.get("input_schema").is_none());
+        assert!(info.content[1].as_text().unwrap().text.contains("brief"));
+        let blocked = server.search_tools(search("a", true)).await.unwrap();
+        assert_eq!(blocked.is_error, Some(true));
+        assert!(
+            blocked.content[0]
+                .as_text()
+                .unwrap()
+                .text
+                .contains("Retry after")
+        );
+        let blocked = server
+            .tool_info(Parameters(ToolInfoParams {
+                tool_name: "echo_tool".into(),
+                agent_id: Some("a".into()),
+                detail: "full".into(),
+            }))
+            .await
+            .unwrap();
+        assert_eq!(blocked.is_error, Some(true));
+        let other = server.search_tools(search("b", true)).await.unwrap();
+        assert_ne!(other.is_error, Some(true));
+        assert_eq!(other.content.len(), 1);
+    }
+}
+
+#[cfg(test)]
+mod telemetry_tests {
+    use super::*;
+    use crate::testutil::{MockBackend, insert_mock};
+    use crate::tracker::CallTracker;
+    use std::time::Duration;
+
+    #[cfg(feature = "sandbox")]
+    #[tokio::test]
+    async fn sandbox_records_output_bytes() {
+        let tracker = CallTracker::new();
+        let raw_value = serde_json::json!({"text": "é".repeat(2_000)});
+        let output = crate::tools::sandbox::handle_call_tool_chain_with_tracker(
+            &ToolRegistry::new(),
+            &BackendManager::new(),
+            "const text = 'é'.repeat(2000);\nreturn {text};",
+            None,
+            Some(100),
+            &Semaphore::new(1),
+            None,
+            None,
+            &Default::default(),
+            Some(&tracker),
+        )
+        .await
+        .unwrap();
+        let stats = tracker.session_stats();
+        assert_eq!(stats.total_bytes_returned, output.len() as u64);
+        // The sandbox serializes the returned value as pretty JSON.
+        assert_eq!(
+            stats.total_bytes_processed,
+            serde_json::to_string_pretty(&raw_value).unwrap().len() as u64
+        );
+        assert!(stats.reduction_pct > 90.0);
+    }
+
+    #[tokio::test]
+    async fn structured_retrieval_direct_call_respects_budget_and_misses() {
+        let manager = BackendManager::new();
+        let registry = ToolRegistry::new();
+        let mock = MockBackend::new("retrieval", Duration::ZERO);
+        insert_mock(&manager, &registry, &mock).await;
+        let tracker = CallTracker::new();
+        let code = serde_json::json!({"tool": "retrieval.echo_tool", "arguments": {"alpha": "matched", "beta": "other"}}).to_string();
+        for query in ["alpha", "absent"] {
+            let options = crate::tools::retrieval::RetrievalOptions {
+                queries: vec![query.into()],
+                max_bytes: 150,
+                ..Default::default()
+            };
+            let output = crate::tools::sandbox::handle_call_tool_chain_with_retrieval(
+                &registry,
+                &manager,
+                &code,
+                None,
+                Some(100),
+                &Semaphore::new(0),
+                None,
+                Some("ignored"),
+                &Default::default(),
+                Some(&tracker),
+                Some(&options),
+            )
+            .await
+            .unwrap();
+            assert!(output.len() <= 100);
+            let results: Value = serde_json::from_str(&output).unwrap();
+            assert_eq!(
+                results.as_array().unwrap().len(),
+                usize::from(query == "alpha")
+            );
+        }
+        assert!(
+            tracker.session_stats().total_bytes_processed
+                > tracker.session_stats().total_bytes_returned
+        );
+    }
+
+    #[tokio::test]
+    async fn retained_result_can_be_read_across_server_clones() {
+        let manager = BackendManager::new();
+        let registry = ToolRegistry::new();
+        let mock = MockBackend::new("retained", Duration::ZERO);
+        insert_mock(&manager, &registry, &mock).await;
+        let server = GateminiServer::new(
+            registry,
+            manager,
+            Arc::new(CallTracker::new()),
+            PathBuf::new(),
+            false,
+            0,
+            Arc::new(Semaphore::new(0)),
+            Some(42),
+            crate::config::OutputConfig {
+                result_handle_threshold: 100,
+                ..Default::default()
+            },
+        );
+        let arguments = serde_json::json!({"text": "needle".repeat(1000)});
+        let raw = serde_json::to_string_pretty(&arguments).unwrap();
+        let result = server
+            .call_tool_chain(Parameters(CallToolChainParams {
+                code: serde_json::json!({"tool": "retained.echo_tool", "arguments": arguments})
+                    .to_string(),
+                timeout: None,
+                max_output_size: None,
+                intent: None,
+                retrieval: None,
+            }))
+            .await
+            .unwrap();
+        let reference: Value =
+            serde_json::from_str(&result.content[0].as_text().unwrap().text).unwrap();
+        let handle = reference["result_handle"].as_str().unwrap();
+        let clone = server.clone();
+        let mut recovered = String::new();
+        let mut offset = 0;
+        loop {
+            let result = clone
+                .read_result(Parameters(ReadResultParams {
+                    handle: handle.into(),
+                    offset: Some(offset),
+                    limit: Some(1000),
+                    query: None,
+                }))
+                .await
+                .unwrap();
+            assert_ne!(result.is_error, Some(true));
+            let page: Value =
+                serde_json::from_str(&result.content[0].as_text().unwrap().text).unwrap();
+            recovered.push_str(page["text"].as_str().unwrap());
+            match page["next_offset"].as_u64() {
+                Some(next) => offset = next as usize,
+                None => break,
+            }
+        }
+        assert_eq!(recovered, raw);
+        let result = clone
+            .read_result(Parameters(ReadResultParams {
+                handle: handle.into(),
+                offset: None,
+                limit: Some(40),
+                query: Some("needle".into()),
+            }))
+            .await
+            .unwrap();
+        assert_ne!(result.is_error, Some(true));
+    }
+
+    #[tokio::test]
+    async fn call_tool_chain_records_processed_and_returned_bytes() {
+        let tracker = Arc::new(CallTracker::new());
+        let manager = BackendManager::new();
+        let registry = ToolRegistry::new();
+        let mock = MockBackend::new("telemetry", Duration::ZERO);
+        insert_mock(&manager, &registry, &mock).await;
+        let server = GateminiServer::new(
+            registry,
+            manager,
+            Arc::clone(&tracker),
+            PathBuf::new(),
+            false,
+            0,
+            Arc::new(Semaphore::new(0)),
+            None,
+            crate::config::OutputConfig {
+                smart_truncation: false,
+                ..Default::default()
+            },
+        );
+        let arguments = serde_json::json!({"text": "é".repeat(2_000)});
+        let raw = serde_json::to_string_pretty(&arguments).unwrap();
+        let result = server
+            .call_tool_chain(Parameters(CallToolChainParams {
+                code: serde_json::json!({"tool": "telemetry.echo_tool", "arguments": arguments})
+                    .to_string(),
+                timeout: None,
+                max_output_size: Some(100),
+                intent: None,
+                retrieval: None,
+            }))
+            .await
+            .unwrap();
+        assert_ne!(result.is_error, Some(true));
+        let output = &result.content[0].as_text().unwrap().text;
+        assert!(output.contains("[Output:"));
+        let stats = tracker.session_stats();
+        assert_eq!(stats.total_bytes_processed, raw.len() as u64);
+        assert_eq!(stats.total_bytes_returned, output.len() as u64);
+        assert!(stats.reduction_pct > 90.0);
+        assert_eq!(stats.per_tool[0].name, "call_tool_chain");
     }
 }
 

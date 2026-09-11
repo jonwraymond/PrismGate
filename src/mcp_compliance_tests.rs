@@ -73,6 +73,37 @@ mod tests {
         (peer, mock, registry)
     }
 
+    #[tokio::test]
+    async fn purge_requires_confirmation_and_preserves_backend() {
+        let (peer, mock, registry) = setup_mcp_client().await;
+        let result = peer
+            .call_tool(
+                CallToolRequestParams::new("purge_session").with_arguments(
+                    serde_json::json!({"confirm": false})
+                        .as_object()
+                        .unwrap()
+                        .clone(),
+                ),
+            )
+            .await
+            .unwrap();
+        assert_eq!(result.is_error, Some(true));
+        let result = peer
+            .call_tool(
+                CallToolRequestParams::new("purge_session").with_arguments(
+                    serde_json::json!({"confirm": true})
+                        .as_object()
+                        .unwrap()
+                        .clone(),
+                ),
+            )
+            .await
+            .unwrap();
+        assert_ne!(result.is_error, Some(true));
+        assert!(!registry.get_all().is_empty());
+        drop(mock);
+    }
+
     // --- 4A: Front-door tests (gatemini as server) ---
 
     #[tokio::test]
@@ -124,11 +155,20 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_tools_list_returns_7_meta_tools() {
+    async fn test_tools_list_returns_meta_tools() {
         let (peer, _, _) = setup_mcp_client().await;
         let tools = peer.list_all_tools().await.unwrap();
 
-        assert_eq!(tools.len(), 7, "expected 7 meta-tools, got {}", tools.len());
+        assert_eq!(
+            tools.len(),
+            11,
+            "expected 11 meta-tools, got {}",
+            tools.len()
+        );
+        assert!(tools.iter().any(|t| t.name == "purge_session"));
+        assert!(tools.iter().any(|t| t.name == "read_result"));
+        assert!(tools.iter().any(|t| t.name == "session_search"));
+        assert!(tools.iter().any(|t| t.name == "session_note"));
 
         let names: Vec<String> = tools.iter().map(|t| t.name.to_string()).collect();
         assert!(names.contains(&"search_tools".to_string()));

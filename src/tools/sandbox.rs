@@ -14,7 +14,7 @@ use crate::registry::ToolRegistry;
 /// 2. If that fails and the sandbox feature is enabled, acquire sandbox semaphore
 ///    and execute in the V8 sandbox
 /// 3. If sandbox is not available, return an error
-#[allow(unused_variables, clippy::too_many_arguments)]
+#[allow(dead_code, unused_variables, clippy::too_many_arguments)]
 pub async fn handle_call_tool_chain(
     registry: &Arc<ToolRegistry>,
     manager: &Arc<BackendManager>,
@@ -26,12 +26,128 @@ pub async fn handle_call_tool_chain(
     intent: Option<&str>,
     output_config: &crate::config::OutputConfig,
 ) -> Result<String> {
+    handle_call_tool_chain_with_tracker(
+        registry,
+        manager,
+        code,
+        timeout,
+        max_output_size,
+        sandbox_semaphore,
+        session_id,
+        intent,
+        output_config,
+        None,
+    )
+    .await
+}
+
+/// Execute a chain with optional output telemetry, preserving the legacy handler API.
+#[allow(unused_variables, clippy::too_many_arguments)]
+pub async fn handle_call_tool_chain_with_tracker(
+    registry: &Arc<ToolRegistry>,
+    manager: &Arc<BackendManager>,
+    code: &str,
+    timeout: Option<u64>,
+    max_output_size: Option<usize>,
+    sandbox_semaphore: &Semaphore,
+    session_id: Option<u64>,
+    intent: Option<&str>,
+    output_config: &crate::config::OutputConfig,
+    tracker: Option<&crate::tracker::CallTracker>,
+) -> Result<String> {
+    handle_call_tool_chain_with_retrieval(
+        registry,
+        manager,
+        code,
+        timeout,
+        max_output_size,
+        sandbox_semaphore,
+        session_id,
+        intent,
+        output_config,
+        tracker,
+        None,
+    )
+    .await
+}
+
+#[allow(unused_variables, clippy::too_many_arguments)]
+pub async fn handle_call_tool_chain_with_retrieval(
+    registry: &Arc<ToolRegistry>,
+    manager: &Arc<BackendManager>,
+    code: &str,
+    timeout: Option<u64>,
+    max_output_size: Option<usize>,
+    sandbox_semaphore: &Semaphore,
+    session_id: Option<u64>,
+    intent: Option<&str>,
+    output_config: &crate::config::OutputConfig,
+    tracker: Option<&crate::tracker::CallTracker>,
+    retrieval: Option<&super::retrieval::RetrievalOptions>,
+) -> Result<String> {
+    handle_call_tool_chain_with_store(
+        registry,
+        manager,
+        code,
+        timeout,
+        max_output_size,
+        sandbox_semaphore,
+        session_id,
+        intent,
+        output_config,
+        tracker,
+        retrieval,
+        None,
+    )
+    .await
+}
+
+#[allow(unused_variables, clippy::too_many_arguments)]
+pub async fn handle_call_tool_chain_with_store(
+    registry: &Arc<ToolRegistry>,
+    manager: &Arc<BackendManager>,
+    code: &str,
+    timeout: Option<u64>,
+    max_output_size: Option<usize>,
+    sandbox_semaphore: &Semaphore,
+    session_id: Option<u64>,
+    intent: Option<&str>,
+    output_config: &crate::config::OutputConfig,
+    tracker: Option<&crate::tracker::CallTracker>,
+    retrieval: Option<&super::retrieval::RetrievalOptions>,
+    store: Option<&crate::result_store::ResultStore>,
+) -> Result<String> {
     let max_output = max_output_size.unwrap_or(200_000);
+    if (retrieval.is_some() || intent.is_some()) && max_output < 2 {
+        anyhow::bail!("retrieval requires max_output_size >= 2 bytes");
+    }
+    if retrieval.is_some_and(|r| r.max_bytes < 2) {
+        anyhow::bail!("retrieval.max_bytes must be at least 2");
+    }
+    let process = |raw: String| {
+        if retrieval.is_none()
+            && let Some(reference) = retain_output(&raw, output_config, max_output, store)
+        {
+            if let Some(tracker) = tracker {
+                tracker.record_bytes("call_tool_chain", reference.len() as u64, raw.len() as u64);
+            }
+            return reference;
+        }
+        if let Some(options) = retrieval {
+            let result = super::retrieval::retrieve(&raw, options, max_output);
+            if let Some(tracker) = tracker {
+                tracker.record_bytes("call_tool_chain", result.len() as u64, raw.len() as u64);
+            }
+            result
+        } else {
+            process_output(raw, intent, output_config, max_output, tracker, None)
+        }
+    };
 
     // Try to parse as a direct tool call (fast path — no V8, no semaphore needed).
     // Pattern: `await manual_name.tool_name({...})` or JSON with tool_name + arguments
     if let Some(result) = try_direct_tool_call(registry, manager, code, session_id).await {
-        return result.map(|v| process_output(v, intent, output_config, max_output));
+        return result.map(process);
     }
 
     // Fall back to full TypeScript sandbox — acquire semaphore first
@@ -59,7 +175,7 @@ pub async fn handle_call_tool_chain(
             session_id,
         )
         .await?;
-        return Ok(process_output(result, intent, output_config, max_output));
+        return Ok(process(result));
     }
 
     #[cfg(not(feature = "sandbox"))]
@@ -326,20 +442,64 @@ async fn call_tool_by_dotted_name(
 ///
 /// Each stage is configurable via `OutputConfig`. The pipeline preserves the most
 /// relevant content while minimizing token usage.
+fn retain_output(
+    raw: &str,
+    config: &crate::config::OutputConfig,
+    max_output: usize,
+    store: Option<&crate::result_store::ResultStore>,
+) -> Option<String> {
+    if config.result_handle_threshold == 0 || raw.len() <= config.result_handle_threshold {
+        return None;
+    }
+    // Never return a truncated, unusable handle. Tiny budgets retain legacy processing.
+    if max_output < 240 {
+        return None;
+    }
+    let handle = store?.insert(raw.to_owned())?;
+    Some(
+        serde_json::json!({
+            "result_handle": handle,
+            "total_bytes": raw.len(),
+            "lookup": "read_result",
+            "search": "session_search",
+            "expires_in_seconds": 1800
+        })
+        .to_string(),
+    )
+}
+
 fn process_output(
     raw: String,
     intent: Option<&str>,
     config: &crate::config::OutputConfig,
     max_output: usize,
+    tracker: Option<&crate::tracker::CallTracker>,
+    store: Option<&crate::result_store::ResultStore>,
 ) -> String {
     let raw_bytes = raw.len();
+    if let Some(reference) = retain_output(&raw, config, max_output, store) {
+        if let Some(tracker) = tracker {
+            tracker.record_bytes("call_tool_chain", reference.len() as u64, raw_bytes as u64);
+        }
+        return reference;
+    }
+    if let Some(intent) = intent {
+        let result = super::retrieval::retrieve(
+            &raw,
+            &super::retrieval::RetrievalOptions {
+                queries: vec![intent.to_owned()],
+                ..Default::default()
+            },
+            max_output,
+        );
+        if let Some(tracker) = tracker {
+            tracker.record_bytes("call_tool_chain", result.len() as u64, raw_bytes as u64);
+        }
+        return result;
+    }
 
-    // Stage 1: Intent filtering (if intent provided)
-    let after_intent = if let Some(intent) = intent {
-        filter_by_intent(&raw, intent)
-    } else {
-        raw
-    };
+    // Retrieval returns early; unqueried output retains the legacy pipeline.
+    let after_intent = raw;
 
     // Stage 2: Auto-chunk large JSON (if enabled and output is parseable JSON above threshold)
     let after_chunk = if config.auto_chunk_json
@@ -365,27 +525,43 @@ fn process_output(
         after_intent
     };
 
-    // Stage 3: Truncation (smart head/tail or simple cutoff based on config)
-    let final_output = if config.smart_truncation {
-        truncate_output(&after_chunk, max_output)
+    // Stage 3: Byte budgets supplement the line-aware head/tail selection.
+    // Keep the legacy pipeline unchanged when smart truncation is disabled.
+    let is_json =
+        config.smart_truncation && serde_json::from_str::<serde_json::Value>(&after_chunk).is_ok();
+    let mut final_output = if is_json {
+        crate::truncate::truncate_json(&after_chunk, max_output)
+    } else if config.smart_truncation {
+        crate::truncate::cap_bytes(&truncate_output(&after_chunk, max_output), max_output)
     } else {
         simple_truncate(&after_chunk, max_output)
     };
 
-    // Stage 4: Append size metadata when pipeline reduced output significantly
+    // Metadata must not invalidate JSON or breach the smart output budget.
     let returned_bytes = final_output.len();
-    if raw_bytes > returned_bytes + 200 {
+    if !is_json && raw_bytes.saturating_sub(returned_bytes) > 200 {
         let saved_pct = ((raw_bytes - returned_bytes) as f64 / raw_bytes as f64 * 100.0) as u32;
-        format!(
-            "{}\n\n[Output: {:.1}KB returned, {:.1}KB processed, {}% reduced]",
-            final_output,
+        let metadata = format!(
+            "\n\n[Output: {:.1}KB returned, {:.1}KB processed, {}% reduced]",
             returned_bytes as f64 / 1024.0,
             raw_bytes as f64 / 1024.0,
             saved_pct
-        )
-    } else {
-        final_output
+        );
+        if !config.smart_truncation || metadata.len() <= max_output.saturating_sub(returned_bytes) {
+            final_output.push_str(&metadata);
+        }
     }
+
+    // Count the complete UTF-8 payload, including metadata, once per chain.
+    // Chains can combine several backend tools, so do not attribute to one backend.
+    if let Some(tracker) = tracker {
+        tracker.record_bytes(
+            "call_tool_chain",
+            final_output.len() as u64,
+            raw_bytes as u64,
+        );
+    }
+    final_output
 }
 
 /// Simple head-only truncation (legacy behavior, used when smart_truncation=false).
@@ -398,89 +574,17 @@ fn simple_truncate(s: &str, max_size: usize) -> String {
     }
 }
 
-/// Threshold below which intent filtering is skipped (output is small enough to return raw).
-const INTENT_SEARCH_THRESHOLD: usize = 5_000;
-
-/// Filter output by intent relevance. When output exceeds 5KB and an intent is provided,
-/// splits the output into chunks and returns only those matching the intent terms.
+/// Legacy intent is a single-query alias for structured evidence retrieval.
+#[cfg(test)]
 fn filter_by_intent(output: &str, intent: &str) -> String {
-    if output.len() < INTENT_SEARCH_THRESHOLD {
-        return output.to_string();
-    }
-
-    let intent_terms = crate::registry::tokenize(intent);
-    if intent_terms.is_empty() {
-        return output.to_string();
-    }
-
-    // Split into chunks: paragraphs (blank-line separated) or 10-line groups
-    let chunks = split_into_chunks(output);
-    if chunks.len() <= 1 {
-        return output.to_string();
-    }
-
-    // Score each chunk by fraction of intent terms present
-    let scored: Vec<(&str, f64)> = chunks
-        .iter()
-        .map(|chunk| {
-            let chunk_terms: Vec<String> = crate::registry::tokenize(chunk);
-            let hits = intent_terms
-                .iter()
-                .filter(|t| chunk_terms.contains(t))
-                .count();
-            (*chunk, hits as f64 / intent_terms.len().max(1) as f64)
-        })
-        .collect();
-
-    // Keep chunks with score > 0.3 (at least 30% of intent terms present)
-    let filtered: Vec<&str> = scored
-        .iter()
-        .filter(|(_, s)| *s > 0.3)
-        .map(|(c, _)| *c)
-        .collect();
-
-    if filtered.is_empty() {
-        // No matches — return original unchanged
-        return output.to_string();
-    }
-
-    format!(
-        "[Filtered by intent: '{}' — {}/{} sections]\n\n{}",
-        intent,
-        filtered.len(),
-        chunks.len(),
-        filtered.join("\n\n")
+    super::retrieval::retrieve(
+        output,
+        &super::retrieval::RetrievalOptions {
+            queries: vec![intent.to_owned()],
+            ..Default::default()
+        },
+        16_000,
     )
-}
-
-/// Split text into chunks: paragraphs (blank-line separated) if there are enough,
-/// otherwise 10-line groups.
-fn split_into_chunks(text: &str) -> Vec<&str> {
-    // Try paragraph splitting first
-    let paragraphs: Vec<&str> = text
-        .split("\n\n")
-        .filter(|p| !p.trim().is_empty())
-        .collect();
-    if paragraphs.len() >= 3 {
-        return paragraphs;
-    }
-
-    // Fall back to 10-line groups
-    let lines: Vec<&str> = text.lines().collect();
-    if lines.len() <= 10 {
-        return vec![text];
-    }
-    lines
-        .chunks(10)
-        .map(|chunk| {
-            let start = chunk[0].as_ptr() as usize - text.as_ptr() as usize;
-            let end = chunk
-                .last()
-                .map(|l| l.as_ptr() as usize + l.len() - text.as_ptr() as usize)
-                .unwrap_or(start);
-            &text[start..end]
-        })
-        .collect()
 }
 
 /// Smart truncation: keeps head 60% + tail 40% of output, snapped to line boundaries.
@@ -667,6 +771,74 @@ mod truncation_tests {
     use super::*;
 
     #[test]
+    fn large_output_retains_raw_before_filtering() {
+        let store = crate::result_store::ResultStore::default();
+        let config = crate::config::OutputConfig {
+            result_handle_threshold: 100,
+            ..Default::default()
+        };
+        let raw = "unfiltered content\n".repeat(1000);
+        let output = process_output(
+            raw.clone(),
+            Some("missing"),
+            &config,
+            1000,
+            None,
+            Some(&store),
+        );
+        let reference: Value = serde_json::from_str(&output).unwrap();
+        let handle = reference["result_handle"].as_str().unwrap();
+        assert_eq!(store.read(handle, 0, 100).unwrap().text, raw[..100]);
+        assert!(output.len() < 1000);
+        let tiny = process_output(raw, None, &config, 1, None, Some(&store));
+        assert!(tiny.len() <= 1);
+    }
+
+    #[test]
+    fn smart_pipeline_enforces_byte_budget_including_metadata() {
+        let config = crate::config::OutputConfig {
+            auto_chunk_json: false,
+            ..Default::default()
+        };
+        let raw = format!("{}\nlast line", "🦀".repeat(1000));
+        for budget in 0..256 {
+            let output = process_output(raw.clone(), None, &config, budget, None, None);
+            assert!(
+                output.len() <= budget,
+                "budget {budget}: {} bytes",
+                output.len()
+            );
+        }
+    }
+
+    #[test]
+    fn smart_pipeline_keeps_json_valid_and_legacy_output_unchanged() {
+        let mut config = crate::config::OutputConfig {
+            auto_chunk_json: false,
+            ..Default::default()
+        };
+        let raw = serde_json::json!({"data": "🦀".repeat(300)}).to_string();
+        for budget in 1..160 {
+            let output = process_output(raw.clone(), None, &config, budget, None, None);
+            assert!(output.len() <= budget);
+            assert!(serde_json::from_str::<Value>(&output).is_ok());
+        }
+        config.smart_truncation = false;
+        let expected = simple_truncate(&raw, 100);
+        let returned = expected.len();
+        let percent = ((raw.len() - returned) as f64 / raw.len() as f64 * 100.0) as u32;
+        assert_eq!(
+            process_output(raw.clone(), None, &config, 100, None, None),
+            format!(
+                "{expected}\n\n[Output: {:.1}KB returned, {:.1}KB processed, {}% reduced]",
+                returned as f64 / 1024.0,
+                raw.len() as f64 / 1024.0,
+                percent
+            )
+        );
+    }
+
+    #[test]
     fn test_truncate_preserves_small() {
         let small = "hello\nworld\n";
         assert_eq!(truncate_output(small, 100), small);
@@ -718,8 +890,7 @@ mod truncation_tests {
     #[test]
     fn test_intent_small_output_passthrough() {
         let small = "This is a small output about errors.";
-        assert!(small.len() < INTENT_SEARCH_THRESHOLD);
-        assert_eq!(filter_by_intent(small, "errors"), small);
+        assert!(filter_by_intent(small, "errors").contains(small));
     }
 
     #[test]
@@ -738,17 +909,17 @@ mod truncation_tests {
                 ));
             }
         }
-        assert!(output.len() > INTENT_SEARCH_THRESHOLD);
+        assert!(output.len() > 5_000);
 
         let result = filter_by_intent(&output, "error handling retry");
-        assert!(result.contains("Filtered by intent"));
+        assert!(serde_json::from_str::<Value>(&result).unwrap().is_array());
         assert!(result.contains("error handling"));
         // Should not contain all 20 sections
         assert!(result.len() < output.len());
     }
 
     #[test]
-    fn test_intent_no_matches_returns_all() {
+    fn test_intent_no_matches_returns_empty_results() {
         let mut output = String::new();
         for i in 0..20 {
             output.push_str(&format!(
@@ -756,11 +927,10 @@ mod truncation_tests {
                 "lorem ipsum ".repeat(30)
             ));
         }
-        assert!(output.len() > INTENT_SEARCH_THRESHOLD);
+        assert!(output.len() > 5_000);
 
-        // Intent with no matching terms — should return original
+        // A miss must never leak the entire source as a fallback.
         let result = filter_by_intent(&output, "xyzzy quantum entanglement");
-        assert!(!result.contains("Filtered by intent"));
-        assert_eq!(result, output);
+        assert_eq!(result, "[]");
     }
 }
