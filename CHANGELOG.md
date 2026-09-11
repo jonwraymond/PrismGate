@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.19.0](https://github.com/jonwraymond/PrismGate/compare/v1.18.0...v1.19.0) (2026-09-11)
+
+
+### Features
+
+* **context:** execute_file, fetch_and_index, and Claude Code hooks ([7d32499](https://github.com/jonwraymond/PrismGate/commit/7d324992d8aa27ce0f5643a7370119a0a456a87d))
+* **context:** medium-lift result handles, retrieval, and sandbox handles ([dca572b](https://github.com/jonwraymond/PrismGate/commit/dca572b2c4b57905d1b41bc6c2df9390f987739f))
+* **context:** quick wins for token/context savings ([d2cac4b](https://github.com/jonwraymond/PrismGate/commit/d2cac4b0fc882fd25d068c94907a2e832f99c62a))
+* **context:** token/context savings quick wins + medium-lift enhancements ([30a3109](https://github.com/jonwraymond/PrismGate/commit/30a3109238f7247b7c682ee400f96ee5583e9e6c))
+* **session:** overflow FTS5 index and host context skill ([c8a73ef](https://github.com/jonwraymond/PrismGate/commit/c8a73efa11e51c7c548d7f31207a1b3d42067268))
+* **session:** resume card, handle binding, and durable notes ([617f011](https://github.com/jonwraymond/PrismGate/commit/617f011b6c750f5ac4fdba97d87a08d7036e1c35))
+* **session:** SQLite FTS5 event store with session_search ([b294b46](https://github.com/jonwraymond/PrismGate/commit/b294b46d8ff692d333c6b2f1402f50756babaea8))
+
+
+### Bug Fixes
+
+* **ipc:** handle pre-handshake probe methods instead of forwarding them as initialize ([536a740](https://github.com/jonwraymond/PrismGate/commit/536a74055132080a7ddf1150f11f75f9ff265907))
+
 ## [1.18.0](https://github.com/jonwraymond/PrismGate/compare/v1.17.0...v1.18.0) (2026-08-12)
 
 
