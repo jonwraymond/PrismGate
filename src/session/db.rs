@@ -5,6 +5,7 @@
 //! thread and proxy calls through an mpsc channel.
 
 use std::path::PathBuf;
+use std::sync::atomic::AtomicUsize;
 use std::sync::mpsc::{Receiver, Sender};
 use std::thread::JoinHandle;
 
@@ -68,10 +69,10 @@ enum Command {
 }
 
 /// Cloneable handle to the session event store actor.
-#[derive(Clone)]
 pub struct SessionEventStore {
     tx: Sender<Command>,
     _handle: std::sync::Arc<JoinHandle<()>>,
+    refcount: std::sync::Arc<AtomicUsize>,
 }
 
 impl SessionEventStore {
@@ -91,6 +92,7 @@ impl SessionEventStore {
         Ok(Self {
             tx,
             _handle: std::sync::Arc::new(handle),
+            refcount: std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(1)),
         })
     }
 
@@ -158,6 +160,18 @@ impl SessionEventStore {
     }
 }
 
+impl Clone for SessionEventStore {
+    fn clone(&self) -> Self {
+        self.refcount
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        Self {
+            tx: self.tx.clone(),
+            _handle: self._handle.clone(),
+            refcount: self.refcount.clone(),
+        }
+    }
+}
+
 impl Default for SessionEventStore {
     fn default() -> Self {
         Self::open(std::env::temp_dir().join("gatemini-session-events.sqlite3"))
@@ -167,7 +181,13 @@ impl Default for SessionEventStore {
 
 impl Drop for SessionEventStore {
     fn drop(&mut self) {
-        let _ = self.tx.send(Command::Shutdown);
+        if self
+            .refcount
+            .fetch_sub(1, std::sync::atomic::Ordering::Relaxed)
+            == 1
+        {
+            let _ = self.tx.send(Command::Shutdown);
+        }
     }
 }
 

@@ -182,9 +182,7 @@ pub struct GateminiServer {
     result_store: Arc<crate::result_store::ResultStore>,
     /// Output processing configuration (auto-chunking, smart truncation).
     pub output_config: crate::config::OutputConfig,
-    /// Persistent session event store (feature-gated). Shared by server clones.
-    #[cfg(feature = "session-store")]
-    session_store: crate::session::SessionEventStore,
+    pub session_store: crate::session::SessionEventStore,
     #[allow(dead_code)]
     tool_router: ToolRouter<Self>,
 }
@@ -214,13 +212,10 @@ impl GateminiServer {
             discovery_guard: Arc::new(crate::flood_guard::FloodGuard::default()),
             result_store: Arc::new(crate::result_store::ResultStore::default()),
             output_config,
-            #[cfg(feature = "session-store")]
             session_store: crate::session::SessionEventStore::default(),
             tool_router: Self::tool_router(),
         }
     }
-
-    /// Session key used for event attribution: the transport session id, or "direct".
     #[cfg(feature = "session-store")]
     fn session_key(&self) -> String {
         self.session_id

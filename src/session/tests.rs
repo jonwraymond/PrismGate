@@ -80,7 +80,7 @@ async fn overflow_index_creates_searchable_sections() {
     let store = SessionEventStore::open(tmp.path().to_path_buf()).unwrap();
     let raw = "# Errors\n\nboom failed hard\n\n# Ok\n\nall good\n".repeat(20);
     let indexed = crate::session::overflow::index_overflow(
-        &store,
+        &store.clone(),
         "s4",
         "r-overflow",
         &raw,
