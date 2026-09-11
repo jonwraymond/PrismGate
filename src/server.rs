@@ -141,12 +141,27 @@ pub struct SessionSearchParams {
     /// Return the most recent events for this session instead of a ranked search.
     #[serde(default)]
     pub resume: bool,
+    /// Compact resume card: open handles, recent tools, decisions, constraints.
+    #[serde(default)]
+    pub card: bool,
     /// Optional category filter for resume mode (tool, backend, file).
     #[serde(default)]
     pub category: Option<String>,
     /// Maximum hits to return (default 20, max 200).
     #[serde(default)]
     pub limit: Option<usize>,
+}
+
+#[cfg(feature = "session-store")]
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct SessionNoteParams {
+    /// Kind of durable fact: decision, constraint, or note.
+    pub kind: String,
+    /// Short payload to persist. Keep it under a few hundred characters.
+    pub text: String,
+    /// Optional label for notes.
+    #[serde(default)]
+    pub name: Option<String>,
 }
 
 /// The MCP server exposed to Claude Code over stdio.
@@ -478,7 +493,7 @@ impl GateminiServer {
 
     #[cfg(feature = "session-store")]
     #[tool(
-        description = "Search the persistent session event store (SQLite FTS5). Use query for ranked BM25 search over tool calls, backend events, and file reads. Use resume=true with no query to get recent events for this session; optional category filter (tool|backend|file). Survives context compaction."
+        description = "Search the persistent session event store (SQLite FTS5). Use query for ranked BM25 search. Use resume=true for recent events, card=true for a compact resume card (open handles, decisions, constraints). Survives context compaction. Fetch retained payloads with read_result."
     )]
     async fn session_search(
         &self,
@@ -486,6 +501,18 @@ impl GateminiServer {
     ) -> Result<CallToolResult, McpError> {
         let limit = params.limit.unwrap_or(20).clamp(1, 200);
         let key = self.session_key();
+        if params.card {
+            return match self.session_store.resume_card(&key).await {
+                Ok(card) => {
+                    let json = serde_json::to_string_pretty(&card)
+                        .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+                    Ok(CallToolResult::success(vec![Content::text(json)]))
+                }
+                Err(e) => Ok(CallToolResult::error(vec![Content::text(format!(
+                    "Resume card failed: {e:#}"
+                ))])),
+            };
+        }
         let result = if params.resume {
             self.session_store
                 .resume_summary(&key, params.category.as_deref(), limit)
@@ -507,6 +534,40 @@ impl GateminiServer {
             }
             Err(e) => Ok(CallToolResult::error(vec![Content::text(format!(
                 "Session search failed: {e:#}"
+            ))])),
+        }
+    }
+
+    #[cfg(feature = "session-store")]
+    #[tool(
+        description = "Persist a durable session fact that should survive compaction: kind=decision|constraint|note. Do not store raw tool output here — use result handles. After compact, call session_search(resume=true) or session_search(card=true)."
+    )]
+    async fn session_note(
+        &self,
+        Parameters(params): Parameters<SessionNoteParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let key = self.session_key();
+        let event = match params.kind.as_str() {
+            "decision" => crate::session::extract::decision_event(&key, &params.text),
+            "constraint" => crate::session::extract::constraint_event(&key, &params.text),
+            "note" => crate::session::extract::note_event(
+                &key,
+                params.name.as_deref().unwrap_or("note"),
+                &params.text,
+            ),
+            other => {
+                return Ok(CallToolResult::error(vec![Content::text(format!(
+                    "Unknown kind '{other}'. Use decision, constraint, or note."
+                ))]));
+            }
+        };
+        match self.session_store.record(event).await {
+            Ok(()) => Ok(CallToolResult::success(vec![Content::text(format!(
+                "Recorded {} for session {key}.",
+                params.kind
+            ))])),
+            Err(e) => Ok(CallToolResult::error(vec![Content::text(format!(
+                "Failed to record session note: {e:#}"
             ))])),
         }
     }
@@ -538,12 +599,28 @@ impl GateminiServer {
             Ok(output) => {
                 #[cfg(feature = "session-store")]
                 {
-                    let event = crate::session::extract::tool_call_event(
-                        &self.session_key(),
+                    let key = self.session_key();
+                    let mut event = crate::session::extract::tool_call_event(
+                        &key,
                         "call_tool_chain",
                         "sandbox",
                         "ok",
-                    );
+                    )
+                    .with_bytes(output.len() as u64, output.len() as u64);
+                    if let Ok(value) = serde_json::from_str::<serde_json::Value>(&output)
+                        && let Some(handle) = value.get("result_handle").and_then(|v| v.as_str())
+                    {
+                        let total = value
+                            .get("total_bytes")
+                            .and_then(|v| v.as_u64())
+                            .unwrap_or(output.len() as u64);
+                        event = crate::session::extract::handle_event(
+                            &key,
+                            handle,
+                            total,
+                            "call_tool_chain",
+                        );
+                    }
                     let _ = self.session_store.record(event).await;
                 }
                 Ok(CallToolResult::success(vec![Content::text(output)]))

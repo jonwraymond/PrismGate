@@ -93,6 +93,15 @@ pub fn list_static_resources() -> Vec<Resource> {
                 .with_mime_type("text/plain"),
             None,
         ),
+        Annotated::new(
+            RawResource::new("gatemini://resume", "resume")
+                .with_title("Session Resume Card")
+                .with_description(
+                    "Compact post-compaction card: open result handles, recent tools, decisions, constraints. Fetch payloads with read_result.",
+                )
+                .with_mime_type("application/json"),
+            None,
+        ),
     ]
 }
 
@@ -206,6 +215,10 @@ pub async fn read_resource(
     match path {
         "overview" => Ok(text_resource(uri, &overview_text(registry))),
         "call_tool_chain" => Ok(text_resource(uri, &call_tool_chain_guide_text())),
+        "resume" => Ok(text_resource(
+            uri,
+            "Use session_search(card=true) for the live resume card (open handles, decisions, constraints). Then read_result(handle) for retained payloads. Do not dump raw tool output back into context.",
+        )),
         "backends" => {
             let statuses = backend_manager.get_all_status();
             let infos: Vec<BackendInfo> = statuses

@@ -24,6 +24,24 @@ pub struct SessionSearchHit {
     pub outcome: Option<String>,
     pub timestamp: String,
     pub score: f64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub handle: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bytes_avoided: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bytes_returned: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ResumeCard {
+    pub session_key: String,
+    pub event_count: usize,
+    pub open_handles: Vec<String>,
+    pub recent_tools: Vec<String>,
+    pub decisions: Vec<String>,
+    pub constraints: Vec<String>,
+    pub notes: Vec<String>,
+    pub lookup: &'static str,
 }
 
 enum Command {
@@ -38,6 +56,10 @@ enum Command {
         category: Option<String>,
         limit: usize,
         reply: Sender<Result<Vec<SessionSearchHit>>>,
+    },
+    ResumeCard {
+        session_key: String,
+        reply: Sender<Result<ResumeCard>>,
     },
     Purge {
         session_key: String,
@@ -113,6 +135,19 @@ impl SessionEventStore {
             .context("session store join")??
     }
 
+    pub async fn resume_card(&self, session_key: &str) -> Result<ResumeCard> {
+        let (reply, rx) = std::sync::mpsc::channel();
+        self.tx
+            .send(Command::ResumeCard {
+                session_key: session_key.to_string(),
+                reply,
+            })
+            .context("session store channel closed")?;
+        tokio::task::spawn_blocking(move || rx.recv())
+            .await
+            .context("session store join")??
+    }
+
     pub async fn purge_session(&self, session_key: &str) -> Result<()> {
         self.tx
             .send(Command::Purge {
@@ -163,6 +198,10 @@ fn run_actor(db_path: PathBuf, rx: Receiver<Command>) -> Result<()> {
                 let result = resume_summary(&conn, &session_key, category.as_deref(), limit);
                 let _ = reply.send(result);
             }
+            Command::ResumeCard { session_key, reply } => {
+                let result = resume_card(&conn, &session_key);
+                let _ = reply.send(result);
+            }
             Command::Purge { session_key } => {
                 if let Err(e) = conn.execute(
                     "DELETE FROM session_events WHERE session_key = ?1",
@@ -189,9 +228,13 @@ fn migrate(conn: &Connection) -> Result<()> {
             name TEXT NOT NULL,
             payload TEXT,
             outcome TEXT,
-            timestamp TEXT NOT NULL
+            timestamp TEXT NOT NULL,
+            handle TEXT,
+            bytes_avoided INTEGER,
+            bytes_returned INTEGER
         );
         CREATE INDEX IF NOT EXISTS idx_session_events_session_key ON session_events(session_key);
+        CREATE INDEX IF NOT EXISTS idx_session_events_handle ON session_events(handle);
         CREATE VIRTUAL TABLE IF NOT EXISTS session_events_fts USING fts5(
             category,
             event_type,
@@ -217,12 +260,21 @@ fn migrate(conn: &Connection) -> Result<()> {
         END;
         "#,
     )?;
+    let _ = conn.execute("ALTER TABLE session_events ADD COLUMN handle TEXT", []);
+    let _ = conn.execute(
+        "ALTER TABLE session_events ADD COLUMN bytes_avoided INTEGER",
+        [],
+    );
+    let _ = conn.execute(
+        "ALTER TABLE session_events ADD COLUMN bytes_returned INTEGER",
+        [],
+    );
     Ok(())
 }
 
 fn record(conn: &Connection, event: &SessionEvent) -> Result<()> {
     conn.execute(
-        "INSERT INTO session_events(session_key, category, event_type, name, payload, outcome, timestamp) VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+        "INSERT INTO session_events(session_key, category, event_type, name, payload, outcome, timestamp, handle, bytes_avoided, bytes_returned) VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
         params![
             event.session_key,
             event.category,
@@ -231,6 +283,9 @@ fn record(conn: &Connection, event: &SessionEvent) -> Result<()> {
             event.payload,
             event.outcome,
             event.timestamp,
+            event.handle,
+            event.bytes_avoided.map(|v| v as i64),
+            event.bytes_returned.map(|v| v as i64),
         ],
     )?;
     Ok(())
@@ -242,7 +297,7 @@ fn search(conn: &Connection, query: &str, limit: usize) -> Result<Vec<SessionSea
         return Ok(Vec::new());
     }
     let mut stmt = conn.prepare_cached(
-        "SELECT s.session_key, s.category, s.event_type, s.name, s.payload, s.outcome, s.timestamp, f.rank
+        "SELECT s.session_key, s.category, s.event_type, s.name, s.payload, s.outcome, s.timestamp, f.rank, s.handle, s.bytes_avoided, s.bytes_returned
          FROM session_events_fts f
          JOIN session_events s ON s.id = f.rowid
          WHERE session_events_fts MATCH ?1
@@ -259,6 +314,9 @@ fn search(conn: &Connection, query: &str, limit: usize) -> Result<Vec<SessionSea
             outcome: row.get(5)?,
             timestamp: row.get(6)?,
             score: row.get(7)?,
+            handle: row.get(8)?,
+            bytes_avoided: row.get::<_, Option<i64>>(9)?.map(|v| v as u64),
+            bytes_returned: row.get::<_, Option<i64>>(10)?.map(|v| v as u64),
         })
     })?;
     let mut hits = Vec::new();
@@ -277,7 +335,7 @@ fn resume_summary(
     let limit = limit.clamp(1, 200);
     let mut stmt = if category.is_some() {
         conn.prepare_cached(
-            "SELECT session_key, category, event_type, name, payload, outcome, timestamp, 0
+            "SELECT session_key, category, event_type, name, payload, outcome, timestamp, 0, handle, bytes_avoided, bytes_returned
              FROM session_events
              WHERE session_key = ?1 AND category = ?2
              ORDER BY id DESC
@@ -285,7 +343,7 @@ fn resume_summary(
         )?
     } else {
         conn.prepare_cached(
-            "SELECT session_key, category, event_type, name, payload, outcome, timestamp, 0
+            "SELECT session_key, category, event_type, name, payload, outcome, timestamp, 0, handle, bytes_avoided, bytes_returned
              FROM session_events
              WHERE session_key = ?1
              ORDER BY id DESC
@@ -308,7 +366,60 @@ fn resume_summary(
             outcome: row.get(5)?,
             timestamp: row.get(6)?,
             score: row.get(7)?,
+            handle: row.get(8)?,
+            bytes_avoided: row.get::<_, Option<i64>>(9)?.map(|v| v as u64),
+            bytes_returned: row.get::<_, Option<i64>>(10)?.map(|v| v as u64),
         });
     }
     Ok(hits)
+}
+
+fn resume_card(conn: &Connection, session_key: &str) -> Result<ResumeCard> {
+    let events = resume_summary(conn, session_key, None, 80)?;
+    let mut open_handles = Vec::new();
+    let mut recent_tools = Vec::new();
+    let mut decisions = Vec::new();
+    let mut constraints = Vec::new();
+    let mut notes = Vec::new();
+    for event in &events {
+        if let Some(handle) = &event.handle
+            && !open_handles.contains(handle)
+        {
+            open_handles.push(handle.clone());
+        }
+        match event.category.as_str() {
+            "tool" if !recent_tools.contains(&event.name) => recent_tools.push(event.name.clone()),
+            "decision" => {
+                if let Some(payload) = &event.payload {
+                    decisions.push(payload.clone());
+                }
+            }
+            "constraint" => {
+                if let Some(payload) = &event.payload {
+                    constraints.push(payload.clone());
+                }
+            }
+            "note" => {
+                if let Some(payload) = &event.payload {
+                    notes.push(payload.clone());
+                }
+            }
+            _ => {}
+        }
+    }
+    recent_tools.truncate(8);
+    decisions.truncate(8);
+    constraints.truncate(8);
+    notes.truncate(8);
+    open_handles.truncate(8);
+    Ok(ResumeCard {
+        session_key: session_key.to_string(),
+        event_count: events.len(),
+        open_handles,
+        recent_tools,
+        decisions,
+        constraints,
+        notes,
+        lookup: "session_search(resume=true) then read_result(handle)",
+    })
 }

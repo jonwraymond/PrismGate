@@ -161,13 +161,14 @@ mod tests {
 
         assert_eq!(
             tools.len(),
-            10,
-            "expected 10 meta-tools, got {}",
+            11,
+            "expected 11 meta-tools, got {}",
             tools.len()
         );
         assert!(tools.iter().any(|t| t.name == "purge_session"));
         assert!(tools.iter().any(|t| t.name == "read_result"));
         assert!(tools.iter().any(|t| t.name == "session_search"));
+        assert!(tools.iter().any(|t| t.name == "session_note"));
 
         let names: Vec<String> = tools.iter().map(|t| t.name.to_string()).collect();
         assert!(names.contains(&"search_tools".to_string()));

@@ -16,10 +16,11 @@ Upstream repo: `jonwraymond/PrismGate`
 - [x] 7. Sandbox data handles: extend bridge with `store/load/query` helpers for reuse across sandbox calls
 
 ## High-Lift / High-Reward
-- [x] 8. FTS5-backed session event store: SQLite actor thread, `session_search` MCP tool, event recording from `call_tool_chain`, purge integration. Feature `session-store` is on by default.
+- [x] 8. FTS5-backed session event store with actor thread, `session_search`, handle binding, resume card, `session_note`
+- [ ] 9. Host skills/hooks that auto-call `session_search(card=true)` after compact (Claude Code / Cursor / Codex / OpenCode)
 
 ## Cross-Cutting
-- [x] A. Tests for all new telemetry, flood guard, truncation, result store, session store
+- [x] A. Tests for telemetry, flood guard, truncation, result store, session store, resume card
 - [x] B. Build verification: `cargo check/test/clippy/fmt` green on branch
 - [x] C. Container image build verification via GHCR PR image path
 - [ ] D. Docs update: README + `llms.txt` + `gatemini://call_tool_chain` guide

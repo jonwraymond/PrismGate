@@ -1,27 +1,38 @@
 # Session event store
 
-PrismGate persists compact session events (tool calls, backend state, file reads)
-in a SQLite database with FTS5 so they survive context compaction.
+PrismGate persists compact session events in SQLite FTS5 so they survive
+context compaction. Raw payloads stay behind result handles; the event
+row is a pointer, not a dump.
 
-## How it works
+## After compaction
 
-- A dedicated actor thread owns the `rusqlite::Connection` (not Sync; cannot live on `GateminiServer` clones).
-- `call_tool_chain` records ok/error events keyed by transport `session_id`.
-- `session_search` queries FTS5 (BM25) or returns recent events with `resume=true`.
-- `purge_session` also deletes this session's stored events.
+1. `session_search(card=true)` — compact card: open handles, recent tools, decisions, constraints.
+2. `read_result(handle)` — fetch retained payloads page-by-page. Do not rerun mutating tools.
+3. `session_search(query="...")` — BM25 over events if you need a specific fact.
 
-## MCP tool
+## Persist facts, not blobs
 
 ```
-session_search
-  query?: string       # FTS5 match; required unless resume=true
-  resume?: bool        # most-recent events for this session
-  category?: string    # tool | backend | file (resume mode)
-  limit?: number       # default 20, max 200
+session_note(kind="decision", text="prefer handle lookup over rerun")
+session_note(kind="constraint", text="do not dump raw HTML into context")
+session_note(kind="note", name="plan", text="next: wire host skill")
 ```
 
-## Default database
+`call_tool_chain` automatically records ok/error. If the response is a
+`result_handle`, that handle is indexed on the event so the resume card
+can list it.
 
-`/tmp/gatemini-session-events.sqlite3` (or the process temp dir).
+## Tools
+
+| Tool | Role |
+|---|---|
+| `session_search` | query / resume=true / card=true |
+| `session_note` | durable decision/constraint/note |
+| `read_result` | page a retained payload |
+| `purge_session` | wipe tracker + this session's events |
+
+## Resource
+
+`gatemini://resume` reminds the model to call `session_search(card=true)`.
 
 The `session-store` cargo feature is **on by default**.

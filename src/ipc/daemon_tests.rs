@@ -107,7 +107,7 @@ mod tests {
 
             // Each client can list tools
             let tools = peer.list_all_tools().await.unwrap();
-            assert_eq!(tools.len(), 10, "each client should see 10 meta-tools");
+            assert_eq!(tools.len(), 11, "each client should see 11 meta-tools");
 
             // Disconnect by dropping peer and aborting service
             drop(peer);
@@ -238,7 +238,7 @@ mod tests {
 
         let (peer, service_handle) = connect_client(&socket_path).await;
         let tools = peer.list_all_tools().await.unwrap();
-        assert_eq!(tools.len(), 10);
+        assert_eq!(tools.len(), 11);
 
         drop(peer);
         service_handle.abort();
@@ -329,9 +329,9 @@ mod tests {
         let (peer3, svc3) = connect_client(&socket_path).await;
 
         // All 3 can list tools
-        assert_eq!(peer1.list_all_tools().await.unwrap().len(), 10);
-        assert_eq!(peer2.list_all_tools().await.unwrap().len(), 10);
-        assert_eq!(peer3.list_all_tools().await.unwrap().len(), 10);
+        assert_eq!(peer1.list_all_tools().await.unwrap().len(), 11);
+        assert_eq!(peer2.list_all_tools().await.unwrap().len(), 11);
+        assert_eq!(peer3.list_all_tools().await.unwrap().len(), 11);
 
         // Disconnect client 1
         drop(peer1);
@@ -340,8 +340,8 @@ mod tests {
         tokio::time::sleep(Duration::from_millis(100)).await;
 
         // Remaining clients still work
-        assert_eq!(peer2.list_all_tools().await.unwrap().len(), 10);
-        assert_eq!(peer3.list_all_tools().await.unwrap().len(), 10);
+        assert_eq!(peer2.list_all_tools().await.unwrap().len(), 11);
+        assert_eq!(peer3.list_all_tools().await.unwrap().len(), 11);
 
         // Daemon should NOT idle-shutdown (still has active clients)
         assert!(

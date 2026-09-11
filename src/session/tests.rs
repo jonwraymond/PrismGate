@@ -38,3 +38,38 @@ async fn purge_removes_session() {
     let recent = store.resume_summary("s2", None, 10).await.unwrap();
     assert!(recent.is_empty());
 }
+
+#[tokio::test]
+async fn resume_card_includes_handles_and_decisions() {
+    let tmp = NamedTempFile::new().unwrap();
+    let store = SessionEventStore::open(tmp.path().to_path_buf()).unwrap();
+    store
+        .record(crate::session::extract::handle_event(
+            "s3",
+            "r-abc",
+            4096,
+            "call_tool_chain",
+        ))
+        .await
+        .unwrap();
+    store
+        .record(crate::session::extract::decision_event(
+            "s3",
+            "prefer handle lookup over rerun",
+        ))
+        .await
+        .unwrap();
+    store
+        .record(crate::session::extract::constraint_event(
+            "s3",
+            "do not dump raw HTML",
+        ))
+        .await
+        .unwrap();
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    let card = store.resume_card("s3").await.unwrap();
+    assert_eq!(card.event_count, 3);
+    assert!(card.open_handles.contains(&"r-abc".to_string()));
+    assert!(card.decisions.iter().any(|d| d.contains("handle lookup")));
+    assert!(card.constraints.iter().any(|c| c.contains("raw HTML")));
+}
