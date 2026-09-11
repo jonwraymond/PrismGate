@@ -159,9 +159,15 @@ mod tests {
         let (peer, _, _) = setup_mcp_client().await;
         let tools = peer.list_all_tools().await.unwrap();
 
-        assert_eq!(tools.len(), 9, "expected 9 meta-tools, got {}", tools.len());
+        assert_eq!(
+            tools.len(),
+            10,
+            "expected 10 meta-tools, got {}",
+            tools.len()
+        );
         assert!(tools.iter().any(|t| t.name == "purge_session"));
         assert!(tools.iter().any(|t| t.name == "read_result"));
+        assert!(tools.iter().any(|t| t.name == "session_search"));
 
         let names: Vec<String> = tools.iter().map(|t| t.name.to_string()).collect();
         assert!(names.contains(&"search_tools".to_string()));

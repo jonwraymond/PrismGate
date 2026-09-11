@@ -332,7 +332,7 @@ mod tests {
 
         // List tools through the proxy
         let tools = peer.list_all_tools().await.unwrap();
-        assert_eq!(tools.len(), 9, "should see 9 meta-tools through proxy");
+        assert_eq!(tools.len(), 10, "should see 10 meta-tools through proxy");
 
         // Make a tool call through the proxy
         let result = peer
@@ -373,7 +373,7 @@ mod tests {
 
         // Verify initial connection works
         let tools = peer.list_all_tools().await.unwrap();
-        assert_eq!(tools.len(), 9);
+        assert_eq!(tools.len(), 10);
 
         // Kill the daemon
         daemon_handle.abort();
@@ -507,7 +507,7 @@ mod tests {
         });
 
         let tools = new_peer.list_all_tools().await.unwrap();
-        assert_eq!(tools.len(), 9);
+        assert_eq!(tools.len(), 10);
 
         let slow_result = tokio::time::timeout(Duration::from_secs(2), slow_call)
             .await
@@ -824,7 +824,7 @@ mod tests {
 
         // Verify initial works
         let tools = peer.list_all_tools().await.unwrap();
-        assert_eq!(tools.len(), 9);
+        assert_eq!(tools.len(), 10);
 
         // Kill daemon
         daemon_handle.abort();

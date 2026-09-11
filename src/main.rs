@@ -24,6 +24,8 @@ mod result_store;
 mod sandbox;
 mod secrets;
 mod server;
+#[cfg(feature = "session-store")]
+mod session;
 #[cfg(test)]
 mod testutil;
 mod tools;

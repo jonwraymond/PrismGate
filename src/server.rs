@@ -132,6 +132,23 @@ pub struct CallToolChainParams {
     pub retrieval: Option<crate::tools::retrieval::RetrievalOptions>,
 }
 
+#[cfg(feature = "session-store")]
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct SessionSearchParams {
+    /// FTS5 match query over persisted session events (categories, tool names, payload summaries, outcomes). Empty query with resume=true returns the most recent events instead.
+    #[serde(default)]
+    pub query: Option<String>,
+    /// Return the most recent events for this session instead of a ranked search.
+    #[serde(default)]
+    pub resume: bool,
+    /// Optional category filter for resume mode (tool, backend, file).
+    #[serde(default)]
+    pub category: Option<String>,
+    /// Maximum hits to return (default 20, max 200).
+    #[serde(default)]
+    pub limit: Option<usize>,
+}
+
 /// The MCP server exposed to Claude Code over stdio.
 #[derive(Clone)]
 pub struct GateminiServer {
@@ -150,6 +167,9 @@ pub struct GateminiServer {
     result_store: Arc<crate::result_store::ResultStore>,
     /// Output processing configuration (auto-chunking, smart truncation).
     pub output_config: crate::config::OutputConfig,
+    /// Persistent session event store (feature-gated). Shared by server clones.
+    #[cfg(feature = "session-store")]
+    session_store: crate::session::SessionEventStore,
     #[allow(dead_code)]
     tool_router: ToolRouter<Self>,
 }
@@ -179,8 +199,18 @@ impl GateminiServer {
             discovery_guard: Arc::new(crate::flood_guard::FloodGuard::default()),
             result_store: Arc::new(crate::result_store::ResultStore::default()),
             output_config,
+            #[cfg(feature = "session-store")]
+            session_store: crate::session::SessionEventStore::default(),
             tool_router: Self::tool_router(),
         }
+    }
+
+    /// Session key used for event attribution: the transport session id, or "direct".
+    #[cfg(feature = "session-store")]
+    fn session_key(&self) -> String {
+        self.session_id
+            .map(|id| format!("session-{id}"))
+            .unwrap_or_else(|| "direct".to_string())
     }
 }
 
@@ -225,6 +255,11 @@ impl GateminiServer {
             )]));
         }
         self.tracker.reset();
+        #[cfg(feature = "session-store")]
+        {
+            let key = self.session_key();
+            let _ = self.session_store.purge_session(&key).await;
+        }
         crate::cache::save(&self.cache_path, &self.registry, Some(&self.tracker)).await;
         Ok(CallToolResult::success(vec![Content::text(
             "Shared gateway history and statistics purged. Backend runtime and health preserved. Client conversation context and backend-owned memory are unchanged.",
@@ -441,6 +476,41 @@ impl GateminiServer {
         }
     }
 
+    #[cfg(feature = "session-store")]
+    #[tool(
+        description = "Search the persistent session event store (SQLite FTS5). Use query for ranked BM25 search over tool calls, backend events, and file reads. Use resume=true with no query to get recent events for this session; optional category filter (tool|backend|file). Survives context compaction."
+    )]
+    async fn session_search(
+        &self,
+        Parameters(params): Parameters<SessionSearchParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let limit = params.limit.unwrap_or(20).clamp(1, 200);
+        let key = self.session_key();
+        let result = if params.resume {
+            self.session_store
+                .resume_summary(&key, params.category.as_deref(), limit)
+                .await
+        } else {
+            let query = params.query.unwrap_or_default();
+            if query.is_empty() {
+                return Ok(CallToolResult::error(vec![Content::text(
+                    "Provide a query, or set resume=true for recent events.",
+                )]));
+            }
+            self.session_store.search(&query, limit).await
+        };
+        match result {
+            Ok(hits) => {
+                let json = serde_json::to_string_pretty(&hits)
+                    .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+                Ok(CallToolResult::success(vec![Content::text(json)]))
+            }
+            Err(e) => Ok(CallToolResult::error(vec![Content::text(format!(
+                "Session search failed: {e:#}"
+            ))])),
+        }
+    }
+
     #[tool(
         description = "Execute TypeScript code with direct access to all registered tools as hierarchical functions (e.g., manual.tool()). IMPORTANT: the tool result is the value your code returns. `console.log(...)` output is not returned; if you do not return a value, the result is usually `null`."
     )]
@@ -465,11 +535,35 @@ impl GateminiServer {
         .await;
 
         match result {
-            Ok(output) => Ok(CallToolResult::success(vec![Content::text(output)])),
-            Err(e) => Ok(CallToolResult::error(vec![Content::text(format!(
-                "{:#}",
-                e
-            ))])),
+            Ok(output) => {
+                #[cfg(feature = "session-store")]
+                {
+                    let event = crate::session::extract::tool_call_event(
+                        &self.session_key(),
+                        "call_tool_chain",
+                        "sandbox",
+                        "ok",
+                    );
+                    let _ = self.session_store.record(event).await;
+                }
+                Ok(CallToolResult::success(vec![Content::text(output)]))
+            }
+            Err(e) => {
+                #[cfg(feature = "session-store")]
+                {
+                    let event = crate::session::extract::tool_call_event(
+                        &self.session_key(),
+                        "call_tool_chain",
+                        "sandbox",
+                        "error",
+                    );
+                    let _ = self.session_store.record(event).await;
+                }
+                Ok(CallToolResult::error(vec![Content::text(format!(
+                    "{:#}",
+                    e
+                ))]))
+            }
         }
     }
 }

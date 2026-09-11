@@ -1,4 +1,8 @@
-//! Session event types for the lightweight session event store.
+//! Structured events emitted into the session event store.
+//!
+//! Keep this shape small and serializable. It is stored in SQLite
+//! and exposed through FTS5 retrieval, so large payloads should be
+//! summarized before recording.
 
 use serde::Serialize;
 

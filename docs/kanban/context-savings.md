@@ -16,13 +16,7 @@ Upstream repo: `jonwraymond/PrismGate`
 - [x] 7. Sandbox data handles: extend bridge with `store/load/query` helpers for reuse across sandbox calls
 
 ## High-Lift / High-Reward
-- [ ] 8. FTS5-backed session event store: file edits, tool calls, errors, decisions, tasks; new `gatemini://session/search` resource
-  - Status: **BLOCKED**
-  - Blocker: adding `rusqlite`/`sqlite-fts5` conflicts with `bitwarden`’s existing `libsqlite3-sys` link in this repo’s dependency graph.
-  - Options:
-    - A. Accept a non-FTS5 implementation, e.g. JSONL event log with local search/resume builder.
-    - B. Vendor or replace `bitwarden`’s SQLite consumer, which is out of scope for this epic.
-    - C. Move session-store into an optional companion binary/service instead of the main binary.
+- [x] 8. FTS5-backed session event store: SQLite actor thread, `session_search` MCP tool, event recording from `call_tool_chain`, purge integration. Feature `session-store` is on by default.
 
 ## Cross-Cutting
 - [x] A. Tests for all new telemetry, flood guard, truncation, result store, session store
