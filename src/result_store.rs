@@ -113,6 +113,16 @@ impl ResultStore {
             total_bytes: raw.len(),
         })
     }
+
+    /// Full retained payload. Used for overflow indexing; not an MCP page.
+    pub fn raw(&self, handle: &str) -> Option<String> {
+        let mut entries = self.entries.lock().unwrap();
+        entries.retain(|e| e.created.elapsed() < self.ttl);
+        entries
+            .iter()
+            .find(|e| e.handle == handle)
+            .map(|e| e.raw.clone())
+    }
 }
 
 #[cfg(test)]

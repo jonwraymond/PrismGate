@@ -620,6 +620,24 @@ impl GateminiServer {
                             total,
                             "call_tool_chain",
                         );
+                        if let Some(raw) = self.result_store.raw(handle) {
+                            let indexed = crate::session::overflow::index_overflow(
+                                &self.session_store,
+                                &key,
+                                handle,
+                                &raw,
+                                "call_tool_chain",
+                                params.intent.as_deref(),
+                            )
+                            .await;
+                            let mut pointer = value.clone();
+                            pointer["sections"] = serde_json::json!(indexed.sections);
+                            pointer["try_also"] = serde_json::json!(indexed.try_also);
+                            pointer["preview"] = serde_json::json!(indexed.preview);
+                            let serialized = serde_json::to_string(&pointer).unwrap_or(output);
+                            let _ = self.session_store.record(event).await;
+                            return Ok(CallToolResult::success(vec![Content::text(serialized)]));
+                        }
                     }
                     let _ = self.session_store.record(event).await;
                 }

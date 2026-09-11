@@ -9,6 +9,7 @@
 pub mod db;
 pub mod event;
 pub mod extract;
+pub mod overflow;
 pub mod retrieval;
 
 #[cfg(test)]

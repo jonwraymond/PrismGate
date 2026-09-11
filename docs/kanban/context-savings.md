@@ -17,7 +17,8 @@ Upstream repo: `jonwraymond/PrismGate`
 
 ## High-Lift / High-Reward
 - [x] 8. FTS5-backed session event store with actor thread, `session_search`, handle binding, resume card, `session_note`
-- [ ] 9. Host skills/hooks that auto-call `session_search(card=true)` after compact (Claude Code / Cursor / Codex / OpenCode)
+- [x] 9. Overflow index: large outputs chunked into FTS5 sections + pointer (preview/try_also)
+- [x] 10. Host skill `skills/gatemini-context/SKILL.md` — compact/resume must call `session_search(card=true)`
 
 ## Cross-Cutting
 - [x] A. Tests for telemetry, flood guard, truncation, result store, session store, resume card

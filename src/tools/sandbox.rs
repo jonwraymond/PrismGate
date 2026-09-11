@@ -456,7 +456,16 @@ fn retain_output(
         return None;
     }
     let handle = store?.insert(raw.to_owned())?;
-    Some(serde_json::json!({"result_handle": handle, "total_bytes": raw.len(), "lookup": "read_result", "expires_in_seconds": 1800}).to_string())
+    Some(
+        serde_json::json!({
+            "result_handle": handle,
+            "total_bytes": raw.len(),
+            "lookup": "read_result",
+            "search": "session_search",
+            "expires_in_seconds": 1800
+        })
+        .to_string(),
+    )
 }
 
 fn process_output(

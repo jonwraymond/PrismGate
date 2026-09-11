@@ -82,6 +82,14 @@ fn walk_json(value: &Value, path: &str, chunks: &mut Vec<Chunk>) {
     }
 }
 
+pub fn chunk_text(raw: &str) -> Vec<String> {
+    chunk_output(raw)
+        .into_iter()
+        .map(|c| c.text)
+        .filter(|t| !t.trim().is_empty())
+        .collect()
+}
+
 fn chunk_output(raw: &str) -> Vec<Chunk> {
     let mut chunks = Vec::new();
     if let Ok(value) = serde_json::from_str::<Value>(raw) {

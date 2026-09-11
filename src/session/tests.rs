@@ -73,3 +73,27 @@ async fn resume_card_includes_handles_and_decisions() {
     assert!(card.decisions.iter().any(|d| d.contains("handle lookup")));
     assert!(card.constraints.iter().any(|c| c.contains("raw HTML")));
 }
+
+#[tokio::test]
+async fn overflow_index_creates_searchable_sections() {
+    let tmp = NamedTempFile::new().unwrap();
+    let store = SessionEventStore::open(tmp.path().to_path_buf()).unwrap();
+    let raw = "# Errors\n\nboom failed hard\n\n# Ok\n\nall good\n".repeat(20);
+    let indexed = crate::session::overflow::index_overflow(
+        &store,
+        "s4",
+        "r-overflow",
+        &raw,
+        "call_tool_chain",
+        Some("errors"),
+    )
+    .await;
+    assert!(indexed.sections >= 1);
+    assert_eq!(indexed.handle, "r-overflow");
+    tokio::time::sleep(std::time::Duration::from_millis(80)).await;
+    let hits = store.search("errors", 10).await.unwrap();
+    assert!(
+        hits.iter()
+            .any(|h| h.handle.as_deref() == Some("r-overflow"))
+    );
+}
