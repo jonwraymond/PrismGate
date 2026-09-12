@@ -371,7 +371,7 @@ async fn call_tool_by_dotted_name(
     dotted_name: &str,
     arguments: Option<Value>,
     session_id: Option<u64>,
-    store: Option<&crate::result_store::ResultStore>,
+    _store: Option<&crate::result_store::ResultStore>,
 ) -> Result<String> {
     // Resolve: try looking up the full dotted name first (handles both namespaced and bare)
     let entry = if let Some(e) = registry.get_by_name(dotted_name) {
@@ -399,12 +399,7 @@ async fn call_tool_by_dotted_name(
         &entry.original_name
     };
 
-    if let Some(store) = store
-        && let Some(cached) = store.lookup_call(&entry.name, arguments.as_ref())
-    {
-        debug!(tool = %entry.name, "exact-match result cache hit");
-        return Ok(cached);
-    }
+    // Automatic result reuse is disabled; always execute the backend call.
 
     // Use call_tool_with_fallback to enable automatic failover on transient errors
     let result = manager
@@ -451,9 +446,6 @@ async fn call_tool_by_dotted_name(
 
     let serialized = serde_json::to_string_pretty(&value)
         .map_err(|e| anyhow::anyhow!("failed to serialize tool result: {e}"))?;
-    if let Some(store) = store {
-        let _ = store.remember_call(&entry.name, arguments.as_ref(), serialized.clone());
-    }
     Ok(serialized)
 }
 
@@ -951,5 +943,68 @@ mod truncation_tests {
         // A miss must never leak the entire source as a fallback.
         let result = filter_by_intent(&output, "xyzzy quantum entanglement");
         assert_eq!(result, "[]");
+    }
+}
+
+#[cfg(test)]
+mod cache_safety_tests {
+    use super::*;
+    use crate::testutil::{MockBackend, insert_mock};
+    use std::time::Duration;
+
+    #[tokio::test]
+    async fn direct_tool_call_always_hits_backend_with_store() {
+        let manager = crate::backend::BackendManager::new();
+        let registry = Arc::new(crate::registry::ToolRegistry::new());
+        let mock = Arc::new(MockBackend::new("mock-backend", Duration::ZERO));
+        insert_mock(&manager, &registry, &mock).await;
+
+        let store = Arc::new(crate::result_store::ResultStore::default());
+        let code = r#"mock-backend.echo_tool({"hello":"world"})"#;
+        let config = crate::config::OutputConfig::default();
+        let semaphore = Arc::new(tokio::sync::Semaphore::new(1));
+
+        let first = crate::tools::sandbox::handle_call_tool_chain_with_store(
+            &registry,
+            &manager,
+            code,
+            None,
+            None,
+            &semaphore,
+            None,
+            None,
+            &config,
+            None,
+            None,
+            Some(store.as_ref()),
+        )
+        .await
+        .unwrap();
+
+        let second = crate::tools::sandbox::handle_call_tool_chain_with_store(
+            &registry,
+            &manager,
+            code,
+            None,
+            None,
+            &semaphore,
+            None,
+            None,
+            &config,
+            None,
+            None,
+            Some(store.as_ref()),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(first, second);
+        let log = mock.call_log().await;
+        assert_eq!(
+            log.len(),
+            2,
+            "expected identical direct calls to reach backend twice, got {}",
+            log.len()
+        );
     }
 }
