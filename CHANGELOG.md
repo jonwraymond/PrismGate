@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.20.2](https://github.com/jonwraymond/PrismGate/compare/v1.20.1...v1.20.2) (2026-09-12)
+
+
+### Bug Fixes
+
+* **cache:** always execute calls instead of implicit result reuse ([23edfbd](https://github.com/jonwraymond/PrismGate/commit/23edfbd77112c252b01813b9f00de2da95d1bcd0))
+* **cache:** disable implicit call-result reuse ([f53905e](https://github.com/jonwraymond/PrismGate/commit/f53905e6d3579763206f988fba266054c8f4c9b0))
+* **schema:** preserve full backend schema fidelity ([40f625e](https://github.com/jonwraymond/PrismGate/commit/40f625e303a3f5df65944f27d49a744d3ab9c184))
+* **schema:** preserve full backend schema in tool_info full mode ([698b12b](https://github.com/jonwraymond/PrismGate/commit/698b12b260c2c7a2a2c392ee28925b8af4ac5b79))
+
 ## [1.20.1](https://github.com/jonwraymond/PrismGate/compare/v1.20.0...v1.20.1) (2026-09-12)
 
 
