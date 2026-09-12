@@ -4337,7 +4337,7 @@ dependencies = [
 
 [[package]]
 name = "prismgate"
-version = "1.20.0"
+version = "1.20.1"
 dependencies = [
  "aes-gcm",
  "anyhow",

@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.20.1](https://github.com/jonwraymond/PrismGate/compare/v1.20.0...v1.20.1) (2026-09-12)
+
+
+### Bug Fixes
+
+* **oauth:** annotate PKCE rng.gen type for Windows rustc ([caafa4d](https://github.com/jonwraymond/PrismGate/commit/caafa4dc4e1f269cdbef07756a9a68be0c3d0f88))
+* **oauth:** annotate PKCE rng.gen type for Windows rustc ([6dfcf98](https://github.com/jonwraymond/PrismGate/commit/6dfcf98ea0f5585ad24154fddf3921592eae3d13))
+
 ## [1.20.0](https://github.com/jonwraymond/PrismGate/compare/v1.19.0...v1.20.0) (2026-09-12)
 
 
