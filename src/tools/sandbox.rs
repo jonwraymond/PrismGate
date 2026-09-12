@@ -146,7 +146,7 @@ pub async fn handle_call_tool_chain_with_store(
 
     // Try to parse as a direct tool call (fast path — no V8, no semaphore needed).
     // Pattern: `await manual_name.tool_name({...})` or JSON with tool_name + arguments
-    if let Some(result) = try_direct_tool_call(registry, manager, code, session_id).await {
+    if let Some(result) = try_direct_tool_call(registry, manager, code, session_id, store).await {
         return result.map(process);
     }
 
@@ -196,6 +196,7 @@ async fn try_direct_tool_call(
     manager: &Arc<BackendManager>,
     code: &str,
     session_id: Option<u64>,
+    store: Option<&crate::result_store::ResultStore>,
 ) -> Option<Result<String>> {
     let code = code.trim();
 
@@ -205,7 +206,7 @@ async fn try_direct_tool_call(
     {
         let arguments = parsed.get("arguments").cloned();
         return Some(
-            call_tool_by_dotted_name(registry, manager, tool, arguments, session_id).await,
+            call_tool_by_dotted_name(registry, manager, tool, arguments, session_id, store).await,
         );
     }
 
@@ -242,7 +243,8 @@ async fn try_direct_tool_call(
             let dotted = format!("{}.{}", backend_name, tool_name);
             debug!(pattern = %dotted, "parsed direct tool call from code");
             return Some(
-                call_tool_by_dotted_name(registry, manager, &dotted, arguments, session_id).await,
+                call_tool_by_dotted_name(registry, manager, &dotted, arguments, session_id, store)
+                    .await,
             );
         }
     }
@@ -369,6 +371,7 @@ async fn call_tool_by_dotted_name(
     dotted_name: &str,
     arguments: Option<Value>,
     session_id: Option<u64>,
+    store: Option<&crate::result_store::ResultStore>,
 ) -> Result<String> {
     // Resolve: try looking up the full dotted name first (handles both namespaced and bare)
     let entry = if let Some(e) = registry.get_by_name(dotted_name) {
@@ -396,6 +399,13 @@ async fn call_tool_by_dotted_name(
         &entry.original_name
     };
 
+    if let Some(store) = store
+        && let Some(cached) = store.lookup_call(&entry.name, arguments.as_ref())
+    {
+        debug!(tool = %entry.name, "exact-match result cache hit");
+        return Ok(cached);
+    }
+
     // Use call_tool_with_fallback to enable automatic failover on transient errors
     let result = manager
         .call_tool_with_fallback(
@@ -418,7 +428,12 @@ async fn call_tool_by_dotted_name(
                 .await
                 .with_context(|| format!("on-demand restart of '{}' failed", entry.backend_name))?;
             manager
-                .call_tool(&entry.backend_name, call_name, arguments, session_id)
+                .call_tool(
+                    &entry.backend_name,
+                    call_name,
+                    arguments.clone(),
+                    session_id,
+                )
                 .await
                 .with_context(|| {
                     format!(
@@ -434,8 +449,12 @@ async fn call_tool_by_dotted_name(
         }
     };
 
-    serde_json::to_string_pretty(&value)
-        .map_err(|e| anyhow::anyhow!("failed to serialize tool result: {e}"))
+    let serialized = serde_json::to_string_pretty(&value)
+        .map_err(|e| anyhow::anyhow!("failed to serialize tool result: {e}"))?;
+    if let Some(store) = store {
+        let _ = store.remember_call(&entry.name, arguments.as_ref(), serialized.clone());
+    }
+    Ok(serialized)
 }
 
 /// Apply the full output processing pipeline: intent filter → auto-chunk JSON → truncate.
