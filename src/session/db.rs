@@ -96,6 +96,7 @@ impl SessionEventStore {
         })
     }
 
+    #[tracing::instrument(skip(self, event), fields(session = %event.session_key, category = %event.category, name = %event.name))]
     pub async fn record(&self, event: SessionEvent) -> Result<()> {
         self.tx
             .send(Command::Record(event.redact_secrets()))
@@ -103,6 +104,7 @@ impl SessionEventStore {
         Ok(())
     }
 
+    #[tracing::instrument(skip(self), fields(query_len = query.len(), limit))]
     pub async fn search(&self, query: &str, limit: usize) -> Result<Vec<SessionSearchHit>> {
         let (reply, rx) = std::sync::mpsc::channel();
         self.tx
@@ -150,6 +152,7 @@ impl SessionEventStore {
             .context("session store join")??
     }
 
+    #[tracing::instrument(skip(self), fields(session = %session_key))]
     pub async fn purge_session(&self, session_key: &str) -> Result<()> {
         self.tx
             .send(Command::Purge {
