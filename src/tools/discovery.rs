@@ -51,23 +51,6 @@ fn sanitize_js_name(name: &str) -> String {
     crate::sandbox::bridge::sanitize_identifier(name)
 }
 
-/// Extract the first sentence from a description string.
-fn first_sentence(text: &str) -> String {
-    // Find first period followed by space or end of string
-    if let Some(idx) = text.find(". ") {
-        text[..=idx].to_string()
-    } else if let Some(idx) = text.find(".\n") {
-        text[..=idx].to_string()
-    } else if text.ends_with('.') {
-        text.to_string()
-    } else if text.len() > 200 {
-        // Truncate long descriptions without sentence boundary
-        format!("{}...", &text[..200])
-    } else {
-        text.to_string()
-    }
-}
-
 /// Strip non-essential description components per arxiv 2602.14878.
 ///
 /// Preserves the `Limitations:` block because it contains high-leverage
@@ -124,114 +107,6 @@ fn minimize_description(text: &str) -> String {
     }
 
     result
-}
-
-/// Prune per-parameter `description` fields in a JSON schema to their first sentence.
-///
-/// This reduces token usage while preserving the high-leverage operational cues
-/// identified in arxiv 2602.14878 RQ-3.
-fn prune_schema_descriptions(schema: &mut Value) {
-    let Some(obj) = schema.as_object_mut() else {
-        return;
-    };
-    let Some(properties) = obj.get_mut("properties").and_then(|p| p.as_object_mut()) else {
-        return;
-    };
-
-    for (_, value) in properties.iter_mut() {
-        let Some(prop_obj) = value.as_object_mut() else {
-            continue;
-        };
-        if let Some(desc) = prop_obj.get("description").and_then(|d| d.as_str()) {
-            let minimized = first_sentence(desc);
-            if !minimized.is_empty() {
-                prop_obj.insert("description".to_string(), Value::String(minimized));
-            }
-        }
-    }
-
-    // Recurse into nested object properties if present
-    for (_, value) in properties.iter_mut() {
-        prune_schema_descriptions(value);
-    }
-
-    // Also recurse into `items` for array schemas
-    if let Some(items) = obj.get_mut("items") {
-        prune_schema_descriptions(items);
-    }
-}
-
-/// Drop keys that never affect tool selection and collapse trivial unions.
-///
-/// Removes `additionalProperties` and `default`. Collapses `anyOf`/`oneOf`
-/// of the form `T | null` (or a single remaining member) down to `T`.
-/// Recurses into `properties`, `items`, `anyOf`, and `oneOf`.
-fn minify_schema(schema: &mut Value) {
-    match schema {
-        Value::Array(arr) => {
-            for item in arr.iter_mut() {
-                minify_schema(item);
-            }
-        }
-        Value::Object(obj) => {
-            obj.remove("additionalProperties");
-            obj.remove("default");
-
-            if let Some(properties) = obj.get_mut("properties").and_then(|p| p.as_object_mut()) {
-                for value in properties.values_mut() {
-                    minify_schema(value);
-                }
-            }
-            if let Some(items) = obj.get_mut("items") {
-                minify_schema(items);
-            }
-            for key in ["anyOf", "oneOf", "allOf"] {
-                if let Some(Value::Array(variants)) = obj.get_mut(key) {
-                    for variant in variants.iter_mut() {
-                        minify_schema(variant);
-                    }
-                }
-            }
-
-            collapse_trivial_union(obj);
-        }
-        _ => {}
-    }
-}
-
-/// Collapse `anyOf`/`oneOf` when it is `T | null` or a single remaining member.
-fn collapse_trivial_union(obj: &mut serde_json::Map<String, Value>) {
-    for key in ["anyOf", "oneOf"] {
-        let Some(Value::Array(variants)) = obj.get(key) else {
-            continue;
-        };
-        let non_null: Vec<Value> = variants
-            .iter()
-            .filter(|v| v.get("type").and_then(|t| t.as_str()) != Some("null"))
-            .cloned()
-            .collect();
-        if non_null.len() == 1 {
-            obj.remove(key);
-            if let Value::Object(inner) = &non_null[0] {
-                for (k, v) in inner {
-                    obj.entry(k.clone()).or_insert(v.clone());
-                }
-            } else {
-                obj.insert("type".into(), non_null[0].clone());
-            }
-            break;
-        }
-        if variants.len() == 1 {
-            let only = variants[0].clone();
-            obj.remove(key);
-            if let Value::Object(inner) = only {
-                for (k, v) in inner {
-                    obj.entry(k.clone()).or_insert(v);
-                }
-            }
-            break;
-        }
-    }
 }
 
 /// Extract parameter names from a JSON schema's `properties` object.
@@ -343,17 +218,17 @@ pub fn handle_list_paginated(
 }
 
 /// Handle tool_info: return full schema for a specific tool.
+///
+/// Full mode preserves the backend schema exactly as registered, including
+/// descriptions, defaults, `additionalProperties`, nested constraints, and
+/// union/intersection schemas (`anyOf`, `oneOf`, `allOf`). Brief mode remains
+/// compact.
 pub fn handle_tool_info(registry: &ToolRegistry, tool_name: &str) -> Option<ToolInfoResult> {
-    registry.get_by_name(tool_name).map(|e| {
-        let mut input_schema = e.input_schema;
-        prune_schema_descriptions(&mut input_schema);
-        minify_schema(&mut input_schema);
-        ToolInfoResult {
-            name: e.name,
-            description: e.description,
-            backend: e.backend_name,
-            input_schema,
-        }
+    registry.get_by_name(tool_name).map(|e| ToolInfoResult {
+        name: e.name,
+        description: e.description,
+        backend: e.backend_name,
+        input_schema: e.input_schema,
     })
 }
 
@@ -406,21 +281,6 @@ pub async fn handle_required_keys_async(
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_first_sentence() {
-        assert_eq!(
-            first_sentence("Search the web. Returns results in JSON format."),
-            "Search the web."
-        );
-        assert_eq!(first_sentence("Search the web"), "Search the web");
-        assert_eq!(first_sentence("Search the web."), "Search the web.");
-        assert_eq!(first_sentence("Search.\nMore info here."), "Search.");
-        // Long text without period
-        let long = "a".repeat(250);
-        let result = first_sentence(&long);
-        assert_eq!(result.len(), 203); // 200 + "..."
-    }
 
     #[test]
     fn test_extract_param_names() {
@@ -496,73 +356,67 @@ mod tests {
     }
 
     #[test]
-    fn test_prune_schema_descriptions() {
-        let mut schema = serde_json::json!({
-            "type": "object",
-            "properties": {
-                "query": {
-                    "type": "string",
-                    "description": "The search query. Should be concise."
-                },
-                "limit": {
-                    "type": "integer",
-                    "description": "Maximum number of results to return."
-                }
-            }
-        });
-        prune_schema_descriptions(&mut schema);
-        let query_desc = schema["properties"]["query"]["description"]
-            .as_str()
-            .unwrap();
-        let limit_desc = schema["properties"]["limit"]["description"]
-            .as_str()
-            .unwrap();
-        assert_eq!(query_desc, "The search query.");
-        assert_eq!(limit_desc, "Maximum number of results to return.");
-    }
-
-    #[test]
-    fn test_minify_schema_drops_noise_and_collapses_null_union() {
-        let mut schema = serde_json::json!({
+    fn test_handle_tool_info_preserves_full_schema_fidelity() {
+        let schema = serde_json::json!({
             "type": "object",
             "additionalProperties": false,
             "properties": {
                 "query": {
+                    "type": "string",
+                    "description": "The search query.",
+                    "default": ""
+                },
+                "mode": {
                     "anyOf": [
-                        {"type": "string", "default": ""},
+                        {"type": "string", "enum": ["fast", "deep"]},
                         {"type": "null"}
                     ],
-                    "description": "q"
+                    "description": "Search mode."
                 },
-                "limit": {
-                    "type": "integer",
-                    "default": 10,
-                    "additionalProperties": false
+                "config": {
+                    "type": "object",
+                    "additionalProperties": {"type": "string"},
+                    "properties": {
+                        "timeout": {
+                            "type": "integer",
+                            "description": "Timeout in seconds.",
+                            "default": 30
+                        }
+                    }
                 }
             }
         });
-        minify_schema(&mut schema);
-        assert!(schema.get("additionalProperties").is_none());
-        let query = &schema["properties"]["query"];
-        assert_eq!(query["type"], "string");
-        assert!(query.get("anyOf").is_none());
-        assert!(query.get("default").is_none());
-        let limit = &schema["properties"]["limit"];
-        assert_eq!(limit["type"], "integer");
-        assert!(limit.get("default").is_none());
-        assert!(limit.get("additionalProperties").is_none());
-    }
+        let registry = ToolRegistry::new();
+        registry.register_backend_tools(
+            "demo",
+            vec![ToolEntry {
+                name: "demo.search".into(),
+                original_name: "search".into(),
+                description: "Demo search tool.".into(),
+                backend_name: "demo".into(),
+                input_schema: schema.clone(),
+                tags: Vec::new(),
+            }],
+        );
 
-    #[test]
-    fn test_minify_schema_keeps_real_unions() {
-        let mut schema = serde_json::json!({
-            "anyOf": [
-                {"type": "string"},
-                {"type": "integer"}
-            ]
-        });
-        minify_schema(&mut schema);
-        assert!(schema.get("anyOf").is_some());
-        assert_eq!(schema["anyOf"].as_array().unwrap().len(), 2);
+        let result = handle_tool_info(&registry, "demo.search").unwrap();
+        let roundtripped = serde_json::to_value(result).unwrap();
+
+        let result_schema = roundtripped.get("input_schema").unwrap();
+        assert!(result_schema.get("additionalProperties").is_some());
+        assert_eq!(result_schema["properties"]["query"]["default"], "");
+        assert_eq!(
+            result_schema["properties"]["query"]["description"],
+            "The search query."
+        );
+        assert!(result_schema["properties"]["mode"].get("anyOf").is_some());
+        assert_eq!(
+            result_schema["properties"]["config"]["properties"]["timeout"]["default"],
+            30
+        );
+        assert_eq!(
+            result_schema["properties"]["config"]["properties"]["timeout"]["description"],
+            "Timeout in seconds."
+        );
     }
 }
