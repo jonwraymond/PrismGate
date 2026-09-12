@@ -219,3 +219,28 @@ impl StreamableHttpClient for LenientClient {
         }
     }
 }
+
+#[cfg(test)]
+mod header_regression_tests {
+    use super::*;
+
+    #[test]
+    fn mirrors_method_and_name_without_panicking() {
+        let message: ClientJsonRpcMessage = serde_json::from_value(serde_json::json!({
+            "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+            "params": {"name": "example", "arguments": {}}
+        }))
+        .unwrap();
+        let headers = mcp_headers_from_message(&message);
+        assert!(
+            headers
+                .iter()
+                .any(|(name, value)| name == "mcp-method" && value == "tools/call")
+        );
+        assert!(
+            headers
+                .iter()
+                .any(|(name, value)| name == "mcp-name" && value == "example")
+        );
+    }
+}
