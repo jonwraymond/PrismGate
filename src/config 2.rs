@@ -82,7 +82,7 @@ pub fn load_dotenv(config_path: Option<&Path>) {
     });
 }
 
-/// Top-level gatemini configuration.
+/// Top-level prismgate configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
     #[serde(default = "default_log_level")]
@@ -1655,7 +1655,7 @@ backends: {}
     fn test_resolve_secrets_bws_disabled_with_env() {
         use crate::secrets::resolver::{EnvFallbackProvider, SecretResolver};
 
-        unsafe { std::env::set_var("GATEMINI_TEST_CFG_KEY", "resolved-from-env") };
+        unsafe { std::env::set_var("PRISMGATE_TEST_CFG_KEY", "resolved-from-env") };
 
         let yaml = r#"
 backends:
@@ -1663,7 +1663,7 @@ backends:
     transport: stdio
     command: echo
     env:
-      API_KEY: "secretref:bws:project/dotenv/key/GATEMINI_TEST_CFG_KEY"
+      API_KEY: "secretref:bws:project/dotenv/key/PRISMGATE_TEST_CFG_KEY"
 "#;
         let mut config: Config = serde_yaml_ng::from_str(yaml).unwrap();
 
@@ -1674,14 +1674,14 @@ backends:
         let backend = config.backends.get("test-backend").unwrap();
         assert_eq!(backend.env.get("API_KEY").unwrap(), "resolved-from-env");
 
-        unsafe { std::env::remove_var("GATEMINI_TEST_CFG_KEY") };
+        unsafe { std::env::remove_var("PRISMGATE_TEST_CFG_KEY") };
     }
 
     #[test]
     fn test_resolve_secrets_bws_disabled_missing_env() {
         use crate::secrets::resolver::{EnvFallbackProvider, SecretResolver};
 
-        unsafe { std::env::remove_var("GATEMINI_TEST_MISSING_KEY") };
+        unsafe { std::env::remove_var("PRISMGATE_TEST_MISSING_KEY") };
 
         let yaml = r#"
 backends:
@@ -1689,7 +1689,7 @@ backends:
     transport: stdio
     command: echo
     env:
-      API_KEY: "secretref:bws:project/dotenv/key/GATEMINI_TEST_MISSING_KEY"
+      API_KEY: "secretref:bws:project/dotenv/key/PRISMGATE_TEST_MISSING_KEY"
 "#;
         let mut config: Config = serde_yaml_ng::from_str(yaml).unwrap();
 
@@ -1700,7 +1700,7 @@ backends:
         // The error chain: backend context wraps the provider error
         let err = format!("{:#}", result.unwrap_err());
         assert!(
-            err.contains("GATEMINI_TEST_MISSING_KEY"),
+            err.contains("PRISMGATE_TEST_MISSING_KEY"),
             "error should mention key: {err}"
         );
     }

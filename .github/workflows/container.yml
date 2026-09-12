@@ -34,7 +34,7 @@ jobs:
         id: vars
         run: |
           {
-            echo "image=${REGISTRY}/${GITHUB_REPOSITORY_OWNER,,}/gatemini"
+            echo "image=${REGISTRY}/${GITHUB_REPOSITORY_OWNER,,}/prismgate"
             echo "version=${GITHUB_REF_NAME#v}"
             echo "major_minor=$(echo "${GITHUB_REF_NAME#v}" | cut -d. -f1,2)"
           } >> "$GITHUB_OUTPUT"
@@ -79,7 +79,7 @@ jobs:
       - name: Derive image coordinates
         id: vars
         run: |
-          echo "image=${REGISTRY}/${GITHUB_REPOSITORY_OWNER,,}/gatemini" >> "$GITHUB_OUTPUT"
+          echo "image=${REGISTRY}/${GITHUB_REPOSITORY_OWNER,,}/prismgate" >> "$GITHUB_OUTPUT"
 
       - name: Generate image metadata
         id: meta
@@ -117,7 +117,7 @@ jobs:
       - name: Derive image coordinates
         id: vars
         run: |
-          image="${REGISTRY}/${GITHUB_REPOSITORY_OWNER,,}/gatemini"
+          image="${REGISTRY}/${GITHUB_REPOSITORY_OWNER,,}/prismgate"
           version="${GITHUB_REF_NAME#v}"
           major_minor="$(echo "$version" | cut -d. -f1,2)"
           {

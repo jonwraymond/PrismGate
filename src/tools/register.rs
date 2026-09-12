@@ -203,12 +203,12 @@ pub async fn handle_deregister(
             anyhow::bail!(
                 "backend '{name}' is a static (config-file) backend and cannot be deregistered. \
                  Only dynamically registered backends (via register_manual) can be removed at runtime. \
-                 To remove it, edit your gatemini.yaml config file and restart."
+                 To remove it, edit your prismgate.yaml config file and restart."
             );
         } else {
             anyhow::bail!(
                 "backend '{name}' not found. It may have already been removed or never existed. \
-                 List all backends with '@gatemini://backends'."
+                 List all backends with '@prismgate://backends'."
             );
         }
     }

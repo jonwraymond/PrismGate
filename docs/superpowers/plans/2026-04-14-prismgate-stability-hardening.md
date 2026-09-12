@@ -1,8 +1,8 @@
-# Gatemini Stability Hardening Implementation Plan
+# PrismGate Stability Hardening Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Fix the observed stdio lifecycle and transport reliability risks that can make Gatemini or its backend MCP apps unstable.
+**Goal:** Fix the observed stdio lifecycle and transport reliability risks that can make PrismGate or its backend MCP apps unstable.
 
 **Architecture:** Keep the existing proxy/daemon/backend architecture. Tighten lifecycle invariants where they are currently leaky: dedicated pool capacity, backend replacement cleanup, dedicated backend health recovery, CLI adapter child process cleanup, shutdown timeouts, and operator diagnostics. Each task adds a regression test first, then the smallest production change.
 
@@ -37,7 +37,7 @@
 - Modify: `src/ipc/mod.rs`
   - Exposes the new `doctor` module.
 - Modify: `src/resources.rs`
-  - Optional: include richer backend process/pool status in Gatemini resources after pool stats exist.
+  - Optional: include richer backend process/pool status in PrismGate resources after pool stats exist.
 
 ## Current Findings To Address
 
@@ -46,7 +46,7 @@
 - Health checker status is based on `self.backends`, but dedicated restart uses `restart_pool_primary`, creating a mismatch between the status source and restart target.
 - `BackendManager::stop_all` hardcodes a `7s` stop timeout even though each backend has `shutdown_grace_period`.
 - `CliAdapterBackend` kills only the shell PID on timeout, not the process group.
-- `Transport closed` was ambiguous. In the recent failure, one Codex process had no live Gatemini proxy child even though the daemon/backend were healthy. Operators need a quick `doctor` command that separates client/proxy/daemon/backend layers.
+- `Transport closed` was ambiguous. In the recent failure, one Codex process had no live PrismGate proxy child even though the daemon/backend were healthy. Operators need a quick `doctor` command that separates client/proxy/daemon/backend layers.
 
 ---
 
@@ -701,7 +701,7 @@ git commit -m "fix: respect backend shutdown grace periods"
 
 ---
 
-### Task 6: Add `gatemini doctor` Diagnostics
+### Task 6: Add `prismgate doctor` Diagnostics
 
 **Files:**
 - Modify: `src/cli.rs`
@@ -749,7 +749,7 @@ pub fn run() -> Result<()> {
     let pid = socket::read_pid(&socket_path);
     let alive = socket::is_daemon_alive(&socket_path);
 
-    println!("gatemini doctor");
+    println!("prismgate doctor");
     println!("version: {}", env!("CARGO_PKG_VERSION"));
     println!("socket: {}", socket_path.display());
     println!("pid_file: {}", socket::pid_path(&socket_path).display());
@@ -758,7 +758,7 @@ pub fn run() -> Result<()> {
     println!("socket_exists: {}", socket_path.exists());
 
     if !alive && socket_path.exists() {
-        println!("warning: socket exists but daemon is not alive; run `gatemini status` or `gatemini stop` to clean stale files");
+        println!("warning: socket exists but daemon is not alive; run `prismgate status` or `prismgate stop` to clean stale files");
     }
 
     let current_exe = std::env::current_exe()
@@ -771,7 +771,7 @@ pub fn run() -> Result<()> {
 
 #[cfg(not(unix))]
 pub fn run() -> Result<()> {
-    println!("gatemini doctor");
+    println!("prismgate doctor");
     println!("version: {}", env!("CARGO_PKG_VERSION"));
     println!("daemon_mode: unsupported on this platform");
     Ok(())
@@ -806,7 +806,7 @@ cargo run -- doctor
 Expected output includes:
 
 ```text
-gatemini doctor
+prismgate doctor
 version: 1.12.2
 socket:
 daemon_alive:
@@ -817,7 +817,7 @@ current_exe:
 
 ```bash
 git add src/cli.rs src/main.rs src/ipc/mod.rs src/ipc/doctor.rs
-git commit -m "feat: add gatemini doctor diagnostics"
+git commit -m "feat: add prismgate doctor diagnostics"
 ```
 
 ---
@@ -857,13 +857,13 @@ test result: ok
 
 ```bash
 cargo build --release
-target/release/gatemini --version
+target/release/prismgate --version
 ```
 
 Expected:
 
 ```text
-gatemini 1.12.2
+prismgate 1.12.2
 ```
 
 - [ ] **Step 4: Smoke test daemon/proxy startup**
@@ -873,17 +873,17 @@ Use a temporary config with one cheap stdio backend if possible. If using the li
 Safe live check:
 
 ```bash
-gatemini --version
-gatemini status
-gatemini doctor
+prismgate --version
+prismgate status
+prismgate doctor
 ```
 
 Expected:
 
 ```text
-gatemini 1.12.2
+prismgate 1.12.2
 Daemon running ...
-gatemini doctor
+prismgate doctor
 ```
 
 - [ ] **Step 5: Confirm process count no longer grows for dedicated backends**
@@ -894,7 +894,7 @@ Before test:
 ps -axo pid,ppid,stat,etime,command | rg 'mcp-server-sequential-thinking|server-sequential-thinking'
 ```
 
-Run three short manual MCP sessions through Gatemini that call sequential-thinking, then repeat the `ps` command. Expected: process count returns to `primary + min_idle + active client sessions`, not monotonic growth.
+Run three short manual MCP sessions through PrismGate that call sequential-thinking, then repeat the `ps` command. Expected: process count returns to `primary + min_idle + active client sessions`, not monotonic growth.
 
 - [ ] **Step 6: Prepare PR**
 
@@ -908,7 +908,7 @@ gh pr create --title "fix: harden backend lifecycle stability" --body "$(cat <<'
 - Align health recovery with full dedicated backend lifecycle restart.
 - Kill CLI adapter process groups on timeout.
 - Respect configured backend shutdown grace periods.
-- Add `gatemini doctor` diagnostics for local proxy/daemon state.
+- Add `prismgate doctor` diagnostics for local proxy/daemon state.
 
 ## Verification
 - cargo test pool
@@ -916,7 +916,7 @@ gh pr create --title "fix: harden backend lifecycle stability" --body "$(cat <<'
 - cargo test health restart
 - cargo test
 - cargo build --release
-- gatemini doctor
+- prismgate doctor
 BODY
 )"
 ```
@@ -933,7 +933,7 @@ BODY
 
 ## Execution Choice
 
-Plan complete and saved to `docs/superpowers/plans/2026-04-14-gatemini-stability-hardening.md`.
+Plan complete and saved to `docs/superpowers/plans/2026-04-14-prismgate-stability-hardening.md`.
 
 Two execution options:
 

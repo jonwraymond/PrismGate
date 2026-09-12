@@ -1,11 +1,11 @@
 # OAuth 2.0 Authentication
 
-Gatemini supports OAuth 2.0 authentication for MCP backends that require it. The OAuth flow is automatic, secure, and handles token refresh transparently.
+PrismGate supports OAuth 2.0 authentication for MCP backends that require it. The OAuth flow is automatic, secure, and handles token refresh transparently.
 
 ## How It Works
 
 1. **Configure OAuth in your backend** - Add OAuth settings to your backend configuration
-2. **First connection** - Gatemini automatically detects missing/expired tokens and launches the OAuth flow
+2. **First connection** - PrismGate automatically detects missing/expired tokens and launches the OAuth flow
 3. **Browser authentication** - Your browser opens to the provider's login page
 4. **Token storage** - Tokens are securely stored in `~/.cache/prismgate/oauth_tokens.json` with `0600` permissions
 5. **Automatic refresh** - Expired tokens are automatically refreshed using refresh tokens
@@ -59,7 +59,7 @@ Just start using the backend - OAuth happens automatically:
 
 ```bash
 # First time using an OAuth-enabled backend
-gatemini
+prismgate
 # → Detects missing token
 # → Opens browser for authentication
 # → Stores token securely
@@ -71,7 +71,7 @@ gatemini
 You can also authenticate manually before using a backend:
 
 ```bash
-gatemini auth my-backend \
+prismgate auth my-backend \
   --url https://api.example.com \
   --client-id YOUR_CLIENT_ID \
   --scopes read,write
@@ -85,7 +85,7 @@ Tokens are stored in `~/.cache/prismgate/oauth_tokens.json` with restrictive per
 
 ### Token Refresh
 
-Gatemini automatically refreshes expired tokens using refresh tokens:
+PrismGate automatically refreshes expired tokens using refresh tokens:
 
 1. **Token expires** - Detected before making requests
 2. **Refresh attempt** - Uses refresh token to get new access token
@@ -153,8 +153,8 @@ backends:
 First use:
 
 ```bash
-# Start gatemini
-gatemini
+# Start prismgate
+prismgate
 
 # First request to deriver backend triggers OAuth:
 # 1. Browser opens to Deriver's login page
@@ -198,7 +198,7 @@ To use OAuth with your MCP backend, you need to:
 2. **Set redirect URI** to `http://localhost:8080/callback` (or your configured port)
 3. **Get client ID** (and optionally client secret)
 4. **Configure scopes** required for MCP access
-5. **Add to gatemini config** as shown above
+5. **Add to prismgate config** as shown above
 
 ## Advanced Configuration
 

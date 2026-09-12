@@ -15,7 +15,7 @@ async fn cli_purge_resets_live_tracker_without_replacing_runtime() {
     let mock = crate::testutil::MockBackend::new("backend", std::time::Duration::ZERO);
     crate::testutil::insert_mock(&manager, &registry, &mock).await;
     let before = registry.get_all_names();
-    let server = crate::server::GateminiServer::new(
+    let server = crate::server::PrismGateServer::new(
         Arc::clone(&registry),
         Arc::clone(&manager),
         Arc::clone(&tracker),

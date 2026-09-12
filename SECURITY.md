@@ -45,7 +45,7 @@ to responsibly disclose your findings.
 
 The security policy covers:
 
-- The `gatemini` binary and all runtime modes (proxy, direct, serve)
+- The `prismgate` binary and all runtime modes (proxy, direct, serve)
 - The Unix socket IPC layer
 - Configuration parsing and secret resolution
 - The V8 sandbox boundary
@@ -54,7 +54,7 @@ The security policy covers:
 
 ### Out of Scope
 
-- Issues in third-party backend MCP servers proxied through Gatemini
+- Issues in third-party backend MCP servers proxied through PrismGate
 - Denial-of-service attacks already mitigated by configurable limits
   (max_memory_mb, restart thresholds, idle timeouts)
 - Social engineering or phishing attacks

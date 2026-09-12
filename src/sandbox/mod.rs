@@ -48,7 +48,7 @@ pub async fn execute(
     let (tx, rx) = tokio::sync::oneshot::channel();
 
     std::thread::Builder::new()
-        .name("gatemini-sandbox".to_string())
+        .name("prismgate-sandbox".to_string())
         .spawn(move || {
             let result = run_sandbox(
                 main_handle,
@@ -172,8 +172,8 @@ fn run_sandbox(
                                 return Err(rustyscript::Error::Runtime(format!(
                                     "Backend '{}' is not available for tool '{}'. \
                                      The backend may have stopped or lost connection.\n\
-                                     To check status: load @gatemini://backend/{}\n\
-                                     To see all backends: load @gatemini://backends",
+                                     To check status: load @prismgate://backend/{}\n\
+                                     To see all backends: load @prismgate://backends",
                                     backend_name, tool_name, backend_name
                                 )));
                             }
@@ -296,16 +296,16 @@ fn enhance_sandbox_error(
             let backend = &rest[..end];
             return anyhow::anyhow!(
                 "sandbox execution error: {msg}\n\n\
-                 HINT: Check backend status: load @gatemini://backend/{backend}\n\
-                 To see all backends: load @gatemini://backends"
+                 HINT: Check backend status: load @prismgate://backend/{backend}\n\
+                 To see all backends: load @prismgate://backends"
             );
         }
     }
 
-    // Pattern: Trying to call gatemini meta-tools from inside the sandbox
-    // e.g., `gatemini.search_tools({...})` — meta-tools are NOT available inside call_tool_chain
+    // Pattern: Trying to call prismgate meta-tools from inside the sandbox
+    // e.g., `prismgate.search_tools({...})` — meta-tools are NOT available inside call_tool_chain
     if msg.contains("is not defined")
-        && (msg.contains("gatemini")
+        && (msg.contains("prismgate")
             || msg.contains("search_tools")
             || msg.contains("tool_info")
             || msg.contains("list_tools_meta"))
@@ -314,14 +314,14 @@ fn enhance_sandbox_error(
         let rest = &msg[start + 16..];
         if let Some(end) = rest.find(" is not defined") {
             let var_name = rest[..end].trim();
-            if var_name == "gatemini"
+            if var_name == "prismgate"
                 || var_name == "search_tools"
                 || var_name == "tool_info"
                 || var_name == "list_tools_meta"
             {
                 return anyhow::anyhow!(
                     "sandbox execution error: {msg}\n\n\
-                     HINT: '{var_name}' is a gatemini meta-tool, NOT a backend. \
+                     HINT: '{var_name}' is a prismgate meta-tool, NOT a backend. \
                      Meta-tools (search_tools, tool_info, list_tools_meta, call_tool_chain) \
                      cannot be called from inside call_tool_chain. \
                      Inside the sandbox, you can only call backend tools: \
@@ -349,7 +349,7 @@ fn enhance_sandbox_error(
                     "sandbox execution error: {msg}\n\n\
                      HINT: '{var_name}' is not defined. If this is a tool name, \
                      call it as `backend_name.{var_name}({{args}})`. \
-                     Use search_tools or @gatemini://tools to find the correct backend."
+                     Use search_tools or @prismgate://tools to find the correct backend."
                 );
             }
         }

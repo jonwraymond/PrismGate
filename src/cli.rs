@@ -22,20 +22,20 @@ pub fn prismgate_cache_home() -> PathBuf {
     dirs::cache_dir()
         .or_else(dirs::config_dir)
         .or_else(dirs::data_dir)
-        .or_else(|| dirs::home_dir().map(|h| h.join(".gatemini_cache")))
-        .unwrap_or_else(|| PathBuf::from(".gatemini_cache"))
-        .join("gatemini")
+        .or_else(|| dirs::home_dir().map(|h| h.join(".prismgate_cache")))
+        .unwrap_or_else(|| PathBuf::from(".prismgate_cache"))
+        .join("prismgate")
 }
 
 #[derive(Parser)]
 #[command(
-    name = "gatemini",
+    name = "prismgate",
     version,
     about = "MCP gateway with meta-tool server"
 )]
 pub struct Cli {
     /// Path to the configuration file.
-    #[arg(short, long, default_value_os_t = prismgate_home().join("gatemini.yaml"))]
+    #[arg(short, long, default_value_os_t = prismgate_home().join("prismgate.yaml"))]
     pub config: PathBuf,
 
     /// Run in legacy direct stdio mode (1:1, no daemon).
@@ -133,19 +133,19 @@ mod tests {
 
     #[test]
     fn cli_purge_requires_explicit_confirmation() {
-        assert!(Cli::try_parse_from(["gatemini", "purge"]).is_err());
-        assert!(Cli::try_parse_from(["gatemini", "purge", "--yes"]).is_ok());
+        assert!(Cli::try_parse_from(["prismgate", "purge"]).is_err());
+        assert!(Cli::try_parse_from(["prismgate", "purge", "--yes"]).is_ok());
     }
 
     #[test]
     fn cli_accepts_doctor_command() {
-        let cli = Cli::try_parse_from(["gatemini", "doctor"]).unwrap();
+        let cli = Cli::try_parse_from(["prismgate", "doctor"]).unwrap();
         assert!(matches!(cli.command, Some(Command::Doctor)));
     }
 
     #[test]
     fn cli_accepts_upgrade_command_with_timeout() {
-        let cli = Cli::try_parse_from(["gatemini", "upgrade", "--timeout", "90s"]).unwrap();
+        let cli = Cli::try_parse_from(["prismgate", "upgrade", "--timeout", "90s"]).unwrap();
         assert!(matches!(
             cli.command,
             Some(Command::Upgrade { timeout }) if timeout == std::time::Duration::from_secs(90)

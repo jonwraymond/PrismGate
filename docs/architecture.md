@@ -1,6 +1,6 @@
 # Architecture
 
-Gatemini runs as a shared daemon with lightweight per-session proxies. The daemon owns backend connections and the live registry; each client process only bridges stdio to the daemon over a Unix socket.
+PrismGate runs as a shared daemon with lightweight per-session proxies. The daemon owns backend connections and the live registry; each client process only bridges stdio to the daemon over a Unix socket.
 
 ![IPC architecture](diagrams/ipc-architecture.svg){ .diagram-wide }
 
@@ -10,9 +10,9 @@ There are three operating modes:
 
 | Mode | Entry point | Purpose |
 |------|-------------|---------|
-| Proxy | `gatemini` | Default MCP client integration |
-| Direct | `gatemini --direct` | Single-session debugging with no daemon |
-| Daemon | `gatemini serve` | Foreground daemon process |
+| Proxy | `prismgate` | Default MCP client integration |
+| Direct | `prismgate --direct` | Single-session debugging with no daemon |
+| Daemon | `prismgate serve` | Foreground daemon process |
 
 Proxy mode is what most clients use. It performs no backend setup and no registry initialization itself. Its job is to connect to the daemon or start it when needed.
 
@@ -58,7 +58,7 @@ The flow is:
 2. try a fast-path connect
 3. if needed, acquire the lock
 4. connect again in case another proxy won the race
-5. spawn `gatemini serve`
+5. spawn `prismgate serve`
 6. wait for the socket to become connectable
 7. bridge stdio to the socket
 
@@ -68,7 +68,7 @@ After the handshake, the proxy forwards newline-delimited JSON-RPC messages whil
 
 ## Accept loop and shutdown
 
-After initialization, the daemon accepts client connections and creates a fresh `GateminiServer` per client. Those server instances are cheap because they share the real state through `Arc`s.
+After initialization, the daemon accepts client connections and creates a fresh `PrismGateServer` per client. Those server instances are cheap because they share the real state through `Arc`s.
 
 Shutdown triggers:
 
@@ -90,8 +90,8 @@ Socket resolution is deterministic so proxies and daemon always look in the same
 
 | Platform | Default path |
 |----------|--------------|
-| Linux with `XDG_RUNTIME_DIR` | `$XDG_RUNTIME_DIR/gatemini.sock` |
-| macOS and fallback | `/tmp/gatemini-$UID.sock` |
+| Linux with `XDG_RUNTIME_DIR` | `$XDG_RUNTIME_DIR/prismgate.sock` |
+| macOS and fallback | `/tmp/prismgate-$UID.sock` |
 
 Sibling paths are also used for:
 
@@ -108,11 +108,11 @@ The daemon owns:
 - config watch state
 - optional admin HTTP routes
 
-Clients never talk directly to backend MCP servers. They talk to Gatemini, and Gatemini forwards or orchestrates calls on their behalf.
+Clients never talk directly to backend MCP servers. They talk to PrismGate, and PrismGate forwards or orchestrates calls on their behalf.
 
 ## Session identity
 
-Each proxy connection receives a unique session ID (monotonically increasing `u64` from an `AtomicU64` counter in the accept loop). This ID is threaded through `GateminiServer` → `call_tool_chain` → `BackendManager::call_tool` so that dedicated instance pools can route calls to the correct per-session backend instance. Direct mode uses session ID `0`.
+Each proxy connection receives a unique session ID (monotonically increasing `u64` from an `AtomicU64` counter in the accept loop). This ID is threaded through `PrismGateServer` → `call_tool_chain` → `BackendManager::call_tool` so that dedicated instance pools can route calls to the correct per-session backend instance. Direct mode uses session ID `0`.
 
 ## Dedicated instance pools
 

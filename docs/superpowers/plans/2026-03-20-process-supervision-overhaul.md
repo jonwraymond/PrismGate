@@ -4,7 +4,7 @@
 
 **Goal:** Fix memory/swap issues caused by improper process cleanup — configurable kill grace periods, stderr capture, memory tracking, and pool replenish delay.
 
-**Architecture:** Extend existing BackendConfig/PoolConfig/HealthConfig with new supervision fields. Modify StdioBackend kill_child() to poll-wait instead of sleep. Add stderr ring buffer per backend. Add periodic RSS sampling via `ps` subprocess. Expose via new `gatemini://health` resource.
+**Architecture:** Extend existing BackendConfig/PoolConfig/HealthConfig with new supervision fields. Modify StdioBackend kill_child() to poll-wait instead of sleep. Add stderr ring buffer per backend. Add periodic RSS sampling via `ps` subprocess. Expose via new `prismgate://health` resource.
 
 **Tech Stack:** Rust, tokio, nix (Unix signals), std::process (Windows taskkill)
 
@@ -345,7 +345,7 @@ recent_stderr: Vec<String>,
 
 - [ ] **Step 2: Populate stderr in read_resource backend handler**
 
-In the `gatemini://backend/{name}` match arm, after building `BackendDetail`, add:
+In the `prismgate://backend/{name}` match arm, after building `BackendDetail`, add:
 
 ```rust
 // Get stderr from the backend if available
@@ -368,7 +368,7 @@ Run: `cargo clippy --all-targets --all-features -- -D warnings && cargo test`
 
 ```bash
 git add src/resources.rs src/backend/mod.rs
-git commit -m "feat: expose backend stderr in gatemini://backend/{name} resource"
+git commit -m "feat: expose backend stderr in prismgate://backend/{name} resource"
 ```
 
 ---
@@ -672,18 +672,18 @@ git commit -m "feat: add memory check phase to health checker with auto-restart"
 
 ## Chunk 5: Health Resource + Stop Fix + Cleanup Guard
 
-### Task 8: Add gatemini://health resource
+### Task 8: Add prismgate://health resource
 
 **Files:**
 - Modify: `src/resources.rs`
 
 - [ ] **Step 1: Add to `list_static_resources()`**
 
-Add a new `Resource` entry for `gatemini://health`:
+Add a new `Resource` entry for `prismgate://health`:
 
 ```rust
 Annotated::new(
-    RawResource::new("gatemini://health", "health")
+    RawResource::new("prismgate://health", "health")
         .with_title("Backend Health & Memory")
         .with_description("Per-backend PID, RSS, peak RSS, memory limit, and stderr")
         .with_mime_type("application/json"),
@@ -723,12 +723,12 @@ Annotated::new(
 
 ```bash
 git add src/resources.rs
-git commit -m "feat: add gatemini://health resource with memory stats and stderr"
+git commit -m "feat: add prismgate://health resource with memory stats and stderr"
 ```
 
 ---
 
-### Task 9: Fix stop_all() drain and gatemini stop timeout
+### Task 9: Fix stop_all() drain and prismgate stop timeout
 
 **Files:**
 - Modify: `src/backend/mod.rs`
@@ -884,8 +884,8 @@ Under `## Important implementation notes`:
 ## Process supervision
 
 - `shutdown_grace_period` (default 5s) controls SIGTERM → SIGKILL window per backend
-- backend stderr captured in ring buffer (200 lines), exposed via `gatemini://backend/{name}`
-- `gatemini://health` shows per-backend PID, RSS, peak RSS, memory limit
+- backend stderr captured in ring buffer (200 lines), exposed via `prismgate://backend/{name}`
+- `prismgate://health` shows per-backend PID, RSS, peak RSS, memory limit
 - `max_memory_mb` auto-restarts backends exceeding RSS limit (with 60s cooldown)
 - pool `replenish_delay` (default 2s) prevents memory spike when recycling instances
 - prerequisite cleanup sends SIGTERM, waits 5s, then SIGKILL

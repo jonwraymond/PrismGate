@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# MCP client integration test for gatemini
+# MCP client integration test for prismgate
 # Exercises: initialize, tools/list, tools/call (search, list, info, call_tool_chain), shutdown
 set -euo pipefail
 
-BINARY="./target/release/gatemini"
+BINARY="./target/release/prismgate"
 CONFIG="config/test-smoke.yaml"
-LOG="/tmp/gatemini-mcp-test.log"
-FIFO_IN="/tmp/gatemini_stdin_$$"
-FIFO_OUT="/tmp/gatemini_stdout_$$"
+LOG="/tmp/prismgate-mcp-test.log"
+FIFO_IN="/tmp/prismgate_stdin_$$"
+FIFO_OUT="/tmp/prismgate_stdout_$$"
 PASS=0
 FAIL=0
 TOTAL=0
@@ -19,9 +19,9 @@ YELLOW='\033[1;33m'
 NC='\033[0m'
 
 cleanup() {
-    if [[ -n "${GATEMINI_PID:-}" ]] && kill -0 "$GATEMINI_PID" 2>/dev/null; then
-        kill "$GATEMINI_PID" 2>/dev/null || true
-        wait "$GATEMINI_PID" 2>/dev/null || true
+    if [[ -n "${PRISMGATE_PID:-}" ]] && kill -0 "$PRISMGATE_PID" 2>/dev/null; then
+        kill "$PRISMGATE_PID" 2>/dev/null || true
+        wait "$PRISMGATE_PID" 2>/dev/null || true
     fi
     # Close FDs
     exec 7>&- 2>/dev/null || true
@@ -111,15 +111,15 @@ send_notification() {
     echo "$msg" >&7
 }
 
-echo -e "${YELLOW}=== Gatemini MCP Client Integration Test ===${NC}"
+echo -e "${YELLOW}=== PrismGate MCP Client Integration Test ===${NC}"
 echo ""
 
 # Create named pipes
 mkfifo "$FIFO_IN" "$FIFO_OUT"
 
-# Start gatemini
+# Start prismgate
 $BINARY -c "$CONFIG" < "$FIFO_IN" > "$FIFO_OUT" 2>"$LOG" &
-GATEMINI_PID=$!
+PRISMGATE_PID=$!
 
 # Open FDs: 7 for writing to stdin, 8 for reading from stdout
 exec 7>"$FIFO_IN"
@@ -337,7 +337,7 @@ fi
 # Wait for process to exit
 sleep 1
 TOTAL=$((TOTAL + 1))
-if ! kill -0 "$GATEMINI_PID" 2>/dev/null; then
+if ! kill -0 "$PRISMGATE_PID" 2>/dev/null; then
     PASS=$((PASS + 1))
     echo -e "  ${GREEN}✓${NC} process exited cleanly"
 else

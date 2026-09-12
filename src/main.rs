@@ -1,4 +1,4 @@
-//! Entry point and shared initialization for the gatemini runtime.
+//! Entry point and shared initialization for the prismgate runtime.
 //!
 //! This file wires together config loading, tracing, secrets, cache restore,
 //! backend startup, and mode dispatch for proxy, direct, and daemon execution.
@@ -92,7 +92,7 @@ pub async fn initialize(config_path: &Path) -> Result<InitializedGateway> {
     info!(
         config_path = %config_path.display(),
         backends = config.backends.len(),
-        "gatemini starting"
+        "prismgate starting"
     );
 
     // Create shared state
@@ -268,7 +268,7 @@ async fn run_direct(gw: InitializedGateway) -> Result<()> {
     let sandbox_semaphore = Arc::new(tokio::sync::Semaphore::new(
         gw.config.sandbox.max_concurrent_sandboxes as usize,
     ));
-    let server = server::GateminiServer::new(
+    let server = server::PrismGateServer::new(
         Arc::clone(&gw.registry),
         Arc::clone(&gw.backend_manager),
         Arc::clone(&gw.tracker),
@@ -335,7 +335,7 @@ async fn main() -> Result<()> {
             run_direct(gw).await
         }
 
-        // Daemon mode: gatemini serve
+        // Daemon mode: prismgate serve
         // Bind socket FIRST so the proxy can connect immediately while
         // initialize() resolves secrets and loads embedding models.
         (

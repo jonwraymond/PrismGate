@@ -20,7 +20,7 @@ Config loading follows this order:
 Locations, in order:
 
 1. `~/.env`
-2. the standard Gatemini config directory, for example `~/.config/gatemini/.env`
+2. the standard PrismGate config directory, for example `~/.config/prismgate/.env`
 3. a `.env` next to the chosen config file
 
 Later files override earlier ones.

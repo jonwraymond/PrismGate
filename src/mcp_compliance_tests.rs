@@ -1,6 +1,6 @@
 //! MCP protocol compliance tests.
 //!
-//! Tests gatemini as an MCP server (front-door) using an in-process rmcp client
+//! Tests prismgate as an MCP server (front-door) using an in-process rmcp client
 //! connected via `tokio::io::duplex`. Validates protocol version, capabilities,
 //! tool listing/calling, resources, prompts, and error handling.
 
@@ -15,10 +15,10 @@ mod tests {
 
     use crate::backend::BackendManager;
     use crate::registry::ToolRegistry;
-    use crate::server::GateminiServer;
+    use crate::server::PrismGateServer;
     use crate::testutil::{MockBackend, insert_mock};
 
-    /// Create a GateminiServer with mock backends, connect via duplex,
+    /// Create a PrismGateServer with mock backends, connect via duplex,
     /// return the rmcp client peer for protocol testing.
     async fn setup_mcp_client() -> (
         rmcp::service::Peer<rmcp::RoleClient>,
@@ -30,7 +30,7 @@ mod tests {
         let mock = MockBackend::new("test-backend", Duration::ZERO);
         insert_mock(&manager, &registry, &mock).await;
 
-        let server = GateminiServer::new(
+        let server = PrismGateServer::new(
             Arc::clone(&registry),
             manager,
             Arc::new(crate::tracker::CallTracker::new()),
@@ -104,14 +104,14 @@ mod tests {
         drop(mock);
     }
 
-    // --- 4A: Front-door tests (gatemini as server) ---
+    // --- 4A: Front-door tests (prismgate as server) ---
 
     #[tokio::test]
     async fn test_initialize_handshake() {
         let manager = BackendManager::new();
         let registry = ToolRegistry::new();
 
-        let server = GateminiServer::new(
+        let server = PrismGateServer::new(
             registry,
             manager,
             Arc::new(crate::tracker::CallTracker::new()),
@@ -406,7 +406,7 @@ mod tests {
         let (peer, _, _) = setup_mcp_client().await;
 
         let result = peer
-            .read_resource(ReadResourceRequestParams::new("gatemini://overview"))
+            .read_resource(ReadResourceRequestParams::new("prismgate://overview"))
             .await
             .unwrap();
 
@@ -437,7 +437,7 @@ mod tests {
 
         let result = peer
             .read_resource(ReadResourceRequestParams::new(
-                "gatemini://guide/call_tool_chain",
+                "prismgate://guide/call_tool_chain",
             ))
             .await
             .unwrap();
@@ -521,7 +521,7 @@ mod tests {
         assert!(result.is_err(), "nonexistent prompt should return error");
     }
 
-    // --- 4B: Back-door test (gatemini as client to backends) ---
+    // --- 4B: Back-door test (prismgate as client to backends) ---
 
     #[tokio::test]
     async fn test_backend_tool_call_params() {

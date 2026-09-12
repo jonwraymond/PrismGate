@@ -7,7 +7,7 @@ use nix::unistd::Pid;
 
 use crate::ipc::socket;
 
-/// Restart a running gatemini daemon by sending SIGTERM and waiting for it to exit.
+/// Restart a running prismgate daemon by sending SIGTERM and waiting for it to exit.
 ///
 /// The daemon's client drain timeout (default 30s) plus margin gives us a 45s wait.
 /// Connected proxies will detect the disconnect and auto-reconnect, spawning a new
@@ -56,7 +56,7 @@ pub fn run() -> Result<()> {
 #[cfg(not(unix))]
 pub fn run() -> anyhow::Result<()> {
     println!(
-        "`gatemini restart` is not supported on Windows because the daemon mode uses Unix sockets."
+        "`prismgate restart` is not supported on Windows because the daemon mode uses Unix sockets."
     );
     Ok(())
 }

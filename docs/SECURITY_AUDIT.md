@@ -15,11 +15,11 @@ Last audit: 2026-05-24 | Cargo.lock: 655 dependencies
 ```
 aws-lc-sys 0.38.0
 └── aws-lc-rs 1.16.1
-    ├── rustls 0.23.37 (→ gatemini direct dep)
-    │   ├── reqwest 0.13.2 (→ gatemini direct + rmcp)
-    │   └── bitwarden-core 2.0.0 (→ bitwarden 2.0.0 → gatemini)
+    ├── rustls 0.23.37 (→ prismgate direct dep)
+    │   ├── reqwest 0.13.2 (→ prismgate direct + rmcp)
+    │   └── bitwarden-core 2.0.0 (→ bitwarden 2.0.0 → prismgate)
     ├── quinn-proto 0.11.14 (→ reqwest)
-    └── deno_crypto 0.227.0 (→ rustyscript 0.12.3 → gatemini sandbox)
+    └── deno_crypto 0.227.0 (→ rustyscript 0.12.3 → prismgate sandbox)
 ```
 **Note:** `aws-lc-rs` has released 1.17+ (pins `aws-lc-sys >=0.39.0`), but `rustls 0.23.37` pins `aws-lc-rs ~1.12`. Requires a `rustls` upgrade in our dependency tree for resolution.
 
@@ -32,8 +32,8 @@ aws-lc-sys 0.38.0
 **Dependency chain** (all transitive):
 ```
 rsa 0.9.10
-├── deno_crypto 0.227.0 (→ rustyscript 0.12.3 → gatemini sandbox)
-└── bitwarden-crypto 2.0.0 (→ bitwarden 2.0.0 → gatemini)
+├── deno_crypto 0.227.0 (→ rustyscript 0.12.3 → prismgate sandbox)
+└── bitwarden-crypto 2.0.0 (→ bitwarden 2.0.0 → prismgate)
 ```
 **Status:** No upstream fix exists for `rsa 0.9.x`. Both consumers (deno_crypto, bitwarden-crypto) are transitive deps we cannot patch. Ignored in CI.
 
@@ -46,14 +46,14 @@ rsa 0.9.10
 **Dependency chain** (all transitive):
 ```
 time 0.3.44
-├── zxcvbn 3.1.0 (→ bitwarden-core 2.0.0 → bitwarden 2.0.0 → gatemini)
-└── serde_with 3.14.1 (→ bitwarden-api-* → bitwarden-core → bitwarden → gatemini)
+├── zxcvbn 3.1.0 (→ bitwarden-core 2.0.0 → bitwarden 2.0.0 → prismgate)
+└── serde_with 3.14.1 (→ bitwarden-api-* → bitwarden-core → bitwarden → prismgate)
 ```
 **Status:** Both paths go through `bitwarden`. Upstream `bitwarden` crate needs to bump its deps.
 
 ## Unmaintained Crates
 
-All transitive — cannot fix directly from gatemini.
+All transitive — cannot fix directly from prismgate.
 
 | Crate | Version | Advisory | Via |
 |---|---|---|---|
@@ -74,7 +74,7 @@ All transitive — cannot fix directly from gatemini.
 
 ## Ignored in CI
 
-All of the above are ignored via `--ignore` flags in `.github/workflows/security.yml` because they are transitive dependencies through `rustyscript` (V8 sandbox) or `bitwarden` (secret resolution) that we cannot upgrade from gatemini.
+All of the above are ignored via `--ignore` flags in `.github/workflows/security.yml` because they are transitive dependencies through `rustyscript` (V8 sandbox) or `bitwarden` (secret resolution) that we cannot upgrade from prismgate.
 
 ## Process
 

@@ -33,6 +33,6 @@ can list it.
 
 ## Resource
 
-`gatemini://resume` reminds the model to call `session_search(card=true)`.
+`prismgate://resume` reminds the model to call `session_search(card=true)`.
 
 The `session-store` cargo feature is **on by default**.

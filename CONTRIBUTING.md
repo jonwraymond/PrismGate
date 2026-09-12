@@ -1,4 +1,4 @@
-# Contributing to Gatemini
+# Contributing to PrismGate
 
 This guide reflects the current repo layout and build surface.
 

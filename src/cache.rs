@@ -26,14 +26,14 @@ pub fn default_cache_path() -> PathBuf {
 }
 
 /// Derive cache path from config path (legacy, kept for backward compatibility).
-/// e.g. config/gatemini.yaml -> config/.gatemini.cache.json
+/// e.g. config/prismgate.yaml -> config/.prismgate.cache.json
 #[cfg(test)]
 pub fn cache_path_from_config(config_path: &Path) -> PathBuf {
     let dir = config_path.parent().unwrap_or(Path::new("."));
     let stem = config_path
         .file_stem()
         .and_then(|s| s.to_str())
-        .unwrap_or("gatemini");
+        .unwrap_or("prismgate");
     dir.join(format!(".{stem}.cache.json"))
 }
 
@@ -164,8 +164,8 @@ mod tests {
 
     #[test]
     fn test_cache_path_from_config() {
-        let path = cache_path_from_config(Path::new("config/gatemini.yaml"));
-        assert_eq!(path, PathBuf::from("config/.gatemini.cache.json"));
+        let path = cache_path_from_config(Path::new("config/prismgate.yaml"));
+        assert_eq!(path, PathBuf::from("config/.prismgate.cache.json"));
 
         let path = cache_path_from_config(Path::new("/etc/myapp.yml"));
         assert_eq!(path, PathBuf::from("/etc/.myapp.cache.json"));

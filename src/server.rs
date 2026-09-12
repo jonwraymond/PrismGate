@@ -167,7 +167,7 @@ pub struct SessionNoteParams {
 
 /// The MCP server exposed to Claude Code over stdio.
 #[derive(Clone)]
-pub struct GateminiServer {
+pub struct PrismGateServer {
     pub registry: Arc<ToolRegistry>,
     pub backend_manager: Arc<BackendManager>,
     pub tracker: Arc<crate::tracker::CallTracker>,
@@ -188,7 +188,7 @@ pub struct GateminiServer {
     tool_router: ToolRouter<Self>,
 }
 
-impl GateminiServer {
+impl PrismGateServer {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         registry: Arc<ToolRegistry>,
@@ -226,7 +226,7 @@ impl GateminiServer {
 }
 
 #[tool_router]
-impl GateminiServer {
+impl PrismGateServer {
     #[tool(
         description = "Read or search a retained raw tool result by handle without rerunning its backend. Session-local; expires after 30 minutes or FIFO eviction. Returns a bounded UTF-8 page and next_offset. Literal query searches from offset."
     )]
@@ -744,7 +744,7 @@ mod flood_tests {
             &MockBackend::new("guard", Duration::ZERO),
         )
         .await;
-        let mut server = GateminiServer::new(
+        let mut server = PrismGateServer::new(
             registry,
             manager,
             Arc::new(crate::tracker::CallTracker::new()),
@@ -907,7 +907,7 @@ mod telemetry_tests {
         let registry = ToolRegistry::new();
         let mock = MockBackend::new("retained", Duration::ZERO);
         insert_mock(&manager, &registry, &mock).await;
-        let server = GateminiServer::new(
+        let server = PrismGateServer::new(
             registry,
             manager,
             Arc::new(CallTracker::new()),
@@ -979,7 +979,7 @@ mod telemetry_tests {
         let registry = ToolRegistry::new();
         let mock = MockBackend::new("telemetry", Duration::ZERO);
         insert_mock(&manager, &registry, &mock).await;
-        let server = GateminiServer::new(
+        let server = PrismGateServer::new(
             registry,
             manager,
             Arc::clone(&tracker),
@@ -1018,7 +1018,7 @@ mod telemetry_tests {
 }
 
 #[tool_handler]
-impl ServerHandler for GateminiServer {
+impl ServerHandler for PrismGateServer {
     fn get_info(&self) -> ServerInfo {
         ServerInfo::new(
             ServerCapabilities::builder()
@@ -1029,7 +1029,7 @@ impl ServerHandler for GateminiServer {
         )
         .with_protocol_version(ProtocolVersion::V_2025_11_25)
         .with_instructions(
-                "gatemini is an MCP gateway that aggregates tools from multiple backend MCP servers.\n\n\
+                "prismgate is an MCP gateway that aggregates tools from multiple backend MCP servers.\n\n\
                  IMPORTANT: Backend tools (e.g. firecrawl_search, web_search_exa) are NOT direct MCP tools. \
                  Do NOT call them directly. They MUST be called via call_tool_chain.\n\n\
                  ## Discovery Workflow (use progressive disclosure to save context)\n\
@@ -1044,18 +1044,18 @@ impl ServerHandler for GateminiServer {
                  - call_tool_chain: Execute TypeScript with tools as `backend.tool_name(args)`. Use __interfaces for introspection\n\n\
                  IMPORTANT: Never guess parameter names. Always call tool_info(detail=\"full\") or __getToolInterface(\"backend.tool\") before first use of any tool.\n\n\
                  IMPORTANT: Inside call_tool_chain you can ONLY call backend tools (e.g. `exa.web_search_exa`). \
-                 You CANNOT call gatemini meta-tools (search_tools, tool_info, list_tools_meta) from inside the sandbox. \
+                 You CANNOT call prismgate meta-tools (search_tools, tool_info, list_tools_meta) from inside the sandbox. \
                  Use meta-tools as separate MCP tool calls OUTSIDE of call_tool_chain.\n\n\
                  ## Resources (load on-demand via @ mention)\n\
-                 - @gatemini://overview → gateway guide with live tool/backend counts\n\
-                 - @gatemini://backends → all backends with status and tool counts\n\
-                 - @gatemini://tools → compact index of ALL tools (~3k tokens vs ~40k for full schemas)\n\
-                 - @gatemini://tool/{name} → full schema for one tool (on-demand)\n\
-                 - @gatemini://backend/{name} → backend details + tool list\n\n\
+                 - @prismgate://overview → gateway guide with live tool/backend counts\n\
+                 - @prismgate://backends → all backends with status and tool counts\n\
+                 - @prismgate://tools → compact index of ALL tools (~3k tokens vs ~40k for full schemas)\n\
+                 - @prismgate://tool/{name} → full schema for one tool (on-demand)\n\
+                 - @prismgate://backend/{name} → backend details + tool list\n\n\
                  ## Prompts\n\
-                 - /mcp__gatemini__discover → guided progressive discovery walkthrough\n\
-                 - /mcp__gatemini__find_tool → search + top match's full schema + execution example\n\
-                 - /mcp__gatemini__backend_status → health/status table for all backends\n\n\
+                 - /mcp__prismgate__discover → guided progressive discovery walkthrough\n\
+                 - /mcp__prismgate__find_tool → search + top match's full schema + execution example\n\
+                 - /mcp__prismgate__backend_status → health/status table for all backends\n\n\
                  ## Naming Conventions\n\
                  - ALWAYS use qualified names: `backend.tool_name` (e.g. `exa.web_search_exa`)\n\
                  - Bare names (e.g. `web_search`) may not resolve if the backend is still starting\n\

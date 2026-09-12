@@ -234,10 +234,10 @@ mod tests {
     #[tokio::test]
     async fn test_ensure_prerequisite_skips_when_running() {
         // Use a pattern that matches a process guaranteed to be running.
-        // On macOS/Linux, our own test binary has "gatemini" in its path.
+        // On macOS/Linux, our own test binary has "prismgate" in its path.
         // Fall back to "launchd" or "init" as universal system processes.
-        let pattern = if is_process_running("gatemini").await.unwrap_or(false) {
-            "gatemini"
+        let pattern = if is_process_running("prismgate").await.unwrap_or(false) {
+            "prismgate"
         } else {
             "init"
         };

@@ -158,7 +158,7 @@ impl JsonRpcTracker {
                 "id": id,
                 "error": {
                     "code": -32000,
-                    "message": "Gatemini daemon disconnected before this request completed; retry the request on the still-open client connection."
+                    "message": "PrismGate daemon disconnected before this request completed; retry the request on the still-open client connection."
                 }
             });
             let mut bytes = serde_json::to_vec(&response)
@@ -224,7 +224,7 @@ fn request_id_key(id: &Value) -> Option<String> {
 }
 
 fn proxy_ping_id(sequence: u64) -> String {
-    format!("__gatemini_proxy_ping:{}:{sequence}", std::process::id())
+    format!("__prismgate_proxy_ping:{}:{sequence}", std::process::id())
 }
 
 fn is_response_to_id(line: &[u8], expected_id: &str) -> bool {
@@ -472,7 +472,7 @@ where
     // `debug_assert_eq!`, which compiles to nothing in release builds, so a
     // probe was blindly forwarded to the daemon's socket as if it were
     // `initialize`. The daemon then choked on it and closed the connection,
-    // which the client saw as gatemini being unreachable.
+    // which the client saw as prismgate being unreachable.
     //
     // Fix: loop on stdin until we actually see an `InitializeRequest`. Any
     // other *request* (has an `id`) gets answered directly, without ever
@@ -970,7 +970,7 @@ async fn flush_queued_client_messages(
 /// Send cached handshake messages to the new daemon and discard the server's response.
 ///
 /// The original initialize response was already forwarded to Claude Code during
-/// the initial handshake. Since gatemini always advertises identical capabilities,
+/// the initial handshake. Since prismgate always advertises identical capabilities,
 /// the new response is safe to discard.
 #[cfg(unix)]
 async fn replay_handshake(stream: UnixStream, cache: &HandshakeCache) -> Result<UnixStream> {

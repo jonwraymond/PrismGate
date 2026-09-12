@@ -1,4 +1,4 @@
-# React Dashboard for Gatemini
+# React Dashboard for PrismGate
 
 **Date:** 2026-03-24
 **Status:** Approved
@@ -29,7 +29,7 @@
 ## Pages / Sections
 
 ### 1. Header Bar
-- Gatemini logo/name + status dot (green/yellow)
+- PrismGate logo/name + status dot (green/yellow)
 - Backend count, tool count, uptime
 - Context savings chip (bytes returned vs processed, % saved)
 

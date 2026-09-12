@@ -2,7 +2,7 @@
 
 This page separates two things:
 
-- what Gatemini already tracks in-process
+- what PrismGate already tracks in-process
 - what would still need to be added for end-to-end OTEL-style observability
 
 ## Current in-process observability
@@ -24,11 +24,11 @@ The current code already provides four useful layers.
 - total bytes processed (raw, before reduction) across the session
 - session start time for uptime tracking
 
-The `record_bytes(tool_name, returned, processed)` method is called after every `call_tool_chain` output pass. `session_stats()` aggregates all of this into a `SessionStats` struct exposed via the `gatemini://stats` resource.
+The `record_bytes(tool_name, returned, processed)` method is called after every `call_tool_chain` output pass. `session_stats()` aggregates all of this into a `SessionStats` struct exposed via the `prismgate://stats` resource.
 
 ### Output reduction accounting
 
-The output pipeline (smart truncation, JSON auto-chunking, uniform array collapse, intent filtering) feeds directly into byte tracking. This means `gatemini://stats` shows real-time context savings for the current session without any external tooling.
+The output pipeline (smart truncation, JSON auto-chunking, uniform array collapse, intent filtering) feeds directly into byte tracking. This means `prismgate://stats` shows real-time context savings for the current session without any external tooling.
 
 ### Backend health state
 
@@ -51,7 +51,7 @@ The repo does not currently expose:
 
 ## Practical next step
 
-The output pipeline already feeds byte data into `CallTracker`. The gap is on the discovery side: `search_tools`, `tool_info`, and `list_tools_meta` do not yet call `record_bytes`. Adding that would let you compare brief and full responses using the actual registry in production rather than documentation examples, and it would surface discovery overhead alongside execution overhead in `gatemini://stats`.
+The output pipeline already feeds byte data into `CallTracker`. The gap is on the discovery side: `search_tools`, `tool_info`, and `list_tools_meta` do not yet call `record_bytes`. Adding that would let you compare brief and full responses using the actual registry in production rather than documentation examples, and it would surface discovery overhead alongside execution overhead in `prismgate://stats`.
 
 ## Proposed OTEL shape
 

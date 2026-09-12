@@ -118,7 +118,7 @@ mod tests {
 
     #[test]
     fn classify_initialize_response() {
-        let line = br#"{"jsonrpc":"2.0","id":0,"result":{"protocolVersion":"2024-11-05","capabilities":{"tools":{}},"serverInfo":{"name":"gatemini","version":"1.0.0"}}}"#;
+        let line = br#"{"jsonrpc":"2.0","id":0,"result":{"protocolVersion":"2024-11-05","capabilities":{"tools":{}},"serverInfo":{"name":"prismgate","version":"1.0.0"}}}"#;
         assert_eq!(classify(line), McpMessage::InitializeResponse);
     }
 

@@ -1,6 +1,6 @@
 # Codebase Map
 
-This page is the high-level source map for Gatemini as it exists today.
+This page is the high-level source map for PrismGate as it exists today.
 
 ## Startup path
 
@@ -25,14 +25,14 @@ Key file:
 
 `src/cli.rs` defines the public command surface and the standard platform paths:
 
-- config home: platform config directory plus `gatemini/`
-- cache home: platform cache directory plus `gatemini/`
+- config home: platform config directory plus `prismgate/`
+- cache home: platform cache directory plus `prismgate/`
 - commands: `serve`, `status`, `stop`, `restart`
 - direct mode: `--direct`
 
 ## IPC layer
 
-The IPC layer is the difference between Gatemini and a one-process-per-session MCP setup.
+The IPC layer is the difference between PrismGate and a one-process-per-session MCP setup.
 
 Files:
 
@@ -46,8 +46,8 @@ Files:
 
 Important runtime facts:
 
-- Linux prefers `$XDG_RUNTIME_DIR/gatemini.sock` when available.
-- macOS and the fallback path use `/tmp/gatemini-$UID.sock`.
+- Linux prefers `$XDG_RUNTIME_DIR/prismgate.sock` when available.
+- macOS and the fallback path use `/tmp/prismgate-$UID.sock`.
 - the daemon binds the socket before the heavy initialization path finishes
 - proxy startup uses flock plus a second connect check to avoid duplicate daemons
 - reconnect replays the cached MCP initialize handshake
@@ -68,7 +68,7 @@ Public tools:
 
 Public resources and prompts are implemented separately:
 
-- `src/resources.rs`: static and template resources, `gatemini://llms` and `gatemini://llms-full` generation, template completion
+- `src/resources.rs`: static and template resources, `prismgate://llms` and `prismgate://llms-full` generation, template completion
 - `src/prompts.rs`: live prompts driven by registry and tracker state
 
 The advertised protocol version is `2025-06-18`.

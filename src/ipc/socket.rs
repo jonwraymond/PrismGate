@@ -13,19 +13,19 @@ use serde::{Deserialize, Serialize};
 /// MCP subprocess may not inherit `$TMPDIR`). Using an inconsistent path causes
 /// multiple daemons to spawn — each at a different socket.
 ///
-/// - Linux: `$XDG_RUNTIME_DIR/gatemini.sock` (guaranteed consistent per-user by spec)
-/// - macOS/fallback: `/tmp/gatemini-$UID.sock` (deterministic, user-isolated)
+/// - Linux: `$XDG_RUNTIME_DIR/prismgate.sock` (guaranteed consistent per-user by spec)
+/// - macOS/fallback: `/tmp/prismgate-$UID.sock` (deterministic, user-isolated)
 #[cfg(unix)]
 pub fn default_socket_path() -> PathBuf {
     // XDG_RUNTIME_DIR is set by systemd on Linux — guaranteed consistent per-user.
     if let Ok(dir) = std::env::var("XDG_RUNTIME_DIR") {
-        return PathBuf::from(dir).join("gatemini.sock");
+        return PathBuf::from(dir).join("prismgate.sock");
     }
 
     // macOS + fallback: use /tmp with UID for user isolation.
     // Do NOT use $TMPDIR — it varies between shell sessions and spawned processes.
     let uid = getuid();
-    PathBuf::from(format!("/tmp/gatemini-{}.sock", uid))
+    PathBuf::from(format!("/tmp/prismgate-{}.sock", uid))
 }
 
 /// Path to the flock lockfile (sibling of the socket).
@@ -36,7 +36,7 @@ pub fn lock_path(socket: &Path) -> PathBuf {
 pub fn daemon_log_path() -> PathBuf {
     dirs::cache_dir()
         .unwrap_or_else(std::env::temp_dir)
-        .join("gatemini")
+        .join("prismgate")
         .join("daemon.log")
 }
 
@@ -58,7 +58,7 @@ fn socket_stem(socket: &Path) -> String {
     socket
         .file_stem()
         .and_then(|s| s.to_str())
-        .unwrap_or("gatemini")
+        .unwrap_or("prismgate")
         .to_string()
 }
 
@@ -321,7 +321,7 @@ pub fn try_acquire_lock(socket: &Path) -> io::Result<std::fs::File> {
 #[cfg(not(unix))]
 pub fn default_socket_path() -> PathBuf {
     let mut path = std::env::temp_dir();
-    path.push("gatemini.sock");
+    path.push("prismgate.sock");
     path
 }
 
@@ -343,18 +343,18 @@ mod tests {
     #[test]
     fn socket_path_is_deterministic() {
         let path = default_socket_path();
-        // On Linux with XDG_RUNTIME_DIR, name is gatemini.sock
-        // On macOS/fallback, name is gatemini-$UID.sock
+        // On Linux with XDG_RUNTIME_DIR, name is prismgate.sock
+        // On macOS/fallback, name is prismgate-$UID.sock
         let name = path.file_name().unwrap().to_str().unwrap();
-        assert!(name.starts_with("gatemini"));
+        assert!(name.starts_with("prismgate"));
         assert!(name.ends_with(".sock"));
     }
 
     #[test]
     fn sibling_paths() {
-        let sock = PathBuf::from("/tmp/gatemini.sock");
-        assert_eq!(lock_path(&sock), PathBuf::from("/tmp/gatemini.lock"));
-        assert_eq!(pid_path(&sock), PathBuf::from("/tmp/gatemini.pid"));
+        let sock = PathBuf::from("/tmp/prismgate.sock");
+        assert_eq!(lock_path(&sock), PathBuf::from("/tmp/prismgate.lock"));
+        assert_eq!(pid_path(&sock), PathBuf::from("/tmp/prismgate.pid"));
     }
 
     #[test]
@@ -362,41 +362,41 @@ mod tests {
         let path = daemon_log_path();
         assert_eq!(path.file_name().unwrap(), "daemon.log");
         assert!(
-            path.components().any(|c| c.as_os_str() == "gatemini"),
-            "daemon log should live under a gatemini cache directory"
+            path.components().any(|c| c.as_os_str() == "prismgate"),
+            "daemon log should live under a prismgate cache directory"
         );
     }
 
     #[test]
     fn upgrade_paths_are_deterministic_and_pid_scoped() {
-        let sock = PathBuf::from("/tmp/gatemini-503.sock");
+        let sock = PathBuf::from("/tmp/prismgate-503.sock");
 
         assert_eq!(
             staged_socket_path(&sock, 42),
-            PathBuf::from("/tmp/gatemini-503.upgrade-42.sock")
+            PathBuf::from("/tmp/prismgate-503.upgrade-42.sock")
         );
         assert_eq!(
             drain_socket_path(&sock, 1234),
-            PathBuf::from("/tmp/gatemini-503.drain-1234.sock")
+            PathBuf::from("/tmp/prismgate-503.drain-1234.sock")
         );
         assert_eq!(
             drain_pid_path(&sock, 1234),
-            PathBuf::from("/tmp/gatemini-503.drain-1234.pid")
+            PathBuf::from("/tmp/prismgate-503.drain-1234.pid")
         );
         assert_eq!(
             generation_info_path(&sock),
-            PathBuf::from("/tmp/gatemini-503.info.json")
+            PathBuf::from("/tmp/prismgate-503.info.json")
         );
         assert_eq!(
             drain_generation_info_path(&sock, 1234),
-            PathBuf::from("/tmp/gatemini-503.drain-1234.info.json")
+            PathBuf::from("/tmp/prismgate-503.drain-1234.info.json")
         );
     }
 
     #[test]
     fn owner_cleanup_preserves_foreign_generation_files() {
         let dir = tempfile::tempdir().unwrap();
-        let sock = dir.path().join("gatemini.sock");
+        let sock = dir.path().join("prismgate.sock");
         fs::write(&sock, "").unwrap();
         fs::write(pid_path(&sock), "111").unwrap();
         fs::write(generation_info_path(&sock), "{}").unwrap();
@@ -432,7 +432,7 @@ mod tests {
     #[test]
     fn drain_generation_discovery_filters_dead_pids() {
         let dir = tempfile::tempdir().unwrap();
-        let sock = dir.path().join("gatemini.sock");
+        let sock = dir.path().join("prismgate.sock");
         let alive_pid = std::process::id() as i32;
         let dead_pid = 999_999;
 
@@ -447,13 +447,13 @@ mod tests {
         assert!(
             drains[0]
                 .pid_path
-                .ends_with(format!("gatemini.drain-{alive_pid}.pid"))
+                .ends_with(format!("prismgate.drain-{alive_pid}.pid"))
         );
     }
 
     #[test]
     fn nonexistent_pid_reports_dead() {
-        let sock = PathBuf::from("/tmp/gatemini-test-nonexistent.sock");
+        let sock = PathBuf::from("/tmp/prismgate-test-nonexistent.sock");
         assert!(!is_daemon_alive(&sock));
     }
 }

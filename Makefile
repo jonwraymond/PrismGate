@@ -1,7 +1,7 @@
 INSTALL_DIR := $(HOME)/.local/bin
 CONFIG_DIR := $(HOME)/.prismgate
-CONFIG_FILE := $(CONFIG_DIR)/gatemini.yaml
-BINARY := gatemini
+CONFIG_FILE := $(CONFIG_DIR)/prismgate.yaml
+BINARY := prismgate
 CARGO_TOML := Cargo.toml
 
 # Extract current version from Cargo.toml

@@ -27,7 +27,7 @@ Curated external research on building effective MCP servers, organized by topic.
 ### Anthropic: Tool Search Tool Documentation
 - **URL**: https://platform.claude.com/docs/en/agents-and-tools/tool-use/tool-search-tool
 - **Key finding**: Keep 3-5 tools always loaded, defer the rest. API returns `tool_reference` blocks automatically expanded.
-- **Relevance**: PrismGate's 7 meta-tools serve as the always-loaded set.
+- **Relevance**: PrismGate's 13 meta-tools serve as the always-loaded set.
 
 ### Layered.dev: Schema Bloat Token Tax
 - **URL**: https://layered.dev/mcp-tool-schema-bloat-the-hidden-token-tax-and-how-to-fix-it/
@@ -52,7 +52,7 @@ Curated external research on building effective MCP servers, organized by topic.
 ### Meta-Tool Pattern: Bounded Context Packs
 - **URL**: https://blog.synapticlabs.ai/bounded-context-packs-meta-tool-pattern
 - **Key finding**: Meta-tools serve as the discovery interface, exposing searchTools and getTypeDefinitions instead of hundreds of narrow tools.
-- **Relevance**: PrismGate's 7 meta-tools are a production implementation of this pattern.
+- **Relevance**: PrismGate's 13 meta-tools are a production implementation of this pattern.
 
 ### Progressive Disclosure in Agentic Workflows
 - **URL**: https://medium.com/@prakashkop054/s01-mcp03-progressive-disclosure-for-knowledge-discovery-in-agentic-workflows-8fc0b2840d01
@@ -74,12 +74,12 @@ Curated external research on building effective MCP servers, organized by topic.
 ### Demiliani: Too Many Tools Problem
 - **URL**: https://demiliani.com/2025/09/04/model-context-protocol-and-the-too-many-tools-problem/
 - **Key finding**: Performance degrades after ~40 tools, falls off a cliff after 60. Cursor limits to 40 MCP tools.
-- **Relevance**: PrismGate's 7 meta-tools stay well within the accuracy threshold.
+- **Relevance**: PrismGate's 13 meta-tools stay well within the accuracy threshold.
 
 ### Jenova: AI Tool Overload
 - **URL**: https://www.jenova.ai/en/resources/mcp-tool-scalability-problem
 - **Key finding**: 5-7 tools is the practical upper limit for consistent accuracy. RAG-MCP approach triples accuracy.
-- **Relevance**: PrismGate exposes exactly 7 meta-tools.
+- **Relevance**: PrismGate exposes 13 meta-tools.
 
 ### The MCP Tool Trap
 - **URL**: https://jentic.com/blog/the-mcp-tool-trap

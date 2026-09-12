@@ -8,7 +8,7 @@ pub fn run() -> Result<()> {
     let pid = socket::read_pid(&socket_path);
     let alive = socket::is_daemon_alive(&socket_path);
 
-    println!("gatemini doctor");
+    println!("prismgate doctor");
     println!("version: {}", env!("CARGO_PKG_VERSION"));
     println!("socket: {}", socket_path.display());
     println!("pid_file: {}", socket::pid_path(&socket_path).display());
@@ -24,7 +24,7 @@ pub fn run() -> Result<()> {
         println!("daemon_role: {:?}", info.role);
         if info.version != env!("CARGO_PKG_VERSION") {
             println!(
-                "warning: installed gatemini version {} differs from daemon version {}",
+                "warning: installed prismgate version {} differs from daemon version {}",
                 env!("CARGO_PKG_VERSION"),
                 info.version
             );
@@ -35,7 +35,7 @@ pub fn run() -> Result<()> {
 
     if !alive && socket_path.exists() {
         println!(
-            "warning: socket exists but daemon is not alive; run `gatemini status` or `gatemini stop` to clean stale files"
+            "warning: socket exists but daemon is not alive; run `prismgate status` or `prismgate stop` to clean stale files"
         );
     }
 
@@ -66,7 +66,7 @@ pub fn run() -> Result<()> {
 
 #[cfg(not(unix))]
 pub fn run() -> Result<()> {
-    println!("gatemini doctor");
+    println!("prismgate doctor");
     println!("version: {}", env!("CARGO_PKG_VERSION"));
     println!("daemon_mode: unsupported on this platform");
     Ok(())

@@ -1,10 +1,10 @@
-# Gatemini
+# PrismGate
 
 Rust MCP gateway that exposes a small discovery surface over many backend MCP servers.
 
 ## Naming
 
-- Runtime name: `gatemini`
+- Runtime name: `prismgate`
 - Repository and releases: `PrismGate`
 
 ## Runtime summary
@@ -17,12 +17,12 @@ Rust MCP gateway that exposes a small discovery surface over many backend MCP se
 
 ## Command surface
 
-- `gatemini`
-- `gatemini --direct`
-- `gatemini serve`
-- `gatemini status`
-- `gatemini stop`
-- `gatemini restart`
+- `prismgate`
+- `prismgate --direct`
+- `prismgate serve`
+- `prismgate status`
+- `prismgate stop`
+- `prismgate restart`
 
 ## Public MCP surface
 
@@ -38,20 +38,20 @@ Tools:
 
 Resources:
 
-- `gatemini://overview`
-- `gatemini://backends`
-- `gatemini://tools`
-- `gatemini://recent`
-- `gatemini://stats`
-- `gatemini://health`
-- `gatemini://llms`
-- `gatemini://llms-full`
-- `gatemini://call_tool_chain`
-- `gatemini://tool/{tool_name}`
-- `gatemini://backend/{backend_name}`
-- `gatemini://backend/{backend_name}/tools`
-- `gatemini://recent/{limit}`
-- `gatemini://guide/{topic}`
+- `prismgate://overview`
+- `prismgate://backends`
+- `prismgate://tools`
+- `prismgate://recent`
+- `prismgate://stats`
+- `prismgate://health`
+- `prismgate://llms`
+- `prismgate://llms-full`
+- `prismgate://call_tool_chain`
+- `prismgate://tool/{tool_name}`
+- `prismgate://backend/{backend_name}`
+- `prismgate://backend/{backend_name}/tools`
+- `prismgate://recent/{limit}`
+- `prismgate://guide/{topic}`
 
 Prompts:
 
@@ -84,7 +84,7 @@ Prompts:
 - only applies to `stdio` and `cli-adapter` transports; HTTP backends ignore it
 - pool pre-warms `min_idle` instances (default 1), lazy-spawns on demand up to `max_instances` (default 20)
 - instances are recycled (stop + respawn) on session disconnect for clean state
-- session_id is threaded from daemon accept loop through GateminiServer → sandbox → BackendManager
+- session_id is threaded from daemon accept loop through PrismGateServer → sandbox → BackendManager
 - direct mode uses session_id 0
 - pool implementation lives in `src/backend/pool.rs`
 - health checker calls `restart_pool_primary()` instead of `restart_backend()` for dedicated backends
@@ -95,20 +95,20 @@ Prompts:
 - search results include `try_also` distinctive terms (IDF-scored) for follow-up queries
 - `call_tool_chain` supports `intent` param for filtering large outputs to relevant sections
 - output truncation uses head 60% + tail 40% split (preserves both beginning and end)
-- `gatemini://stats` shows per-session bytes returned vs processed, savings ratio
-- `gatemini://llms` and `gatemini://llms-full` auto-generate machine-readable tool references
+- `prismgate://stats` shows per-session bytes returned vs processed, savings ratio
+- `prismgate://llms` and `prismgate://llms-full` auto-generate machine-readable tool references
 - JSON chunking utility in `src/tools/json_chunker.rs` for key-path decomposition
 
 ## Process supervision
 
 - `shutdown_grace_period` (default 5s) controls SIGTERM → poll → SIGKILL window per backend
-- backend stderr captured in ring buffer (200 lines), exposed via `gatemini://backend/{name}`
-- `gatemini://health` shows per-backend PID, RSS, peak RSS, memory limit, and recent stderr
+- backend stderr captured in ring buffer (200 lines), exposed via `prismgate://backend/{name}`
+- `prismgate://health` shows per-backend PID, RSS, peak RSS, memory limit, and recent stderr
 - `max_memory_mb` auto-restarts backends exceeding RSS limit (with 60s cooldown)
 - pool `replenish_delay` (default 2s) prevents memory spike when recycling dedicated instances
 - prerequisite cleanup sends SIGTERM, waits 5s, then SIGKILL
 - `stop_all()` enforces per-backend timeout (grace period + 2s buffer)
-- `gatemini stop` waits 35s (matching daemon drain) instead of 5s
+- `prismgate stop` waits 35s (matching daemon drain) instead of 5s
 - daemon socket cleanup guaranteed via Drop guard even on panic
 - Windows: `taskkill /T` for graceful, `taskkill /F /T` for force kill
 

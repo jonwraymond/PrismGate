@@ -1,6 +1,6 @@
 direction: right
 
-title: Gatemini IPC Architecture {
+title: PrismGate IPC Architecture {
   shape: text
   near: top-center
   style.font-size: 28
@@ -22,9 +22,9 @@ proxies: Proxy Processes {
   style.stroke: "#2563EB"
   style.border-radius: 12
 
-  p1: gatemini proxy
-  p2: gatemini proxy
-  p3: gatemini proxy
+  p1: prismgate proxy
+  p2: prismgate proxy
+  p3: prismgate proxy
 }
 
 socket: Shared Unix Socket {
@@ -35,9 +35,9 @@ socket: Shared Unix Socket {
 }
 
 paths: |md
-  Linux: `$XDG_RUNTIME_DIR/gatemini.sock`
+  Linux: `$XDG_RUNTIME_DIR/prismgate.sock`
 
-  macOS/fallback: `/tmp/gatemini-$UID.sock`
+  macOS/fallback: `/tmp/prismgate-$UID.sock`
 | {
   shape: page
   style.fill: "#FFF7ED"

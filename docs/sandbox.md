@@ -1,6 +1,6 @@
 # Sandbox
 
-`call_tool_chain` is Gatemini's execution tool for backend orchestration. It accepts JSON or TypeScript and routes it through the cheapest viable execution path.
+`call_tool_chain` is PrismGate's execution tool for backend orchestration. It accepts JSON or TypeScript and routes it through the cheapest viable execution path.
 
 ![Sandbox execution](diagrams/sandbox-execution.svg){ .diagram-wide }
 
@@ -16,7 +16,7 @@ Example:
 {"tool": "exa.web_search_exa", "arguments": {"query": "MCP protocol"}}
 ```
 
-If the payload matches that shape, Gatemini dispatches it directly with no V8 startup cost.
+If the payload matches that shape, PrismGate dispatches it directly with no V8 startup cost.
 
 ### Tier 2: simple single-call TypeScript
 
@@ -33,7 +33,7 @@ If the normalized form matches `__interfaces` or `__getToolInterface(name)` intr
 
 ### Tier 3: full V8 sandbox
 
-If the code contains loops, branching, or multiple tool calls, Gatemini executes it in the V8 sandbox from `src/sandbox/mod.rs`.
+If the code contains loops, branching, or multiple tool calls, PrismGate executes it in the V8 sandbox from `src/sandbox/mod.rs`.
 
 ## Runtime model
 
@@ -45,7 +45,7 @@ Key defaults:
 |---------|---------|
 | execution timeout | `30s` unless overridden |
 | max heap size | `50 MiB` |
-| thread name | `gatemini-sandbox` |
+| thread name | `prismgate-sandbox` |
 
 The tool handler also gates full sandbox execution with a semaphore so too many concurrent isolates do not exhaust memory.
 
@@ -66,7 +66,7 @@ Every backend object is also mirrored onto `globalThis` so that both `globalThis
 
 ## User-code wrapping
 
-If the submitted code does not export a `main` function, Gatemini wraps it in one before evaluation.
+If the submitted code does not export a `main` function, PrismGate wraps it in one before evaluation.
 
 That means these both work:
 
@@ -132,7 +132,7 @@ When the pipeline reduces output by more than 200 bytes, a size footer is append
 [Output: X.XKB returned, Y.YKB processed, N% reduced]
 ```
 
-This lets callers see exactly how much compression occurred and is also used by `gatemini://stats` for session-level byte tracking.
+This lets callers see exactly how much compression occurred and is also used by `prismgate://stats` for session-level byte tracking.
 
 ### OutputConfig reference
 
@@ -156,8 +156,8 @@ The `enhance_sandbox_error` function in `src/sandbox/mod.rs` intercepts V8 error
 |---------|----------|------|
 | Variable shadowing | `ReferenceError: Cannot access 'X' before initialization` | `X` is a backend name; use a different variable like `xResult` |
 | Misspelled backend | `ReferenceError: X is not defined` with close name match | Suggests the correct backend name |
-| Backend unavailable | `Backend 'X' is not available` | Load `@gatemini://backend/X` to check status |
-| Meta-tool in sandbox | `ReferenceError: gatemini is not defined` (or `search_tools`, `tool_info`, `list_tools_meta`) | Meta-tools cannot be called inside `call_tool_chain`; use them as separate MCP tool calls |
+| Backend unavailable | `Backend 'X' is not available` | Load `@prismgate://backend/X` to check status |
+| Meta-tool in sandbox | `ReferenceError: prismgate is not defined` (or `search_tools`, `tool_info`, `list_tools_meta`) | Meta-tools cannot be called inside `call_tool_chain`; use them as separate MCP tool calls |
 | Bare tool name | `ReferenceError: X is not defined` with no backend match | `X` may be a tool; call it as `backend_name.X({args})` |
 
 ## Security model

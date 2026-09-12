@@ -2,7 +2,7 @@ use anyhow::Result;
 
 use crate::ipc::socket;
 
-/// Show the status of a running gatemini daemon.
+/// Show the status of a running prismgate daemon.
 pub fn run() -> Result<()> {
     let socket_path = socket::default_socket_path();
 
@@ -32,7 +32,7 @@ pub fn run() -> Result<()> {
                     pid,
                     socket_path.display()
                 );
-                println!("Run `gatemini stop` to clean up stale files.");
+                println!("Run `prismgate stop` to clean up stale files.");
             }
         }
         None => {

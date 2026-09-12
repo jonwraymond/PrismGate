@@ -18,7 +18,7 @@ export default function Header({ daemon, stats, connected }: HeaderProps) {
         <div className="flex items-center gap-2.5">
           <Cpu className="w-6 h-6 text-accent" strokeWidth={1.5} />
           <span className="text-lg font-bold tracking-tight font-sans">
-            Gatemini
+            PrismGate
           </span>
         </div>
 

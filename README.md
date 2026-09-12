@@ -1,5 +1,5 @@
 <p align="center">
-  <h1 align="center">Gatemini</h1>
+  <h1 align="center">PrismGate</h1>
   <p align="center">
     Shared-daemon MCP gateway that multiplexes many backend servers behind one stable MCP endpoint.
   </p>
@@ -11,21 +11,21 @@
   <a href="https://github.com/jonwraymond/prismgate/releases"><img src="https://img.shields.io/github/v/release/jonwraymond/prismgate" alt="Release"></a>
 </p>
 
-Gatemini is the runtime and binary name. The source repository and release channel live under the `PrismGate` GitHub project.
+PrismGate is the runtime and binary name. The source repository and release channel live under the `PrismGate` GitHub project.
 
 ## Why this exists
 
 Most MCP clients launch one process tree per session. If you configure a few dozen backends, each new terminal or editor session pays the same startup and memory cost again.
 
-Gatemini changes that model:
+PrismGate changes that model:
 
 - One daemon owns the backend connections.
 - Lightweight proxy processes bridge each client session over stdio.
 - The daemon is reused until it has been idle for the configured timeout.
-- Agents discover backend tools through 7 gateway meta-tools instead of receiving every schema up front.
+- Agents discover backend tools through 13 gateway meta-tools instead of receiving every schema up front.
 
 <p align="center">
-  <img src="docs/diagrams/ipc-architecture.svg" alt="Gatemini IPC architecture" width="860">
+  <img src="docs/diagrams/ipc-architecture.svg" alt="PrismGate IPC architecture" width="860">
 </p>
 
 ## What it provides
@@ -33,8 +33,8 @@ Gatemini changes that model:
 | Capability | What the code does today |
 |-----------|---------------------------|
 | Shared daemon | Proxy mode connects to a single Unix socket daemon instead of starting backends per session |
-| Auto-start and restart | First proxy spawns `gatemini serve`; `gatemini restart` drains clients and lets proxies reconnect |
-| Progressive discovery | `search_tools`, `list_tools_meta`, `tool_info`, `get_required_keys_for_tool`, `call_tool_chain`, `register_manual`, `deregister_manual` |
+| Auto-start and restart | First proxy spawns `prismgate serve`; `prismgate restart` drains clients and lets proxies reconnect |
+| Progressive discovery | 13 meta-tools: search/list/info, `call_tool_chain`, session search/notes, `execute_file`, `fetch_and_index`, result handles |
 | Multiple backend transports | `stdio`, `streamable-http`, and `cli-adapter` backends in one config |
 | Health management | Periodic pinging, failure thresholds, internal circuit-breaker tracking, restart backoff, pending-backend retry |
 | Tool cache | Cached namespaced tools load before backends reconnect; cache version is currently `4` |
@@ -55,10 +55,10 @@ cargo install --path .
 
 ### Configure
 
-The default config path is the platform config directory plus `gatemini/config.yaml`:
+The default config path is the platform config directory plus `prismgate/config.yaml`:
 
-- macOS/Linux: `~/.config/gatemini/config.yaml`
-- Windows: `%APPDATA%\\gatemini\\config.yaml`
+- macOS/Linux: `~/.config/prismgate/config.yaml`
+- Windows: `%APPDATA%\\prismgate\\config.yaml`
 
 Minimal example:
 
@@ -84,15 +84,15 @@ backends:
 
 For a fuller example covering secrets, CLI adapters, admin settings, and health tuning, see [`config/example.yaml`](config/example.yaml).
 
-### Register Gatemini as an MCP server
+### Register PrismGate as an MCP server
 
 Example Claude Code configuration:
 
 ```json
 {
   "mcpServers": {
-    "gatemini": {
-      "command": "/path/to/gatemini",
+    "prismgate": {
+      "command": "/path/to/prismgate",
       "args": ["-c", "/path/to/config.yaml"]
     }
   }
@@ -102,12 +102,12 @@ Example Claude Code configuration:
 ### CLI modes
 
 ```bash
-gatemini            # Proxy mode (default)
-gatemini --direct   # Single-process direct mode, no daemon or socket
-gatemini serve      # Run the daemon in the foreground
-gatemini status     # Read PID/socket state
-gatemini stop       # Gracefully stop the daemon
-gatemini restart    # Stop, drain clients, let proxies reconnect
+prismgate            # Proxy mode (default)
+prismgate --direct   # Single-process direct mode, no daemon or socket
+prismgate serve      # Run the daemon in the foreground
+prismgate status     # Read PID/socket state
+prismgate stop       # Gracefully stop the daemon
+prismgate restart    # Stop, drain clients, let proxies reconnect
 ```
 
 ## Runtime model
@@ -115,7 +115,7 @@ gatemini restart    # Stop, drain clients, let proxies reconnect
 The daemon binds its socket early, before the heavier initialization path completes. That means proxies can connect while the daemon is still loading config, resolving secrets, restoring cache, and starting backends.
 
 <p align="center">
-  <img src="docs/diagrams/daemon-lifecycle.svg" alt="Gatemini daemon lifecycle" width="860">
+  <img src="docs/diagrams/daemon-lifecycle.svg" alt="PrismGate daemon lifecycle" width="860">
 </p>
 
 Proxy mode is not just a raw byte pipe. It also:
@@ -128,12 +128,12 @@ Proxy mode is not just a raw byte pipe. It also:
 - preserves quiet clients while work is in flight, then uses MCP `ping` liveness probes to reap nonresponsive idle clients whose stdio pipes were left open by a parent process
 
 <p align="center">
-  <img src="docs/diagrams/proxy-startup.svg" alt="Gatemini proxy startup" width="760">
+  <img src="docs/diagrams/proxy-startup.svg" alt="PrismGate proxy startup" width="760">
 </p>
 
 ## Discovery model
 
-Backend tools are not exposed as first-class MCP tools. Instead, Gatemini exposes a small discovery and execution surface:
+Backend tools are not exposed as first-class MCP tools. Instead, PrismGate exposes a small discovery and execution surface:
 
 | Meta-tool | Purpose |
 |-----------|---------|
@@ -147,12 +147,12 @@ Backend tools are not exposed as first-class MCP tools. Instead, Gatemini expose
 
 Resources and prompts round out the MCP surface:
 
-- Static resources: `gatemini://overview`, `gatemini://backends`, `gatemini://tools`, `gatemini://recent`
-- Resource templates: `gatemini://tool/{tool_name}`, `gatemini://backend/{backend_name}`, `gatemini://backend/{backend_name}/tools`, `gatemini://recent/{limit}`
+- Static resources: `prismgate://overview`, `prismgate://backends`, `prismgate://tools`, `prismgate://recent`
+- Resource templates: `prismgate://tool/{tool_name}`, `prismgate://backend/{backend_name}`, `prismgate://backend/{backend_name}/tools`, `prismgate://recent/{limit}`
 - Prompts: `discover`, `find_tool`, `backend_status`
 
 <p align="center">
-  <img src="docs/diagrams/tool-discovery.svg" alt="Gatemini progressive discovery" width="860">
+  <img src="docs/diagrams/tool-discovery.svg" alt="PrismGate progressive discovery" width="860">
 </p>
 
 ## Health and lifecycle behavior
@@ -179,7 +179,7 @@ Current default health settings come from `src/config.rs`:
 - drain timeout: `10s`
 
 <p align="center">
-  <img src="docs/diagrams/health-checker.svg" alt="Gatemini health checker" width="860">
+  <img src="docs/diagrams/health-checker.svg" alt="PrismGate health checker" width="860">
 </p>
 
 ## Configuration and secrets
@@ -196,7 +196,7 @@ Config loading is intentionally simple and code-backed:
 `.env` files are loaded from:
 
 1. `~/.env`
-2. the standard Gatemini config directory, for example `~/.config/gatemini/.env`
+2. the standard PrismGate config directory, for example `~/.config/prismgate/.env`
 3. the config file's sibling directory
 
 Supported secret modes:

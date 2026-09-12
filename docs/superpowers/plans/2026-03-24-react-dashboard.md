@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Replace the embedded single-file HTML dashboard with a production-grade React 19 + TypeScript + Vite + Tailwind v4 application that provides real-time monitoring of the gatemini MCP gateway.
+**Goal:** Replace the embedded single-file HTML dashboard with a production-grade React 19 + TypeScript + Vite + Tailwind v4 application that provides real-time monitoring of the prismgate MCP gateway.
 
 **Architecture:** The React app lives in `web/` as a standard Vite project. It builds to `web/dist/` which the Rust admin server serves as static files via `tower-http::ServeDir`. The existing 6 API endpoints remain unchanged — the React app consumes them with a 2-second polling interval. During development, Vite's dev server proxies API calls to `127.0.0.1:19999`.
 
@@ -62,7 +62,7 @@ web/
 
 ```json
 {
-  "name": "gatemini-dashboard",
+  "name": "prismgate-dashboard",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -123,7 +123,7 @@ export default defineConfig({
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Gatemini Dashboard</title>
+    <title>PrismGate Dashboard</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
@@ -237,7 +237,7 @@ createRoot(document.getElementById("root")!).render(
 export default function App() {
   return (
     <div className="min-h-screen p-6">
-      <h1 className="text-2xl font-bold text-accent">Gatemini Dashboard</h1>
+      <h1 className="text-2xl font-bold text-accent">PrismGate Dashboard</h1>
       <p className="text-text-muted mt-2">Loading...</p>
     </div>
   );
@@ -493,7 +493,7 @@ export default function Header({ daemon, stats, connected }: HeaderProps) {
         <div className="flex items-center gap-2.5">
           <Cpu className="w-6 h-6 text-accent" strokeWidth={1.5} />
           <span className="text-lg font-bold tracking-tight font-sans">
-            Gatemini
+            PrismGate
           </span>
         </div>
 
@@ -600,7 +600,7 @@ export default function App() {
         <p className="text-text-muted font-mono text-sm">
           {connected
             ? `Monitoring ${topology?.daemon.total_backends ?? 0} backends...`
-            : "Connecting to gatemini daemon..."}
+            : "Connecting to prismgate daemon..."}
         </p>
       </main>
     </div>
@@ -1380,7 +1380,7 @@ export default function App() {
         {!connected && (
           <div className="text-center py-12 text-text-muted">
             <p className="font-mono text-sm animate-pulse">
-              Connecting to gatemini daemon...
+              Connecting to prismgate daemon...
             </p>
           </div>
         )}
@@ -1410,7 +1410,7 @@ export default function App() {
 cd web && npm run dev
 ```
 
-All 5 sections should render with live data polled every 2 seconds from the gatemini daemon.
+All 5 sections should render with live data polled every 2 seconds from the prismgate daemon.
 
 - [ ] **Step 3: Build production bundle**
 
@@ -1488,11 +1488,11 @@ Delete the old `dashboard()` handler — it is no longer needed. `ServeFile` han
 cargo build --features admin
 ```
 
-- [ ] **Step 4: Test: build React app, then start gatemini, verify dashboard at :19999**
+- [ ] **Step 4: Test: build React app, then start prismgate, verify dashboard at :19999**
 
 ```bash
 cd web && npm run build && cd ..
-# Start gatemini (with admin.enabled: true in config)
+# Start prismgate (with admin.enabled: true in config)
 # Open http://127.0.0.1:19999 — should show React dashboard
 ```
 
@@ -1522,7 +1522,7 @@ web/dist/
 
 1. `cd web && npm ci && npm run build` — no errors
 2. `cargo build --features admin` — no errors
-3. Start gatemini, open `http://127.0.0.1:19999`
+3. Start prismgate, open `http://127.0.0.1:19999`
 4. All 5 sections render with live data
 5. Topology particles animate on active backends
 6. Backend cards expand with memory bars, sparklines, stderr

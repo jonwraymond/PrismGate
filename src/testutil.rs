@@ -1,4 +1,4 @@
-//! Test utilities for gatemini — mock backends, helpers, and test fixtures.
+//! Test utilities for prismgate — mock backends, helpers, and test fixtures.
 //!
 //! This module is only compiled under `#[cfg(test)]` and provides a controllable
 //! mock MCP backend that implements the `Backend` trait directly. This enables
