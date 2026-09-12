@@ -1,12 +1,12 @@
 ---
-name: gatemini-context
+name: prismgate-context
 description: >
   Keep large tool output out of the conversation. After compact or resume, call
   session_search(card=true) then read_result for listed handles. Use call_tool_chain
   to analyze data in the sandbox instead of pasting raw JSON/HTML/logs.
 ---
 
-# Gatemini context discipline
+# PrismGate context discipline
 
 PrismGate already retains large outputs behind handles and indexes them. Your job
 is to **not** pull those bytes back into the prompt unless you need a specific page.

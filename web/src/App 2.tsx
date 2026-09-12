@@ -19,7 +19,7 @@ export default function App() {
         {!connected && (
           <div className="text-center py-12 text-text-muted">
             <p className="font-mono text-sm animate-pulse">
-              Connecting to gatemini daemon...
+              Connecting to prismgate daemon...
             </p>
           </div>
         )}

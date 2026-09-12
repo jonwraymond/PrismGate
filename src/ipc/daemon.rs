@@ -9,7 +9,7 @@ use tracing::{error, info, warn};
 
 use crate::InitializedGateway;
 use crate::ipc::socket;
-use crate::server::GateminiServer;
+use crate::server::PrismGateServer;
 
 /// Bound daemon socket, ready to accept connections.
 ///
@@ -119,7 +119,7 @@ pub fn bind_early(custom_socket: Option<PathBuf>) -> Result<BoundSocket> {
 
 /// Run the daemon accept loop on a pre-bound socket.
 ///
-/// Each connected client gets its own `GateminiServer` instance (cheap: Arc clones + tool_router
+/// Each connected client gets its own `PrismGateServer` instance (cheap: Arc clones + tool_router
 /// build). rmcp handles the full MCP protocol per-session. Client disconnect = transport EOF =
 /// task ends. Other clients are unaffected.
 #[cfg(unix)]
@@ -191,7 +191,7 @@ pub async fn run(gw: InitializedGateway, bound: BoundSocket) -> Result<()> {
                             let session_id = session_id_gen.fetch_add(1, Ordering::Relaxed);
                             info!(active = sessions.load(Ordering::SeqCst), session = session_id, "client connected");
 
-                            let server = GateminiServer::new(
+                            let server = PrismGateServer::new(
                                 Arc::clone(&registry),
                                 Arc::clone(&backend_manager),
                                 Arc::clone(&tracker),

@@ -7,7 +7,7 @@ use nix::unistd::Pid;
 
 use crate::ipc::socket;
 
-/// Stop a running gatemini daemon by sending SIGTERM.
+/// Stop a running prismgate daemon by sending SIGTERM.
 #[cfg(unix)]
 pub fn run() -> Result<()> {
     let socket_path = socket::default_socket_path();
@@ -51,7 +51,7 @@ pub fn run() -> Result<()> {
 #[cfg(not(unix))]
 pub fn run() -> anyhow::Result<()> {
     println!(
-        "`gatemini stop` is not supported on Windows because the daemon mode uses Unix sockets."
+        "`prismgate stop` is not supported on Windows because the daemon mode uses Unix sockets."
     );
     Ok(())
 }

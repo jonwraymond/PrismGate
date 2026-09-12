@@ -1,7 +1,7 @@
 # Explicit clean slate
 
-Run `gatemini purge --yes` against an already-running daemon, or use
-`gatemini purge --yes --socket /path/to/daemon.sock` for a custom socket.
+Run `prismgate purge --yes` against an already-running daemon, or use
+`prismgate purge --yes --socket /path/to/daemon.sock` for a custom socket.
 The command never starts or restarts the daemon. Missing confirmation is an
 argument error; connection failures return a nonzero exit status. The operation
 has a 15-second timeout; a timeout means the outcome is unknown.

@@ -1,12 +1,12 @@
 # Tool Discovery
 
-Gatemini keeps the MCP surface intentionally small and pushes backend-tool detail behind discovery calls. The point is not to hide tools; it is to avoid sending every backend schema into the model context before the agent knows what it needs.
+PrismGate keeps the MCP surface intentionally small and pushes backend-tool detail behind discovery calls. The point is not to hide tools; it is to avoid sending every backend schema into the model context before the agent knows what it needs.
 
 ![Progressive discovery](diagrams/tool-discovery.svg){ .diagram-wide }
 
 ## Public discovery surface
 
-The gateway exposes exactly 7 meta-tools:
+The gateway exposes 13 meta-tools:
 
 | Tool | Default behavior |
 |------|------------------|
@@ -17,6 +17,12 @@ The gateway exposes exactly 7 meta-tools:
 | `call_tool_chain` | execute JSON or TypeScript |
 | `register_manual` | add a dynamic backend |
 | `deregister_manual` | remove a dynamic backend |
+| `read_result` | page a retained result handle |
+| `purge_session` | clear shared tracker/session stats |
+| `session_search` | BM25 search of session events; `resume`/`card` modes |
+| `session_note` | persist a decision, constraint, or note |
+| `execute_file` | server-side file read with path guard and FTS5 index |
+| `fetch_and_index` | server-side URL fetch with SSRF guard, handle, FTS5 index |
 
 The registry entries behind those tools are live data derived from configured backends and dynamic registrations.
 
@@ -45,7 +51,7 @@ Tool names are tokenized by splitting underscores and hyphens (`get_current_time
 
 ### Optional semantic search
 
-When the `semantic` cargo feature is enabled, Gatemini also builds model2vec embeddings from:
+When the `semantic` cargo feature is enabled, PrismGate also builds model2vec embeddings from:
 
 ```text
 {tool_name} {tool_description}
@@ -101,19 +107,19 @@ The discovery story is not just tools.
 
 Resources:
 
-- `gatemini://overview`
-- `gatemini://backends`
-- `gatemini://tools`
-- `gatemini://recent`
-- `gatemini://stats`
-- `gatemini://health`
-- `gatemini://llms`
-- `gatemini://llms-full`
-- `gatemini://call_tool_chain`
-- `gatemini://tool/{tool_name}`
-- `gatemini://backend/{backend_name}`
-- `gatemini://backend/{backend_name}/tools`
-- `gatemini://recent/{limit}`
+- `prismgate://overview`
+- `prismgate://backends`
+- `prismgate://tools`
+- `prismgate://recent`
+- `prismgate://stats`
+- `prismgate://health`
+- `prismgate://llms`
+- `prismgate://llms-full`
+- `prismgate://call_tool_chain`
+- `prismgate://tool/{tool_name}`
+- `prismgate://backend/{backend_name}`
+- `prismgate://backend/{backend_name}/tools`
+- `prismgate://recent/{limit}`
 
 Prompts:
 

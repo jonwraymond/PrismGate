@@ -13,7 +13,7 @@ pub fn list_prompts() -> Vec<Prompt> {
     vec![
         Prompt::new(
             "discover",
-            Some("Guided workflow for discovering gatemini tools progressively"),
+            Some("Guided workflow for discovering prismgate tools progressively"),
             None,
         )
         .with_title("Discover Tools"),
@@ -37,7 +37,7 @@ pub fn list_prompts() -> Vec<Prompt> {
     ]
 }
 
-/// Handle get_prompt for gatemini prompts.
+/// Handle get_prompt for prismgate prompts.
 pub async fn get_prompt(
     name: &str,
     arguments: Option<JsonObject>,
@@ -70,10 +70,10 @@ fn discover_prompt(registry: &ToolRegistry) -> GetPromptResult {
     let backend_count = registry.backend_count();
 
     let text = format!(
-        "# Gatemini Tool Discovery\n\n\
-         You're connected to gatemini, an MCP gateway aggregating **{tool_count} tools** across **{backend_count} backends**.\n\n\
+        "# PrismGate Tool Discovery\n\n\
+         You're connected to prismgate, an MCP gateway aggregating **{tool_count} tools** across **{backend_count} backends**.\n\n\
          ## Step 1: See what's available\n\
-         Use `@gatemini://backends` to see all backends and their tool counts.\n\n\
+         Use `@prismgate://backends` to see all backends and their tool counts.\n\n\
          ## Step 2: Search for what you need\n\
          Use `search_tools` with a task description. It defaults to brief mode (~60 tokens/result):\n\
          ```\n\
@@ -84,7 +84,7 @@ fn discover_prompt(registry: &ToolRegistry) -> GetPromptResult {
          ```\n\
          tool_info(tool_name=\"web_search_exa\", detail=\"full\")\n\
          ```\n\
-         Or load via resource: `@gatemini://tool/web_search_exa`\n\n\
+         Or load via resource: `@prismgate://tool/web_search_exa`\n\n\
          ## Step 4: Execute\n\
          Use `call_tool_chain` to run TypeScript that calls backend tools:\n\
          ```typescript\n\
@@ -96,7 +96,7 @@ fn discover_prompt(registry: &ToolRegistry) -> GetPromptResult {
          - Brief mode saves 80-98% tokens on discovery\n\
          - Only load full schemas when you're ready to call a tool\n\
          - Always `return` a value from `call_tool_chain`; `console.log(...)` does not become the tool result\n\
-         - Use `@gatemini://tools` for a compact index of all {tool_count} tools\n\n\
+         - Use `@prismgate://tools` for a compact index of all {tool_count} tools\n\n\
          ## Naming Rules\n\
          - Always use **qualified names**: `backend.tool_name` (e.g. `exa.web_search_exa`)\n\
          - Hyphens become underscores in call_tool_chain: `my-backend` → `my_backend`\n\
@@ -174,7 +174,7 @@ fn backend_status_prompt(
     let statuses = backend_manager.get_all_status();
 
     let mut text = format!(
-        "# Gatemini Backend Status\n\n\
+        "# PrismGate Backend Status\n\n\
          **Total:** {} backends, {} tools\n\n\
          | Backend | Status | Available | Tools | p50 (ms) | p95 (ms) | Calls |\n\
          |---------|--------|-----------|-------|----------|----------|-------|\n",

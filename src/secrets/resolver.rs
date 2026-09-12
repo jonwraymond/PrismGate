@@ -301,28 +301,28 @@ mod tests {
     #[test]
     fn test_env_fallback_provider_resolve() {
         // SAFETY: test runs single-threaded
-        unsafe { std::env::set_var("GATEMINI_TEST_SECRET_1", "my-secret-value") };
+        unsafe { std::env::set_var("PRISMGATE_TEST_SECRET_1", "my-secret-value") };
 
         let provider = EnvFallbackProvider;
         let result = provider
-            .resolve("project/dotenv/key/GATEMINI_TEST_SECRET_1")
+            .resolve("project/dotenv/key/PRISMGATE_TEST_SECRET_1")
             .unwrap();
         assert_eq!(result, "my-secret-value");
 
-        unsafe { std::env::remove_var("GATEMINI_TEST_SECRET_1") };
+        unsafe { std::env::remove_var("PRISMGATE_TEST_SECRET_1") };
     }
 
     #[test]
     fn test_env_fallback_provider_missing() {
         // Ensure the var doesn't exist
-        unsafe { std::env::remove_var("GATEMINI_TEST_NONEXISTENT") };
+        unsafe { std::env::remove_var("PRISMGATE_TEST_NONEXISTENT") };
 
         let provider = EnvFallbackProvider;
-        let result = provider.resolve("project/dotenv/key/GATEMINI_TEST_NONEXISTENT");
+        let result = provider.resolve("project/dotenv/key/PRISMGATE_TEST_NONEXISTENT");
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
         assert!(
-            err.contains("GATEMINI_TEST_NONEXISTENT"),
+            err.contains("PRISMGATE_TEST_NONEXISTENT"),
             "error should mention the key name: {err}"
         );
         assert!(
@@ -333,31 +333,31 @@ mod tests {
 
     #[test]
     fn test_env_fallback_inline_resolution() {
-        unsafe { std::env::set_var("GATEMINI_TEST_TOKEN_2", "tok-inline-test") };
+        unsafe { std::env::set_var("PRISMGATE_TEST_TOKEN_2", "tok-inline-test") };
 
         let mut resolver = SecretResolver::new(false);
         resolver.register(Box::new(EnvFallbackProvider));
 
         let result = resolver
-            .resolve_value("Bearer secretref:bws:project/dotenv/key/GATEMINI_TEST_TOKEN_2")
+            .resolve_value("Bearer secretref:bws:project/dotenv/key/PRISMGATE_TEST_TOKEN_2")
             .unwrap();
         assert_eq!(result, "Bearer tok-inline-test");
 
-        unsafe { std::env::remove_var("GATEMINI_TEST_TOKEN_2") };
+        unsafe { std::env::remove_var("PRISMGATE_TEST_TOKEN_2") };
     }
 
     #[test]
     fn test_env_fallback_full_value_resolution() {
-        unsafe { std::env::set_var("GATEMINI_TEST_FULL_3", "full-value-result") };
+        unsafe { std::env::set_var("PRISMGATE_TEST_FULL_3", "full-value-result") };
 
         let mut resolver = SecretResolver::new(false);
         resolver.register(Box::new(EnvFallbackProvider));
 
         let result = resolver
-            .resolve_value("secretref:bws:project/dotenv/key/GATEMINI_TEST_FULL_3")
+            .resolve_value("secretref:bws:project/dotenv/key/PRISMGATE_TEST_FULL_3")
             .unwrap();
         assert_eq!(result, "full-value-result");
 
-        unsafe { std::env::remove_var("GATEMINI_TEST_FULL_3") };
+        unsafe { std::env::remove_var("PRISMGATE_TEST_FULL_3") };
     }
 }

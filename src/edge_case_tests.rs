@@ -1,4 +1,4 @@
-//! Edge case tests for the PrismGate/gatemini MCP gateway.
+//! Edge case tests for the PrismGate/prismgate MCP gateway.
 //!
 //! Covers empty inputs, large inputs, Unicode, concurrent search,
 //! and backend timeout simulation. All tests use the shared

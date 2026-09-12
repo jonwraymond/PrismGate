@@ -1,5 +1,5 @@
-# Gatemini example configuration
-# Copy to ~/.config/gatemini/config.yaml and customize.
+# PrismGate example configuration
+# Copy to ~/.config/prismgate/config.yaml and customize.
 #
 # ── Secret Modes ──────────────────────────────────────────────────────
 #
@@ -19,7 +19,7 @@
 #
 # ── .env file locations (loaded in order, later overrides earlier) ────
 #   1. ~/.env
-#   2. ~/.config/gatemini/.env
+#   2. ~/.config/prismgate/.env
 #   3. Sibling of this config file (e.g., same directory)
 # ──────────────────────────────────────────────────────────────────────
 
@@ -78,7 +78,7 @@ backends:
   # External adapter file (tool definitions in separate YAML)
   # ffmpeg-tools:
   #   transport: cli-adapter
-  #   adapter_file: ~/.config/gatemini/adapters/ffmpeg.yaml
+  #   adapter_file: ~/.config/prismgate/adapters/ffmpeg.yaml
   #   timeout: 120s
   #   max_concurrent_calls: 2
 
@@ -110,7 +110,7 @@ backends:
   # ── OAuth 2.0 backends ──────────────────────────────────────────────
 
   # OAuth-enabled backend with auto-discovery
-  # Run `gatemini auth oauth-backend --url https://api.example.com --client-id YOUR_CLIENT_ID --scopes read,write`
+  # Run `prismgate auth oauth-backend --url https://api.example.com --client-id YOUR_CLIENT_ID --scopes read,write`
   # to authenticate before using this backend
   # oauth-backend:
   #   transport: streamable-http

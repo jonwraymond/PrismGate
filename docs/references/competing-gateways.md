@@ -15,12 +15,12 @@ Comparison of PrismGate with other MCP and AI gateways, based on research via de
 
 ## Detailed Comparison
 
-### PrismGate (gatemini)
+### PrismGate (prismgate)
 
 **Architecture**: Shared daemon process managing all backends via Unix domain sockets. Multiple Claude Code sessions connect through lightweight proxy processes.
 
 **Differentiators**:
-- **Progressive disclosure**: 7 meta-tools + brief/full modes (82-98% token savings)
+- **Progressive disclosure**: 13 meta-tools + brief/full modes (82-98% token savings)
 - **BM25 + semantic hybrid search**: Combines keyword and conceptual matching with RRF fusion
 - **V8 TypeScript sandbox**: Multi-tool orchestration in a single execution context
 - **Local-machine optimization**: Unix domain sockets (30-66% lower latency than TCP)

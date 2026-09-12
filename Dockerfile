@@ -13,7 +13,7 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-COPY --from=builder /app/target/release/gatemini /usr/local/bin/gatemini
+COPY --from=builder /app/target/release/prismgate /usr/local/bin/prismgate
 
-ENTRYPOINT ["gatemini"]
+ENTRYPOINT ["prismgate"]
 CMD ["--help"]

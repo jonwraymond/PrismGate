@@ -10,7 +10,7 @@ A complete OAuth 2.0 authentication system for MCP backends that:
 ✅ **PKCE Support** - Enhanced security with Proof Key for Code Exchange (RFC 7636)  
 ✅ **Token Refresh** - Automatically refreshes expired tokens using refresh tokens  
 ✅ **Browser Integration** - Opens browser for user authentication, runs local callback server  
-✅ **Manual Auth Command** - `gatemini auth` for pre-authentication  
+✅ **Manual Auth Command** - `prismgate auth` for pre-authentication  
 
 ## How It Works for Users
 
@@ -28,16 +28,16 @@ backends:
       use_pkce: true
 ```
 
-### 2. Start Gatemini
+### 2. Start PrismGate
 
 ```bash
-gatemini
+prismgate
 ```
 
 ### 3. OAuth Happens Automatically
 
 When the backend is first accessed:
-1. ✅ Gatemini detects no token exists
+1. ✅ PrismGate detects no token exists
 2. ✅ Opens browser to provider's login page
 3. ✅ User authenticates with provider
 4. ✅ Browser redirects to `http://localhost:8080/callback`
@@ -114,7 +114,7 @@ When the backend is first accessed:
 ### Deriver Backend
 
 ```yaml
-# ~/.config/gatemini/config.yaml
+# ~/.config/prismgate/config.yaml
 backends:
   deriver:
     transport: streamable-http
@@ -129,11 +129,11 @@ backends:
 ```
 
 ```bash
-# Start gatemini - OAuth happens automatically on first use
-gatemini
+# Start prismgate - OAuth happens automatically on first use
+prismgate
 
 # Or pre-authenticate manually
-gatemini auth deriver \
+prismgate auth deriver \
   --url https://api.deriver.example.com \
   --client-id deriver-mcp-client \
   --scopes mcp.read,mcp.write
@@ -147,7 +147,7 @@ To test with a real OAuth provider:
 2. **Set redirect URI** to `http://localhost:8080/callback`
 3. **Get client ID**
 4. **Configure backend** in `config.yaml`
-5. **Start gatemini** - OAuth flow triggers automatically
+5. **Start prismgate** - OAuth flow triggers automatically
 
 ## Future Enhancements
 
@@ -164,4 +164,4 @@ Potential improvements:
 
 - **User Guide**: `docs/OAUTH.md` - Complete OAuth usage documentation
 - **Example Config**: `config/example.yaml` - OAuth configuration examples
-- **CLI Help**: `gatemini auth --help` - Command-line reference
+- **CLI Help**: `prismgate auth --help` - Command-line reference

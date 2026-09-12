@@ -40,7 +40,7 @@ Child process backends communicate over stdin/stdout using rmcp.
 Key details from `src/backend/stdio.rs`:
 
 - stdin and stdout are piped
-- stderr is piped to a 200-line ring buffer (exposed via `gatemini://backend/{name}` and `gatemini://health`)
+- stderr is piped to a 200-line ring buffer (exposed via `prismgate://backend/{name}` and `prismgate://health`)
 - Unix builds place the child in a new process group
 - a reaper task watches for unexpected exit and marks the backend stopped
 
@@ -94,7 +94,7 @@ Or point to an external adapter file:
 backends:
   ffmpeg-tools:
     transport: cli-adapter
-    adapter_file: ~/.config/gatemini/adapters/ffmpeg.yaml
+    adapter_file: ~/.config/prismgate/adapters/ffmpeg.yaml
 ```
 
 The adapter file path supports `~` expansion in the CLI adapter loader.
@@ -194,7 +194,7 @@ Features:
 - optional managed lifecycle on shutdown
 - startup delay before backend connect
 
-If `managed: true`, Gatemini records the spawned prerequisite PID and terminates the process group during shutdown.
+If `managed: true`, PrismGate records the spawned prerequisite PID and terminates the process group during shutdown.
 
 ## Process supervision
 
@@ -202,17 +202,17 @@ Backend child processes are supervised with configurable shutdown behavior and m
 
 ### Graceful shutdown
 
-When a stdio backend is stopped, Gatemini sends SIGTERM to the process group (or `taskkill /T` on Windows), then polls `try_wait()` every 100ms for up to `shutdown_grace_period` (default 5s). If the child hasn't exited by the deadline, SIGKILL is sent (or `taskkill /F /T` on Windows).
+When a stdio backend is stopped, PrismGate sends SIGTERM to the process group (or `taskkill /T` on Windows), then polls `try_wait()` every 100ms for up to `shutdown_grace_period` (default 5s). If the child hasn't exited by the deadline, SIGKILL is sent (or `taskkill /F /T` on Windows).
 
 Prerequisite processes follow the same pattern with a fixed 5s grace period.
 
 ### Stderr capture
 
-Backend stderr is piped to a 200-line ring buffer per backend. Recent lines are exposed in `gatemini://backend/{name}` and `gatemini://health`. When a backend exits unexpectedly, the last stderr lines are logged at `warn` level.
+Backend stderr is piped to a 200-line ring buffer per backend. Recent lines are exposed in `prismgate://backend/{name}` and `prismgate://health`. When a backend exits unexpectedly, the last stderr lines are logged at `warn` level.
 
 ### Memory monitoring
 
-The health checker samples RSS for all backends every `memory_check_interval` (default 30s) via a single `ps` call. Stats are exposed in `gatemini://health`. If a backend's RSS exceeds `max_memory_mb`, it is restarted with a cooldown of `memory_restart_cooldown` (default 60s). A warning is logged at 80% of the limit.
+The health checker samples RSS for all backends every `memory_check_interval` (default 30s) via a single `ps` call. Stats are exposed in `prismgate://health`. If a backend's RSS exceeds `max_memory_mb`, it is restarted with a cooldown of `memory_restart_cooldown` (default 60s). A warning is logged at 80% of the limit.
 
 | Setting | Default |
 |---------|---------|
@@ -230,7 +230,7 @@ Stage 2 — **Auto-chunk**: if `output_config.auto_chunk_json` is enabled and th
 
 Stage 3 — **Truncation**: if the output after the previous stages exceeds `max_output_size`, it is truncated using a head-60%/tail-40% split to preserve both the beginning and end of the response.
 
-The tracker records `bytes_returned` (after the pipeline) and `bytes_processed` (raw bytes before) per tool call. These are exposed through `gatemini://stats` as a savings ratio and reduction percentage.
+The tracker records `bytes_returned` (after the pipeline) and `bytes_processed` (raw bytes before) per tool call. These are exposed through `prismgate://stats` as a savings ratio and reduction percentage.
 
 ## Composite tools
 

@@ -6,14 +6,14 @@
 
 ## Problem
 
-Gatemini's child process supervision has several gaps that cause memory and swap pressure:
+PrismGate's child process supervision has several gaps that cause memory and swap pressure:
 
 1. `kill_child()` waits only 200ms after SIGTERM before SIGKILL — heavy backends like serena (Python, 16GB RSS) don't have time to clean up
 2. Backend stderr is discarded (`Stdio::null()`) — OOM kills, tracebacks, and memory warnings are invisible
 3. Pool `release()` immediately spawns a replacement instance before the OS has reclaimed the old process's memory — briefly 2x usage
 4. No visibility into child process memory consumption — issues discovered externally via `ps aux`
 5. `stop_all()` doesn't enforce `drain_timeout` — in-flight calls can be interrupted
-6. `gatemini stop` gives up after 5s but daemon drain is 30s — user force-kills during graceful shutdown
+6. `prismgate stop` gives up after 5s but daemon drain is 30s — user force-kills during graceful shutdown
 7. Prerequisite cleanup sends SIGTERM but doesn't wait for exit — zombie processes
 
 ## Design
@@ -45,7 +45,7 @@ Replace `Stdio::null()` with `Stdio::piped()` on stderr. Spawn a tokio task per 
 
 **Exposure:**
 - New method `StdioBackend::recent_stderr(&self, limit: usize) -> Vec<String>`
-- Added to `gatemini://backend/{name}` resource JSON as `recent_stderr` field
+- Added to `prismgate://backend/{name}` resource JSON as `recent_stderr` field
 - Logged at `warn!` level when backend exits unexpectedly (reaper task)
 
 **No config needed** — always on, minimal overhead.
@@ -95,14 +95,14 @@ health:
 ```
 
 **Exposure:**
-- `gatemini://health` — new resource: per-backend PID, RSS, peak RSS, memory limit, % used
-- `gatemini://backend/{name}` — add `memory` section with current/peak RSS
+- `prismgate://health` — new resource: per-backend PID, RSS, peak RSS, memory limit, % used
+- `prismgate://backend/{name}` — add `memory` section with current/peak RSS
 
-### 5. Fix stop_all() Drain and gatemini stop Timeout
+### 5. Fix stop_all() Drain and prismgate stop Timeout
 
 **5a. Per-backend stop timeout:** Wrap each `backend.stop()` in `tokio::time::timeout(shutdown_grace_period, ...)`. On timeout, SIGKILL.
 
-**5b. Stop command reads config:** `gatemini stop` reads `client_drain_timeout + drain_timeout` from config and uses that as its wait timeout instead of hardcoded 5s. Shows progress message.
+**5b. Stop command reads config:** `prismgate stop` reads `client_drain_timeout + drain_timeout` from config and uses that as its wait timeout instead of hardcoded 5s. Shows progress message.
 
 **5c. Cleanup guard:** Socket/PID/lock file cleanup guaranteed via Drop guard, even if `stop_all()` panics:
 
@@ -155,7 +155,7 @@ impl Drop for CleanupGuard<'_> {
 | `src/backend/pool.rs` | `replenish_delay` in release() |
 | `src/backend/health.rs` | Memory check cycle, auto-restart, cooldown |
 | `src/backend/prerequisite.rs` | Grace period + SIGKILL fallback |
-| `src/resources.rs` | `gatemini://health`, memory/stderr in backend resource |
+| `src/resources.rs` | `prismgate://health`, memory/stderr in backend resource |
 | `src/ipc/stop.rs` | Config-based timeout |
 | `src/ipc/daemon.rs` | CleanupGuard |
 | `CLAUDE.md` | Document supervision features |
@@ -164,10 +164,10 @@ impl Drop for CleanupGuard<'_> {
 
 ## Success Criteria
 
-1. `gatemini stop` waits for actual drain completion
+1. `prismgate stop` waits for actual drain completion
 2. Heavy backends (serena) exit gracefully within `shutdown_grace_period`
-3. Backend stderr visible via `gatemini://backend/{name}`
-4. `gatemini://health` shows live RSS per backend
+3. Backend stderr visible via `prismgate://backend/{name}`
+4. `prismgate://health` shows live RSS per backend
 5. Backends exceeding `max_memory_mb` are auto-restarted
 6. Pool replenishment doesn't cause 2x memory spike
 7. All 273+ tests pass, clippy clean

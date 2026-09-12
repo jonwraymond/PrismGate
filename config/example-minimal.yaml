@@ -1,5 +1,5 @@
-# Minimal gatemini config — no secrets, no BWS.
-# Copy to ~/.config/gatemini/config.yaml to get started.
+# Minimal prismgate config — no secrets, no BWS.
+# Copy to ~/.config/prismgate/config.yaml to get started.
 
 log_level: info
 

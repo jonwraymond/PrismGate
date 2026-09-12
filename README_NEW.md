@@ -8,7 +8,7 @@
 
 ## What is PrismGate?
 
-PrismGate (codename **Gatemini**) is a high-performance MCP gateway written in Rust. It acts as a reverse proxy and management layer for MCP (Model Context Protocol) servers, providing scalable, session-aware routing, tool discovery, and lifecycle management.
+PrismGate (codename **PrismGate**) is a high-performance MCP gateway written in Rust. It acts as a reverse proxy and management layer for MCP (Model Context Protocol) servers, providing scalable, session-aware routing, tool discovery, and lifecycle management.
 
 ### Key Features
 

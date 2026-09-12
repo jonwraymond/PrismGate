@@ -1,8 +1,8 @@
-# gatemini — Claude Code host hooks
+# prismgate — Claude Code host hooks
 
 Install: copy the `hooks/claude-code/hooks.json` to your Claude Code hooks directory (e.g. `~/.claude/hooks/hooks.json`) and point `CLAUDE_PLUGIN_ROOT` at this repo.
 
-These hooks redirect large host operations through gatemini so raw output never enters the conversation. They require gatemini running in proxy mode.
+These hooks redirect large host operations through prismgate so raw output never enters the conversation. They require prismgate running in proxy mode.
 
 ## PreToolUse hooks
 

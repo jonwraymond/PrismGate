@@ -1,12 +1,12 @@
 //! Tool inventory validation integration tests.
 //!
-//! These tests use the REAL gatemini config and backends. They are `#[ignore]`d by default
+//! These tests use the REAL prismgate config and backends. They are `#[ignore]`d by default
 //! and run with: `cargo test integration_inventory -- --ignored`
 //!
 //! Requirements:
 //! - All backend commands must be installed and accessible
 //! - API keys must be available in the environment (or via BWS)
-//! - `config/gatemini.yaml` must exist relative to the crate root
+//! - `config/prismgate.yaml` must exist relative to the crate root
 
 #[cfg(test)]
 mod tests {
@@ -15,13 +15,13 @@ mod tests {
     use crate::backend::{BackendManager, BackendState};
     use crate::registry::ToolRegistry;
 
-    /// Load the real gatemini config and start all backends.
+    /// Load the real prismgate config and start all backends.
     async fn setup_real_gateway() -> (
         std::sync::Arc<ToolRegistry>,
         std::sync::Arc<BackendManager>,
         crate::config::Config,
     ) {
-        let config_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("config/gatemini.yaml");
+        let config_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("config/prismgate.yaml");
         crate::config::load_dotenv(Some(&config_path));
         assert!(
             config_path.exists(),

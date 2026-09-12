@@ -1,4 +1,4 @@
-# Gatemini
+# PrismGate
 
 > Rust MCP gateway (v1.7.1) exposing a discovery surface over backend MCP servers via a shared daemon
 
@@ -16,24 +16,25 @@
 
 ## Dynamic Resources
 
-- `@gatemini://overview`: Gateway guide with live tool/backend counts
-- `@gatemini://tools`: Compact tool index (~3k tokens)
-- `@gatemini://backends`: Backend health and tool counts
-- `@gatemini://llms`: Machine-readable tool reference (auto-generated)
-- `@gatemini://llms-full`: Complete tool schemas (auto-generated)
-- `@gatemini://stats`: Session context savings statistics (bytes returned/processed, savings ratio)
-- `@gatemini://health`: Per-backend PID, RSS, peak RSS, memory limit, and recent stderr
-- `@gatemini://recent`: Recent tool calls with timing
-- `@gatemini://call_tool_chain`: Execution contract and examples
-- `@gatemini://tool/{name}`: Full schema for one tool
-- `@gatemini://backend/{name}`: Backend details + tool list
-- `@gatemini://backend/{name}/tools`: All tools for a backend
-- `@gatemini://recent/{limit}`: Recent calls with custom limit
-- `@gatemini://guide/{topic}`: Focused guidance (call_tool_chain, discovery)
+- `@prismgate://overview`: Gateway guide with live tool/backend counts
+- `@prismgate://tools`: Compact tool index (~3k tokens)
+- `@prismgate://backends`: Backend health and tool counts
+- `@prismgate://llms`: Machine-readable tool reference (auto-generated)
+- `@prismgate://llms-full`: Complete tool schemas (auto-generated)
+- `@prismgate://stats`: Session context savings statistics (bytes returned/processed, savings ratio)
+- `@prismgate://health`: Per-backend PID, RSS, peak RSS, memory limit, and recent stderr
+- `@prismgate://recent`: Recent tool calls with timing
+- `@prismgate://call_tool_chain`: Execution contract and examples
+- `@prismgate://tool/{name}`: Full schema for one tool
+- `@prismgate://backend/{name}`: Backend details + tool list
+- `@prismgate://backend/{name}/tools`: All tools for a backend
+- `@prismgate://recent/{limit}`: Recent calls with custom limit
+- `@prismgate://guide/{topic}`: Focused guidance (call_tool_chain, discovery)
 
 ## API
 
-- 7 meta-tools: search_tools, tool_info, list_tools_meta, call_tool_chain, register_manual, deregister_manual, get_required_keys_for_tool
+- 13 meta-tools: search_tools, tool_info, list_tools_meta, call_tool_chain, register_manual, deregister_manual, get_required_keys_for_tool, read_result, purge_session, session_search, session_note, execute_file, fetch_and_index
+- `@prismgate://resume`: post-compact resume card pointer
 - Prompts: discover, find_tool, backend_status
 - Search: three-tier fallback (BM25 → trigram → fuzzy Levenshtein), IDF try_also terms
 - Output pipeline: intent filter → auto-chunk JSON → smart truncate (60/40 head/tail) → size metadata

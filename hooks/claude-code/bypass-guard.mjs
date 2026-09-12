@@ -2,11 +2,11 @@
 /**
  * PrismGate bypass guard — host PreToolUse hook.
  *
- * Redirects Bash, Read, and WebFetch calls through gatemini MCP tools
+ * Redirects Bash, Read, and WebFetch calls through prismgate MCP tools
  * so raw output never enters the conversation.
  *
  * Designed to run as a Claude Code hook (command type).
- * Reads CLAUDE_PLUGIN_ROOT, checks for gatemini availability,
+ * Reads CLAUDE_PLUGIN_ROOT, checks for prismgate availability,
  * and emits Claude Code hook-compatible JSON.
  *
  * Strategy:
@@ -21,7 +21,7 @@
 
 const isHeadless = () => process.env.CLAUDE_CODE_HEADLESS === "1";
 const PLUGIN_ROOT = process.env.CLAUDE_PLUGIN_ROOT || ".";
-const GATEMINI_AVAILABLE = `${PLUGIN_ROOT}/gatemini` || null; // check at runtime
+const PRISMGATE_AVAILABLE = `${PLUGIN_ROOT}/prismgate` || null; // check at runtime
 
 // Tools that are safe to run raw (short output, low context risk)
 const SAFE_BASH_PATTERNS = [
@@ -54,7 +54,7 @@ function estimateLines(command) {
 
 /**
  * Emit a Claude Code PreToolUse hook response that injects context
- * suggesting the agent use gatemini tools.
+ * suggesting the agent use prismgate tools.
  */
 function injectContext(suggestion) {
   if (isHeadless()) return null; // In headless, let the tool through (same as context-mode)
@@ -80,7 +80,7 @@ function routeTool(eventName, toolName, input) {
         hookSpecificOutput: {
           hookEventName: "PreToolUse",
           permissionDecision: "deny",
-          reason: `WebFetch blocked — raw HTML floods context. Use fetch_and_index("${url}") then session_search(query) instead. See gatemini context skills.`,
+          reason: `WebFetch blocked — raw HTML floods context. Use fetch_and_index("${url}") then session_search(query) instead. See prismgate context skills.`,
         },
       };
     }
@@ -90,10 +90,10 @@ function routeTool(eventName, toolName, input) {
       if (!path) return null; // Can't redirect without a path
       if (isHeadless()) return null;
       return injectContext(
-        `Use execute_file("${path}") via gatemini instead of Read. ` +
+        `Use execute_file("${path}") via prismgate instead of Read. ` +
         `It reads the file server-side and returns only structured output. ` +
         `Raw file content stays behind result handles and is searchable via session_search. ` +
-        `If gatemini is unavailable, Read with analysis intent only.`
+        `If prismgate is unavailable, Read with analysis intent only.`
       );
     }
 
@@ -109,7 +109,7 @@ function routeTool(eventName, toolName, input) {
       if (isHeadless()) return null; // Let it through in headless mode
 
       return injectContext(
-        `For this command, prefer gatemini tools to avoid context flooding: ` +
+        `For this command, prefer prismgate tools to avoid context flooding: ` +
         `call_tool_chain("const r = await backend.exec({command: \`${command}\"}); return r;") ` +
         `or execute_file for file operations. ` +
         `Single git/mkdir/rm/mv/cd/ls/npm/pip calls are OK to run directly.`

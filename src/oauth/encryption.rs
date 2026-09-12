@@ -9,7 +9,7 @@ use base64::{Engine, engine::general_purpose::STANDARD as BASE64};
 use keyring::Entry;
 use rand::RngCore;
 
-const SERVICE_NAME: &str = "gatemini";
+const SERVICE_NAME: &str = "prismgate";
 const KEY_NAME: &str = "oauth-encryption-key";
 
 /// Manages encryption keys using the system keyring.

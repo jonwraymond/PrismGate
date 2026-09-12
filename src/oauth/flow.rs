@@ -259,7 +259,7 @@ fn open_authorization_url(auth_url: &str) -> Result<()> {
 <html><head>
 <meta charset="utf-8">
 <meta http-equiv="refresh" content="0;url={url}">
-<title>Gatemini OAuth</title>
+<title>PrismGate OAuth</title>
 </head><body>
 <p>Redirecting to authorization server…</p>
 <p><a href="{url}">Continue</a></p>
@@ -270,7 +270,7 @@ fn open_authorization_url(auth_url: &str) -> Result<()> {
     );
 
     let path = std::env::temp_dir().join(format!(
-        "gatemini-oauth-{}-{}.html",
+        "prismgate-oauth-{}-{}.html",
         std::process::id(),
         chrono::Utc::now().timestamp_millis()
     ));

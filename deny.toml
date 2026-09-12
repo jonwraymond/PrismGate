@@ -169,7 +169,7 @@ expression = "GPL-3.0-only"
 license-files = []
 
 [[licenses.clarify]]
-crate = "gatemini"
+crate = "prismgate"
 expression = "MIT"
 license-files = []
 

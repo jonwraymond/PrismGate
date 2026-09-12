@@ -1,7 +1,7 @@
 //! SQLite + FTS5 persistence for session events, owned by a background actor thread.
 //!
 //! `rusqlite::Connection` is `Send` but not `Sync`, and the gateway clones
-//! `GateminiServer` across tasks, so we hand the connection to a dedicated
+//! `PrismGateServer` across tasks, so we hand the connection to a dedicated
 //! thread and proxy calls through an mpsc channel.
 
 use std::path::PathBuf;
@@ -83,7 +83,7 @@ impl SessionEventStore {
         }
         let (tx, rx) = std::sync::mpsc::channel();
         let handle = std::thread::Builder::new()
-            .name("gatemini-session-store".to_string())
+            .name("prismgate-session-store".to_string())
             .spawn(move || {
                 if let Err(e) = run_actor(db_path, rx) {
                     tracing::error!(error = %e, "session event store actor failed");
@@ -172,7 +172,7 @@ impl Clone for SessionEventStore {
 
 impl Default for SessionEventStore {
     fn default() -> Self {
-        Self::open(std::env::temp_dir().join("gatemini-session-events.sqlite3"))
+        Self::open(std::env::temp_dir().join("prismgate-session-events.sqlite3"))
             .expect("default session store open")
     }
 }

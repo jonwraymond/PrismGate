@@ -9,7 +9,7 @@
  * 3. Use read_result(handle) for retained payloads
  *
  * Reads CLAUDE_PLUGIN_ROOT to find the PrismGate repo.
- * If gatemini is not reachable, emits a gentle instruction block.
+ * If prismgate is not reachable, emits a gentle instruction block.
  */
 
 const PLUGIN_ROOT = process.env.CLAUDE_PLUGIN_ROOT || ".";
@@ -49,7 +49,7 @@ function buildResumeCard() {
     "</resume>",
     "```",
     "",
-    "**Gatemini is running. All large outputs are stored behind handles and indexed for search.**",
+    "**PrismGate is running. All large outputs are stored behind handles and indexed for search.**",
     "Use `read_result(handle)` and `session_search(query)` instead of re-reading or re-running.",
   ].join("\n");
 }

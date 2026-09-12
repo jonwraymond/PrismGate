@@ -7,8 +7,8 @@
 # Secrets and personal config
 .env
 .env.*
-config/gatemini.yaml
-config/.gatemini.cache*.json
+config/prismgate.yaml
+config/.prismgate.cache*.json
 config/test-*.yaml
 
 # ByteRover context

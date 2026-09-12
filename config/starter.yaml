@@ -1,5 +1,5 @@
-# Gatemini configuration
-# Add backends below. Run `gatemini` to start.
+# PrismGate configuration
+# Add backends below. Run `prismgate` to start.
 # Full reference: https://github.com/jonwraymond/PrismGate
 
 log_level: info

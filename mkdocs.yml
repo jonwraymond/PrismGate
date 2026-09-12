@@ -1,4 +1,4 @@
-site_name: Gatemini
+site_name: PrismGate
 site_description: Shared-daemon Rust MCP gateway with progressive tool discovery
 repo_url: https://github.com/jonwraymond/prismgate
 repo_name: jonwraymond/PrismGate

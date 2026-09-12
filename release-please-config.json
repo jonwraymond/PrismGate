@@ -8,7 +8,7 @@
   "changelog-path": "CHANGELOG.md",
   "packages": {
     ".": {
-      "component": "gatemini"
+      "component": "prismgate"
     }
   }
 }

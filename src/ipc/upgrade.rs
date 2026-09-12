@@ -90,7 +90,7 @@ pub async fn run(config_path: &Path, timeout: Duration) -> Result<()> {
 #[cfg(not(unix))]
 pub async fn run(_config_path: &Path, _timeout: Duration) -> Result<()> {
     println!(
-        "`gatemini upgrade` is not supported on Windows because daemon mode uses Unix sockets."
+        "`prismgate upgrade` is not supported on Windows because daemon mode uses Unix sockets."
     );
     Ok(())
 }
@@ -309,7 +309,7 @@ async fn smoke_handshake(socket_path: &Path) -> Result<()> {
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "clientInfo": {"name": "gatemini-upgrade", "version": env!("CARGO_PKG_VERSION")}
+            "clientInfo": {"name": "prismgate-upgrade", "version": env!("CARGO_PKG_VERSION")}
         }
     });
     stream
@@ -346,7 +346,7 @@ mod tests {
             pid: 123,
             version: "1.14.0".to_string(),
             role: socket::GenerationRole::Active,
-            socket_path: PathBuf::from("/tmp/gatemini.sock"),
+            socket_path: PathBuf::from("/tmp/prismgate.sock"),
         };
 
         assert!(should_signal_old_generation(Some(&info)));
@@ -355,7 +355,7 @@ mod tests {
     #[tokio::test]
     async fn staged_promotion_moves_public_socket_and_writes_drain_markers() {
         let dir = tempfile::tempdir().unwrap();
-        let public_socket = dir.path().join("gatemini.sock");
+        let public_socket = dir.path().join("prismgate.sock");
         let staged_socket = socket::staged_socket_path(&public_socket, 77);
         let old_pid = std::process::id() as i32;
         let new_pid = old_pid;

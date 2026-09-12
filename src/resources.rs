@@ -13,16 +13,16 @@ use crate::tracker::CallTracker;
 pub fn list_static_resources() -> Vec<Resource> {
     vec![
         Annotated::new(
-            RawResource::new("gatemini://overview", "overview")
-                .with_title("Gatemini Overview")
+            RawResource::new("prismgate://overview", "overview")
+                .with_title("PrismGate Overview")
                 .with_description(
-                    "Gateway guide: what gatemini is, how to discover tools, when to use resources vs tools",
+                    "Gateway guide: what prismgate is, how to discover tools, when to use resources vs tools",
                 )
                 .with_mime_type("text/plain"),
             None,
         ),
         Annotated::new(
-            RawResource::new("gatemini://backends", "backends")
+            RawResource::new("prismgate://backends", "backends")
                 .with_title("Backend List")
                 .with_description(
                     "JSON list of all backends with name, tool count, and status",
@@ -31,7 +31,7 @@ pub fn list_static_resources() -> Vec<Resource> {
             None,
         ),
         Annotated::new(
-            RawResource::new("gatemini://tools", "tools")
+            RawResource::new("prismgate://tools", "tools")
                 .with_title("Compact Tool Index")
                 .with_description(
                     "All tools with name, backend, and one-line description (~3k tokens vs ~40k for full schemas)",
@@ -40,7 +40,7 @@ pub fn list_static_resources() -> Vec<Resource> {
             None,
         ),
         Annotated::new(
-            RawResource::new("gatemini://recent", "recent")
+            RawResource::new("prismgate://recent", "recent")
                 .with_title("Recent Tool Calls")
                 .with_description(
                     "Last 50 tool calls with tool name, backend, duration, and success/failure",
@@ -49,7 +49,7 @@ pub fn list_static_resources() -> Vec<Resource> {
             None,
         ),
         Annotated::new(
-            RawResource::new("gatemini://stats", "stats")
+            RawResource::new("prismgate://stats", "stats")
                 .with_title("Session Statistics")
                 .with_description(
                     "Context savings stats: bytes returned vs processed, savings ratio, per-tool breakdown",
@@ -58,7 +58,7 @@ pub fn list_static_resources() -> Vec<Resource> {
             None,
         ),
         Annotated::new(
-            RawResource::new("gatemini://llms", "llms")
+            RawResource::new("prismgate://llms", "llms")
                 .with_title("llms.txt")
                 .with_description(
                     "Machine-readable gateway reference: tool names, descriptions, naming rules (~3k tokens)",
@@ -67,7 +67,7 @@ pub fn list_static_resources() -> Vec<Resource> {
             None,
         ),
         Annotated::new(
-            RawResource::new("gatemini://llms-full", "llms-full")
+            RawResource::new("prismgate://llms-full", "llms-full")
                 .with_title("llms-full.txt")
                 .with_description(
                     "Complete gateway reference with full input schemas for every tool",
@@ -76,7 +76,7 @@ pub fn list_static_resources() -> Vec<Resource> {
             None,
         ),
         Annotated::new(
-            RawResource::new("gatemini://health", "health")
+            RawResource::new("prismgate://health", "health")
                 .with_title("Backend Health & Memory")
                 .with_description(
                     "Per-backend PID, RSS, peak RSS, memory limit, status, and recent stderr",
@@ -85,7 +85,7 @@ pub fn list_static_resources() -> Vec<Resource> {
             None,
         ),
         Annotated::new(
-            RawResource::new("gatemini://call_tool_chain", "call_tool_chain")
+            RawResource::new("prismgate://call_tool_chain", "call_tool_chain")
                 .with_title("call_tool_chain Guide")
                 .with_description(
                     "Execution contract, return semantics, and examples for sandboxed TypeScript tool calls",
@@ -94,7 +94,7 @@ pub fn list_static_resources() -> Vec<Resource> {
             None,
         ),
         Annotated::new(
-            RawResource::new("gatemini://resume", "resume")
+            RawResource::new("prismgate://resume", "resume")
                 .with_title("Session Resume Card")
                 .with_description(
                     "Compact post-compaction card: open result handles, recent tools, decisions, constraints. Fetch payloads with read_result.",
@@ -109,7 +109,7 @@ pub fn list_static_resources() -> Vec<Resource> {
 pub fn list_resource_templates() -> Vec<ResourceTemplate> {
     vec![
         Annotated::new(
-            RawResourceTemplate::new("gatemini://tool/{tool_name}", "tool")
+            RawResourceTemplate::new("prismgate://tool/{tool_name}", "tool")
                 .with_title("Tool Schema")
                 .with_description(
                     "Full schema + description for a specific tool (on-demand, ~200-10k tokens)",
@@ -118,7 +118,7 @@ pub fn list_resource_templates() -> Vec<ResourceTemplate> {
             None,
         ),
         Annotated::new(
-            RawResourceTemplate::new("gatemini://backend/{backend_name}", "backend")
+            RawResourceTemplate::new("prismgate://backend/{backend_name}", "backend")
                 .with_title("Backend Details")
                 .with_description(
                     "Backend details: name, status, tool count, list of tool names",
@@ -127,7 +127,7 @@ pub fn list_resource_templates() -> Vec<ResourceTemplate> {
             None,
         ),
         Annotated::new(
-            RawResourceTemplate::new("gatemini://backend/{backend_name}/tools", "backend-tools")
+            RawResourceTemplate::new("prismgate://backend/{backend_name}/tools", "backend-tools")
                 .with_title("Backend Tools")
                 .with_description(
                     "All tools for a specific backend with brief descriptions",
@@ -136,7 +136,7 @@ pub fn list_resource_templates() -> Vec<ResourceTemplate> {
             None,
         ),
         Annotated::new(
-            RawResourceTemplate::new("gatemini://recent/{limit}", "recent-limited")
+            RawResourceTemplate::new("prismgate://recent/{limit}", "recent-limited")
                 .with_title("Recent Tool Calls (Custom Limit)")
                 .with_description(
                     "Last N tool calls (customizable limit) with tool name, backend, duration, success",
@@ -145,7 +145,7 @@ pub fn list_resource_templates() -> Vec<ResourceTemplate> {
             None,
         ),
         Annotated::new(
-            RawResourceTemplate::new("gatemini://guide/{topic}", "guide")
+            RawResourceTemplate::new("prismgate://guide/{topic}", "guide")
                 .with_title("Guide")
                 .with_description(
                     "Focused guidance for gateway concepts such as call_tool_chain return semantics and discovery workflow",
@@ -156,7 +156,7 @@ pub fn list_resource_templates() -> Vec<ResourceTemplate> {
     ]
 }
 
-/// Compact tool entry for the gatemini://tools resource.
+/// Compact tool entry for the prismgate://tools resource.
 #[derive(Debug, Serialize)]
 struct CompactToolEntry {
     name: String,
@@ -164,7 +164,7 @@ struct CompactToolEntry {
     description: String,
 }
 
-/// Backend info entry for the gatemini://backends resource.
+/// Backend info entry for the prismgate://backends resource.
 #[derive(Debug, Serialize)]
 struct BackendInfo {
     name: String,
@@ -173,7 +173,7 @@ struct BackendInfo {
     available: bool,
 }
 
-/// Backend detail for the gatemini://backend/{name} template.
+/// Backend detail for the prismgate://backend/{name} template.
 #[derive(Debug, Serialize)]
 struct BackendDetail {
     name: String,
@@ -200,7 +200,7 @@ fn first_sentence(text: &str) -> String {
     }
 }
 
-/// Handle read_resource for all gatemini:// URIs.
+/// Handle read_resource for all prismgate:// URIs.
 pub async fn read_resource(
     uri: &str,
     registry: &Arc<ToolRegistry>,
@@ -209,7 +209,7 @@ pub async fn read_resource(
 ) -> Result<ReadResourceResult, McpError> {
     // Parse the URI
     let path = uri
-        .strip_prefix("gatemini://")
+        .strip_prefix("prismgate://")
         .ok_or_else(|| McpError::invalid_params(format!("Unknown URI scheme: {uri}"), None))?;
 
     match path {
@@ -297,7 +297,7 @@ pub async fn read_resource(
         _ => {
             // Try template matching
             if let Some(limit_str) = path.strip_prefix("recent/") {
-                // gatemini://recent/{limit}
+                // prismgate://recent/{limit}
                 let limit: usize = limit_str.parse().map_err(|_| {
                     McpError::invalid_params(
                         format!("Invalid limit '{limit_str}': must be a positive integer"),
@@ -320,7 +320,7 @@ pub async fn read_resource(
                     )),
                 }
             } else if let Some(tool_name) = path.strip_prefix("tool/") {
-                // gatemini://tool/{tool_name}
+                // prismgate://tool/{tool_name}
                 let entry = registry.get_by_name(tool_name).ok_or_else(|| {
                     McpError::invalid_params(format!("Tool '{tool_name}' not found"), None)
                 })?;
@@ -329,7 +329,7 @@ pub async fn read_resource(
                 Ok(text_resource(uri, &json))
             } else if let Some(rest) = path.strip_prefix("backend/") {
                 if let Some(backend_name) = rest.strip_suffix("/tools") {
-                    // gatemini://backend/{name}/tools
+                    // prismgate://backend/{name}/tools
                     let tools = registry.get_by_backend(backend_name);
                     if tools.is_empty() {
                         return Err(McpError::invalid_params(
@@ -349,7 +349,7 @@ pub async fn read_resource(
                         .map_err(|e| McpError::internal_error(e.to_string(), None))?;
                     Ok(text_resource(uri, &json))
                 } else {
-                    // gatemini://backend/{name}
+                    // prismgate://backend/{name}
                     let backend_name = rest;
                     let tools = registry.get_by_backend(backend_name);
                     let status = backend_manager
@@ -439,8 +439,8 @@ pub fn complete(
 
 fn overview_text(registry: &ToolRegistry) -> String {
     format!(
-        "# Gatemini MCP Gateway\n\n\
-         You are connected to gatemini, an MCP gateway that aggregates {} tools from {} backends          into a single interface. You interact with it through 7 meta-tools — never call backend          tools directly as MCP tools.\n\n\
+        "# PrismGate MCP Gateway\n\n\
+         You are connected to prismgate, an MCP gateway that aggregates {} tools from {} backends          into a single interface. You interact with it through 13 meta-tools — never call backend          tools directly as MCP tools.\n\n\
          ## Discovery\n\n\
          1. `search_tools(task_description=\"what you need\")` — brief results (~60 tokens each)\n\
          2. `tool_info(tool_name=\"backend.tool_name\")` — parameter names (~200 tokens)\n\
@@ -466,14 +466,14 @@ fn overview_text(registry: &ToolRegistry) -> String {
          - `__backends` maps both original and sanitized names\n\
          - Bare names may not resolve if the backend is still starting\n\n\
          ## Resources\n\n\
-         - `@gatemini://tools` — compact index of all tools (~3k tokens)\n\
-         - `@gatemini://backends` — backend health status and tool counts\n\
-         - `@gatemini://tool/{{name}}` — full schema for one tool\n\
-         - `@gatemini://call_tool_chain` — execution contract and examples\n\n\
+         - `@prismgate://tools` — compact index of all tools (~3k tokens)\n\
+         - `@prismgate://backends` — backend health status and tool counts\n\
+         - `@prismgate://tool/{{name}}` — full schema for one tool\n\
+         - `@prismgate://call_tool_chain` — execution contract and examples\n\n\
          ## Prompts\n\n\
-         - `/mcp__gatemini__discover` — guided discovery walkthrough\n\
-         - `/mcp__gatemini__find_tool` — search + top match schema\n\
-         - `/mcp__gatemini__backend_status` — health dashboard\n\n\
+         - `/mcp__prismgate__discover` — guided discovery walkthrough\n\
+         - `/mcp__prismgate__find_tool` — search + top match schema\n\
+         - `/mcp__prismgate__backend_status` — health dashboard\n\n\
          ## Runtime Management\n\n\
          - `register_manual` / `deregister_manual` — add/remove backends dynamically\n\
          - `get_required_keys_for_tool` — check env vars a backend needs\n",
@@ -533,7 +533,7 @@ fn call_tool_chain_guide_text() -> String {
 /// Generate compact llms.txt: tool names, one-line descriptions, naming rules.
 fn llms_txt(registry: &ToolRegistry) -> String {
     let mut text = format!(
-        "# Gatemini\n\n\
+        "# PrismGate\n\n\
          > Rust MCP gateway aggregating {} tools from {} backends\n\n\
          ## Meta-Tools\n\n\
          - search_tools: BM25/trigram/fuzzy search across all tools\n\

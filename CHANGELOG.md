@@ -122,7 +122,7 @@
 
 ### Features
 
-* add gatemini doctor diagnostics ([79bfb76](https://github.com/jonwraymond/PrismGate/commit/79bfb764d40455a82b501fa3e18227c18506545d))
+* add prismgate doctor diagnostics ([79bfb76](https://github.com/jonwraymond/PrismGate/commit/79bfb764d40455a82b501fa3e18227c18506545d))
 
 
 ### Bug Fixes
@@ -153,7 +153,7 @@
 
 ### Features
 
-* harden Gatemini startup and proxy sessions ([6f6e05a](https://github.com/jonwraymond/PrismGate/commit/6f6e05a9bb7559c230f2dc74df0149473720e89d))
+* harden PrismGate startup and proxy sessions ([6f6e05a](https://github.com/jonwraymond/PrismGate/commit/6f6e05a9bb7559c230f2dc74df0149473720e89d))
 
 ## [1.11.2](https://github.com/jonwraymond/PrismGate/compare/v1.11.1...v1.11.2) (2026-03-30)
 
@@ -285,7 +285,7 @@
 
 ### Bug Fixes
 
-* use ~/.prismgate/gatemini.yaml as default config path ([#41](https://github.com/jonwraymond/PrismGate/issues/41)) ([c051ae4](https://github.com/jonwraymond/PrismGate/commit/c051ae4deda7a4a7a3816b4e0eb031ad70c74c33))
+* use ~/.prismgate/prismgate.yaml as default config path ([#41](https://github.com/jonwraymond/PrismGate/issues/41)) ([c051ae4](https://github.com/jonwraymond/PrismGate/commit/c051ae4deda7a4a7a3816b4e0eb031ad70c74c33))
 
 ## [1.2.3](https://github.com/jonwraymond/PrismGate/compare/v1.2.2...v1.2.3) (2026-03-11)
 

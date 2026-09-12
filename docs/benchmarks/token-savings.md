@@ -8,9 +8,9 @@ The most meaningful comparisons are:
 
 1. `search_tools` brief versus full
 2. `tool_info` brief versus full
-3. `gatemini://tools` versus serializing all full schemas
+3. `prismgate://tools` versus serializing all full schemas
 4. fixed gateway-tool overhead versus direct exposure of every backend tool
-5. `call_tool_chain` output before versus after the reduction pipeline (visible via `gatemini://stats`)
+5. `call_tool_chain` output before versus after the reduction pipeline (visible via `prismgate://stats`)
 
 ## Suggested methodology
 
@@ -42,7 +42,7 @@ Record:
 
 After running a representative task:
 
-1. read `gatemini://stats`
+1. read `prismgate://stats`
 2. record `bytes_returned`, `bytes_processed`, and the reduction percentage
 3. note which tools generated the largest reductions (JSON auto-chunking and uniform array collapse produce the highest ratios for data-heavy backends)
 
@@ -57,10 +57,10 @@ search_tools brief:
 search_tools full:
 tool_info brief:
 tool_info full:
-gatemini://tools:
+prismgate://tools:
 all full schemas:
 
-Session stats (gatemini://stats):
+Session stats (prismgate://stats):
   bytes_returned:
   bytes_processed:
   reduction_pct:
@@ -69,7 +69,7 @@ Session stats (gatemini://stats):
 
 ## Interpretation
 
-You should expect the relative advantage of Gatemini to grow as:
+You should expect the relative advantage of PrismGate to grow as:
 
 - backend count grows
 - tool count grows

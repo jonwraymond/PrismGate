@@ -660,7 +660,7 @@ impl BackendManager {
                         _ => {
                             anyhow::bail!(
                                 "backend '{}' is not available (state: {:?}). \
-                                 Check status: @gatemini://backend/{}",
+                                 Check status: @prismgate://backend/{}",
                                 backend_name,
                                 state,
                                 backend_name
@@ -689,7 +689,7 @@ impl BackendManager {
                 anyhow::bail!(
                     "backend '{}' is still starting (retried {} times). \
                      Tool '{}' is cached but the backend hasn't connected yet. \
-                     Check status: @gatemini://backend/{}",
+                     Check status: @prismgate://backend/{}",
                     backend_name,
                     retry.max_retries,
                     tool_name,
@@ -699,7 +699,7 @@ impl BackendManager {
             Some(state) => {
                 anyhow::bail!(
                     "backend '{}' is not available (state: {:?}). \
-                     Check status: @gatemini://backend/{}",
+                     Check status: @prismgate://backend/{}",
                     backend_name,
                     state,
                     backend_name
@@ -709,7 +709,7 @@ impl BackendManager {
                 anyhow::bail!(
                     "backend '{}' not found after {} retries. \
                      It may not be configured or failed to start. \
-                     See all backends: @gatemini://backends",
+                     See all backends: @prismgate://backends",
                     backend_name,
                     retry.max_retries
                 )

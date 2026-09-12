@@ -1,6 +1,6 @@
 # Token Efficiency
 
-Gatemini's context savings come from shape, not magic: a small fixed gateway surface, brief discovery responses by default, full schemas only on demand, and automatic output reduction on every `call_tool_chain` response.
+PrismGate's context savings come from shape, not magic: a small fixed gateway surface, brief discovery responses by default, full schemas only on demand, and automatic output reduction on every `call_tool_chain` response.
 
 ![Token comparison](diagrams/token-comparison.svg){ .diagram-wide }
 
@@ -8,7 +8,7 @@ Gatemini's context savings come from shape, not magic: a small fixed gateway sur
 
 ### Fixed gateway surface
 
-Every session sees the same 7 gateway tools instead of every backend tool schema.
+Every session sees the same 13 gateway tools instead of every backend tool schema.
 
 ### Brief defaults
 
@@ -23,7 +23,7 @@ Agents only pull a full schema for tools they are likely to call.
 
 ### Resources as compact indexes
 
-`gatemini://tools` provides a compressed inventory view without the cost of loading every full schema.
+`prismgate://tools` provides a compressed inventory view without the cost of loading every full schema.
 
 ### Three-tier search reducing wasted queries
 
@@ -41,9 +41,9 @@ Every response from `call_tool_chain` passes through a pipeline of output reduct
 | Intent filtering | When the `intent` parameter is set and output exceeds 5 KB, lines are scored for relevance to the intent string and non-matching sections are suppressed |
 | Response metadata | When any reduction occurs, the response includes a metadata header showing KB returned vs. KB processed and the savings ratio |
 
-### Session stats via `gatemini://stats`
+### Session stats via `prismgate://stats`
 
-The `gatemini://stats` resource exposes per-session byte accounting:
+The `prismgate://stats` resource exposes per-session byte accounting:
 
 - total bytes returned to context (after all reductions)
 - total bytes processed (before reduction)
@@ -77,8 +77,8 @@ If you want to measure the real savings in your own config, compare:
 
 1. the bytes returned by `search_tools` in brief mode versus full mode
 2. the bytes returned by `tool_info` in brief mode versus full mode
-3. the bytes for `gatemini://tools` versus serializing every registry entry with full schemas
-4. the `gatemini://stats` resource before and after a representative task to see output-pipeline savings
+3. the bytes for `prismgate://tools` versus serializing every registry entry with full schemas
+4. the `prismgate://stats` resource before and after a representative task to see output-pipeline savings
 
 ## Cache and startup interaction
 
@@ -91,7 +91,7 @@ The cache system in `src/cache.rs` improves startup ergonomics:
 Current details:
 
 - cache version: `4`
-- default path: platform cache directory plus `gatemini/cache.json`
+- default path: platform cache directory plus `prismgate/cache.json`
 - atomic writes: temp file plus rename
 
 The old sibling-of-config cache path still exists in tests and migration helpers, but the normal runtime default is the platform cache directory.
@@ -106,4 +106,4 @@ The old sibling-of-config cache path still exists in tests and migration helpers
 - per-tool bytes returned (after reduction) and bytes processed (before reduction)
 - session start time and total calls
 
-The `record_bytes(tool, returned, processed)` method is called after every `call_tool_chain` output pass. `session_stats()` aggregates this into the `SessionStats` struct that backs `gatemini://stats`.
+The `record_bytes(tool, returned, processed)` method is called after every `call_tool_chain` output pass. `session_stats()` aggregates this into the `SessionStats` struct that backs `prismgate://stats`.

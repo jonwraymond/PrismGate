@@ -1,5 +1,5 @@
 [package]
-name = "gatemini"
+name = "prismgate"
 version = "1.19.0"
 edition = "2024"
 license = "Apache-2.0"

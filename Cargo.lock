@@ -2452,58 +2452,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "gatemini"
-version = "1.19.0"
-dependencies = [
- "aes-gcm",
- "anyhow",
- "arc-swap",
- "async-trait",
- "axum",
- "base64 0.22.1",
- "bitwarden",
- "chrono",
- "clap",
- "dashmap 6.2.1",
- "dirs",
- "futures",
- "futures-util",
- "hdrhistogram",
- "http 1.5.0",
- "jsonwebtoken",
- "keyring",
- "libc",
- "model2vec-rs",
- "nix 0.31.3",
- "notify",
- "open",
- "rand 0.8.5",
- "regex",
- "reqwest 0.13.4",
- "rmcp",
- "rusqlite",
- "rustls",
- "rustyscript",
- "serde",
- "serde_json",
- "serde_urlencoded",
- "serde_yaml_ng",
- "sha2 0.10.9",
- "shellexpand",
- "sse-stream",
- "tempfile",
- "thiserror 2.0.20",
- "tokio",
- "tokio-util",
- "tower-http",
- "tracing",
- "tracing-subscriber",
- "url",
- "uuid",
- "warp",
-]
-
-[[package]]
 name = "generic-array"
 version = "0.14.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4385,6 +4333,58 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "353e1ca18966c16d9deb1c69278edbc5f194139612772bd9537af60ac231e1e6"
 dependencies = [
  "elliptic-curve",
+]
+
+[[package]]
+name = "prismgate"
+version = "1.19.0"
+dependencies = [
+ "aes-gcm",
+ "anyhow",
+ "arc-swap",
+ "async-trait",
+ "axum",
+ "base64 0.22.1",
+ "bitwarden",
+ "chrono",
+ "clap",
+ "dashmap 6.2.1",
+ "dirs",
+ "futures",
+ "futures-util",
+ "hdrhistogram",
+ "http 1.5.0",
+ "jsonwebtoken",
+ "keyring",
+ "libc",
+ "model2vec-rs",
+ "nix 0.31.3",
+ "notify",
+ "open",
+ "rand 0.8.5",
+ "regex",
+ "reqwest 0.13.4",
+ "rmcp",
+ "rusqlite",
+ "rustls",
+ "rustyscript",
+ "serde",
+ "serde_json",
+ "serde_urlencoded",
+ "serde_yaml_ng",
+ "sha2 0.10.9",
+ "shellexpand",
+ "sse-stream",
+ "tempfile",
+ "thiserror 2.0.20",
+ "tokio",
+ "tokio-util",
+ "tower-http",
+ "tracing",
+ "tracing-subscriber",
+ "url",
+ "uuid",
+ "warp",
 ]
 
 [[package]]
