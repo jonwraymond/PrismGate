@@ -271,11 +271,15 @@ pub fn handle_list_paginated(
 
 /// Handle tool_info: return full schema for a specific tool.
 pub fn handle_tool_info(registry: &ToolRegistry, tool_name: &str) -> Option<ToolInfoResult> {
-    registry.get_by_name(tool_name).map(|e| ToolInfoResult {
-        name: e.name,
-        description: e.description,
-        backend: e.backend_name,
-        input_schema: e.input_schema,
+    registry.get_by_name(tool_name).map(|e| {
+        let mut input_schema = e.input_schema;
+        prune_schema_descriptions(&mut input_schema);
+        ToolInfoResult {
+            name: e.name,
+            description: e.description,
+            backend: e.backend_name,
+            input_schema,
+        }
     })
 }
 
