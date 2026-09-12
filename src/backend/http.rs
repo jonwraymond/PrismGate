@@ -162,10 +162,7 @@ impl Backend for HttpBackend {
             }
         }
 
-        let reqwest_client = reqwest::Client::builder()
-            .default_headers(default_headers)
-            .build()
-            .context("failed to build HTTP client")?;
+        let reqwest_client = super::http_pool::pooled_client(default_headers)?;
 
         // Wrap in LenientClient to tolerate missing Content-Type on responses
         // (e.g., z.ai servers return 200 with no Content-Type for initialized notification)
