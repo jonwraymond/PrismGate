@@ -18,6 +18,7 @@ use crate::backend::BackendManager;
 use crate::registry::ToolRegistry;
 
 use tokio::sync::Semaphore;
+use tracing::instrument;
 
 // --- Parameter structs for each meta-tool ---
 
@@ -346,6 +347,7 @@ impl GateminiServer {
     #[tool(
         description = "Searches for relevant tools based on a task description. Covers: web search (tavily, exa, zai), code intelligence (auggie, serena, octocode), browser automation (playwright, chrome-devtools), AI models (cerebras, pal, minimax), databases (supabase), file processing (repomix, firecrawl), docs (context7, deepwiki, ref), and more. Default: brief=true for compact results."
     )]
+    #[instrument(skip(self, params), fields(query_len = params.task_description.len(), brief = params.brief, limit = params.limit))]
     async fn search_tools(
         &self,
         Parameters(params): Parameters<SearchToolsParams>,
@@ -415,6 +417,7 @@ impl GateminiServer {
     #[tool(
         description = "Get complete information about a specific tool including its input schema."
     )]
+    #[instrument(skip(self, params), fields(tool = %params.tool_name))]
     async fn tool_info(
         &self,
         Parameters(params): Parameters<ToolInfoParams>,
@@ -570,6 +573,7 @@ impl GateminiServer {
     #[tool(
         description = "Execute TypeScript code with direct access to all registered tools as hierarchical functions (e.g., manual.tool()). IMPORTANT: the tool result is the value your code returns. `console.log(...)` output is not returned; if you do not return a value, the result is usually `null`."
     )]
+    #[instrument(skip(self, params), fields(code_len = params.code.len(), has_intent = params.intent.is_some()))]
     async fn call_tool_chain(
         &self,
         Parameters(params): Parameters<CallToolChainParams>,

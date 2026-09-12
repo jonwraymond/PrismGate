@@ -532,6 +532,7 @@ impl BackendManager {
     /// Checks rate limiter before acquiring concurrency semaphore.
     /// Acquires a per-backend semaphore permit before dispatching. If the semaphore
     /// is full, the call queues with a configurable timeout (default 60s).
+    #[tracing::instrument(skip(self, arguments), fields(backend = %backend_name, tool = %tool_name, session = session_id))]
     pub async fn call_tool(
         &self,
         backend_name: &str,
