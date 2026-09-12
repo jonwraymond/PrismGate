@@ -43,7 +43,10 @@ pub(crate) const STATE_UNHEALTHY: u8 = 3;
 pub(crate) const STATE_STOPPED: u8 = 7;
 
 /// Map a CallToolResult to a JSON Value.
-pub(crate) fn map_call_tool_result(result: CallToolResult) -> Value {
+pub(crate) fn map_call_tool_result(result: CallToolResult) -> Result<Value> {
+    if result.is_error == Some(true) {
+        anyhow::bail!("backend reported an MCP application error");
+    }
     let contents: Vec<Value> = result
         .content
         .into_iter()
@@ -56,9 +59,9 @@ pub(crate) fn map_call_tool_result(result: CallToolResult) -> Value {
         .collect();
 
     if contents.len() == 1 {
-        contents.into_iter().next().unwrap()
+        Ok(contents.into_iter().next().unwrap())
     } else {
-        Value::Array(contents)
+        Ok(Value::Array(contents))
     }
 }
 
@@ -1099,10 +1102,20 @@ mod map_result_tests {
     use rmcp::model::Content;
 
     #[test]
+    fn application_error_is_not_success_or_transient() {
+        let result = CallToolResult::error(vec![Content::text("timeout secret-payload")]);
+        let mapped = map_call_tool_result(result);
+        assert!(mapped.is_err());
+        let error = mapped.unwrap_err();
+        assert!(!is_transient_error(&error));
+        assert!(!error.to_string().contains("secret-payload"));
+    }
+
+    #[test]
     fn test_json_text_content_is_parsed() {
         let result =
             CallToolResult::success(vec![Content::text(r#"{"id": 123, "title": "test"}"#)]);
-        let value = map_call_tool_result(result);
+        let value = map_call_tool_result(result).unwrap();
         // Should be a parsed object, not a JSON string
         assert!(value.is_object());
         assert_eq!(value["id"], 123);
@@ -1112,7 +1125,7 @@ mod map_result_tests {
     #[test]
     fn test_plain_text_content_stays_string() {
         let result = CallToolResult::success(vec![Content::text("Title: awaiting review")]);
-        let value = map_call_tool_result(result);
+        let value = map_call_tool_result(result).unwrap();
         // Should remain a string
         assert!(value.is_string());
         assert_eq!(value.as_str().unwrap(), "Title: awaiting review");
@@ -1121,7 +1134,7 @@ mod map_result_tests {
     #[test]
     fn test_json_array_text_content_is_parsed() {
         let result = CallToolResult::success(vec![Content::text(r#"[1, 2, 3]"#)]);
-        let value = map_call_tool_result(result);
+        let value = map_call_tool_result(result).unwrap();
         assert!(value.is_array());
     }
 
@@ -1131,7 +1144,7 @@ mod map_result_tests {
             Content::text(r#"{"a": 1}"#),
             Content::text("plain text"),
         ]);
-        let value = map_call_tool_result(result);
+        let value = map_call_tool_result(result).unwrap();
         // Multiple contents → array
         assert!(value.is_array());
         let arr = value.as_array().unwrap();
@@ -1143,7 +1156,7 @@ mod map_result_tests {
     fn test_bare_string_json_stays_string() {
         // A JSON string literal like "\"hello\"" should parse to Value::String("hello")
         let result = CallToolResult::success(vec![Content::text(r#""hello""#)]);
-        let value = map_call_tool_result(result);
+        let value = map_call_tool_result(result).unwrap();
         // JSON parse of "\"hello\"" → Value::String("hello"), same as before
         assert!(value.is_string());
         assert_eq!(value.as_str().unwrap(), "hello");

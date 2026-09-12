@@ -273,7 +273,7 @@ impl Backend for StdioBackend {
                 )
             })?;
 
-        Ok(map_call_tool_result(result))
+        map_call_tool_result(result)
     }
 
     async fn discover_tools(&self) -> Result<Vec<ToolEntry>> {
