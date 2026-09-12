@@ -20,7 +20,6 @@ use crate::session::SessionEventStore;
 use crate::session::overflow;
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
-#[allow(dead_code)]
 pub struct ExecuteFileParams {
     /// Path to the file. Must be within the working directory or an allowed path.
     pub path: String,
@@ -36,11 +35,9 @@ pub struct ExecuteFileParams {
 }
 
 /// Allowed path prefixes for execute_file (prevents path traversal).
-#[allow(dead_code)]
 const ALLOWED_PREFIXES: &[&str] = &[".", "/home", "/usr", "/opt", "/tmp", "/var", "/root"];
 
 /// Validate that a path is safe to read.
-#[allow(dead_code)]
 fn validate_path(path: &str) -> Result<PathBuf> {
     let path = PathBuf::from(path);
 
@@ -64,7 +61,6 @@ fn validate_path(path: &str) -> Result<PathBuf> {
 }
 
 /// Handle execute_file: read file server-side, return summary + lines, index content.
-#[allow(dead_code)]
 pub async fn handle_execute_file(
     params: &ExecuteFileParams,
     _registry: &Arc<ToolRegistry>,

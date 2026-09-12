@@ -19,11 +19,9 @@ use crate::result_store::ResultStore;
 use crate::session::SessionEventStore;
 use crate::session::overflow;
 
-#[allow(dead_code)]
 pub const MAX_FETCH_BYTES: usize = 2_000_000; // 2MB cap
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
-#[allow(dead_code)]
 pub struct FetchAndIndexParams {
     /// URL to fetch. Must be http or https. Private IPs are blocked.
     pub url: String,
@@ -33,7 +31,6 @@ pub struct FetchAndIndexParams {
 }
 
 /// SSRF guard: validates the URL is safe to fetch server-side.
-#[allow(dead_code)]
 fn validate_url(url_str: &str) -> Result<url::Url> {
     let url = url::Url::parse(url_str).map_err(|e| anyhow::anyhow!("Invalid URL: {e}"))?;
 
@@ -93,7 +90,6 @@ fn validate_url(url_str: &str) -> Result<url::Url> {
 
 /// Extract readable text from HTML.
 /// Strips script/style tags, removes HTML tags, collapses whitespace.
-#[allow(dead_code)]
 fn extract_text(html: &str) -> String {
     // Remove script tags and content
     let text = regex::Regex::new(r"<script[^>]*>.*?</script>")
@@ -122,7 +118,6 @@ fn extract_text(html: &str) -> String {
 }
 
 /// Handle fetch_and_index: fetch URL server-side, extract text, index, return reference.
-#[allow(dead_code)]
 pub async fn handle_fetch_and_index(
     params: &FetchAndIndexParams,
     _registry: &Arc<ToolRegistry>,
