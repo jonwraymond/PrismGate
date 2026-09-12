@@ -66,6 +66,8 @@ pub struct CallTracker {
     session_start: Mutex<Instant>,
     /// Serializes reset against complete tracker mutations.
     reset_gate: Mutex<()>,
+    /// Estimated USD cost in micros ($1 = 1_000_000). Derived from processed bytes.
+    estimated_cost_usd_micros: AtomicU64,
 }
 
 impl CallTracker {
@@ -85,6 +87,7 @@ impl CallTracker {
             bytes_processed: AtomicU64::new(0),
             session_start: Mutex::new(Instant::now()),
             reset_gate: Mutex::new(()),
+            estimated_cost_usd_micros: AtomicU64::new(0),
         }
     }
 
@@ -100,6 +103,7 @@ impl CallTracker {
         self.latency.clear();
         self.bytes_returned.clear();
         self.bytes_processed.store(0, Ordering::Relaxed);
+        self.estimated_cost_usd_micros.store(0, Ordering::Relaxed);
         *self.session_start.lock().unwrap_or_else(|e| e.into_inner()) = Instant::now();
     }
 
@@ -227,6 +231,10 @@ impl CallTracker {
             .and_modify(|b| *b += returned)
             .or_insert(returned);
         self.bytes_processed.fetch_add(processed, Ordering::Relaxed);
+        // Heuristic: ~4 bytes/token at $3 / 1M tokens → 3 micros USD per token.
+        let tokens = processed / 4;
+        self.estimated_cost_usd_micros
+            .fetch_add(tokens.saturating_mul(3), Ordering::Relaxed);
     }
 
     /// Get session-level statistics for context savings tracking.
@@ -272,6 +280,8 @@ impl CallTracker {
             reduction_pct,
             estimated_tokens_saved: (total_bytes_processed.saturating_sub(total_bytes_returned))
                 / 4,
+            estimated_cost_usd: self.estimated_cost_usd_micros.load(Ordering::Relaxed) as f64
+                / 1_000_000.0,
             per_tool,
         }
     }
@@ -287,6 +297,8 @@ pub struct SessionStats {
     pub savings_ratio: f64,
     pub reduction_pct: f64,
     pub estimated_tokens_saved: u64,
+    /// Estimated USD spent on processed tokens. Unknown-model heuristic, not a bill.
+    pub estimated_cost_usd: f64,
     pub per_tool: Vec<ToolByteStat>,
 }
 
@@ -316,12 +328,24 @@ mod tests {
         assert_eq!(stats.total_calls, 0);
         assert_eq!(stats.total_bytes_returned, 0);
         assert_eq!(stats.total_bytes_processed, 0);
+        assert_eq!(stats.estimated_cost_usd, 0.0);
         assert!(stats.per_tool.is_empty());
         assert!(stats.uptime_seconds < before + 0.1);
         tracker.reset(); // idempotent, still accepts new calls
         tracker.record("new", "healthy_backend", Duration::from_millis(1), true);
         assert_eq!(tracker.usage_count("new"), 1);
         assert_eq!(tracker.recent_calls(10).len(), 1);
+    }
+
+    #[test]
+    fn estimated_cost_usd_from_processed_bytes() {
+        let tracker = CallTracker::new();
+        tracker.record_bytes("tool", 100, 4_000);
+        let stats = tracker.session_stats();
+        // 4000 bytes / 4 = 1000 tokens * 3 micros = 3000 micros = $0.003
+        assert!((stats.estimated_cost_usd - 0.003).abs() < 1e-9);
+        tracker.reset();
+        assert_eq!(tracker.session_stats().estimated_cost_usd, 0.0);
     }
 
     #[test]

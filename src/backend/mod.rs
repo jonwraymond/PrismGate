@@ -4,6 +4,7 @@ pub mod cli_adapter;
 pub mod composite;
 pub mod health;
 pub mod http;
+pub mod http_pool;
 pub mod lenient_client;
 pub mod memory;
 pub mod pool;

@@ -12,6 +12,7 @@ use std::thread::JoinHandle;
 use anyhow::{Context, Result};
 use rusqlite::{Connection, params};
 use serde::Serialize;
+use tokio::sync::oneshot;
 
 use crate::session::event::SessionEvent;
 
@@ -50,17 +51,17 @@ enum Command {
     Search {
         query: String,
         limit: usize,
-        reply: Sender<Result<Vec<SessionSearchHit>>>,
+        reply: oneshot::Sender<Result<Vec<SessionSearchHit>>>,
     },
     Resume {
         session_key: String,
         category: Option<String>,
         limit: usize,
-        reply: Sender<Result<Vec<SessionSearchHit>>>,
+        reply: oneshot::Sender<Result<Vec<SessionSearchHit>>>,
     },
     ResumeCard {
         session_key: String,
-        reply: Sender<Result<ResumeCard>>,
+        reply: oneshot::Sender<Result<ResumeCard>>,
     },
     Purge {
         session_key: String,
@@ -106,7 +107,7 @@ impl SessionEventStore {
 
     #[tracing::instrument(skip(self), fields(query_len = query.len(), limit))]
     pub async fn search(&self, query: &str, limit: usize) -> Result<Vec<SessionSearchHit>> {
-        let (reply, rx) = std::sync::mpsc::channel();
+        let (reply, rx) = oneshot::channel();
         self.tx
             .send(Command::Search {
                 query: query.to_string(),
@@ -114,9 +115,7 @@ impl SessionEventStore {
                 reply,
             })
             .context("session store channel closed")?;
-        tokio::task::spawn_blocking(move || rx.recv())
-            .await
-            .context("session store join")??
+        rx.await.context("session store reply dropped")?
     }
 
     pub async fn resume_summary(
@@ -125,7 +124,7 @@ impl SessionEventStore {
         category: Option<&str>,
         limit: usize,
     ) -> Result<Vec<SessionSearchHit>> {
-        let (reply, rx) = std::sync::mpsc::channel();
+        let (reply, rx) = oneshot::channel();
         self.tx
             .send(Command::Resume {
                 session_key: session_key.to_string(),
@@ -134,22 +133,18 @@ impl SessionEventStore {
                 reply,
             })
             .context("session store channel closed")?;
-        tokio::task::spawn_blocking(move || rx.recv())
-            .await
-            .context("session store join")??
+        rx.await.context("session store reply dropped")?
     }
 
     pub async fn resume_card(&self, session_key: &str) -> Result<ResumeCard> {
-        let (reply, rx) = std::sync::mpsc::channel();
+        let (reply, rx) = oneshot::channel();
         self.tx
             .send(Command::ResumeCard {
                 session_key: session_key.to_string(),
                 reply,
             })
             .context("session store channel closed")?;
-        tokio::task::spawn_blocking(move || rx.recv())
-            .await
-            .context("session store join")??
+        rx.await.context("session store reply dropped")?
     }
 
     #[tracing::instrument(skip(self), fields(session = %session_key))]

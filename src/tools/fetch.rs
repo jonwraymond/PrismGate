@@ -127,11 +127,8 @@ pub async fn handle_fetch_and_index(
 ) -> Result<String> {
     let url = validate_url(&params.url)?;
 
-    // Fetch server-side
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(30))
-        .build()
-        .context("Failed to create HTTP client")?;
+    // Fetch server-side through the pooled client (keep-alive, bounded idle).
+    let client = crate::backend::http_pool::pooled_client(reqwest::header::HeaderMap::new())?;
 
     let response = client
         .get(url.clone())
