@@ -24,6 +24,7 @@ use std::collections::HashSet;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU8, AtomicUsize, Ordering};
 use std::time::Duration;
+
 use tokio::sync::{RwLock, Semaphore};
 use tracing::{debug, error, info, warn};
 
@@ -635,13 +636,9 @@ impl BackendManager {
                         BackendState::Healthy => {
                             let start = std::time::Instant::now();
                             let result = b.call_tool(tool_name, arguments).await;
+                            let elapsed = start.elapsed();
                             if let Some(ref tracker) = self.tracker {
-                                tracker.record(
-                                    tool_name,
-                                    backend_name,
-                                    start.elapsed(),
-                                    result.is_ok(),
-                                );
+                                tracker.record(tool_name, backend_name, elapsed, result.is_ok());
                             }
                             return result;
                         }

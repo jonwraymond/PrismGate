@@ -54,6 +54,8 @@ pub struct CallTracker {
     recent: Mutex<VecDeque<CallEvent>>,
     /// Per-tool invocation counts for usage-weighted search.
     usage_counts: DashMap<String, u64>,
+    /// Completed backend calls and failures since startup/reset.
+    backend_counts: DashMap<String, (u64, u64)>,
     /// Per-backend latency histograms. Inner Mutex because Histogram::record is &mut self.
     latency: DashMap<String, Mutex<Histogram<u64>>>,
     /// Maximum entries in the recent ring buffer.
@@ -81,6 +83,7 @@ impl CallTracker {
         Self {
             recent: Mutex::new(VecDeque::with_capacity(max_recent)),
             usage_counts: DashMap::new(),
+            backend_counts: DashMap::new(),
             latency: DashMap::new(),
             max_recent,
             bytes_returned: DashMap::new(),
@@ -100,6 +103,7 @@ impl CallTracker {
             .unwrap_or_else(|e| e.into_inner())
             .clear();
         self.usage_counts.clear();
+        self.backend_counts.clear();
         self.latency.clear();
         self.bytes_returned.clear();
         self.bytes_processed.store(0, Ordering::Relaxed);
@@ -133,6 +137,15 @@ impl CallTracker {
             .and_modify(|c| *c += 1)
             .or_insert(1);
 
+        {
+            let mut counts = self
+                .backend_counts
+                .entry(backend_name.to_owned())
+                .or_default();
+            counts.0 += 1;
+            counts.1 += u64::from(!success);
+        }
+
         // Update latency histogram
         let duration_us = duration.as_micros() as u64;
         self.latency
@@ -149,6 +162,54 @@ impl CallTracker {
             .unwrap_or_else(|e| e.into_inner())
             .record(duration_us.max(1)) // clamp to min 1µs
             .ok(); // ignore out-of-range (>10min)
+    }
+
+    /// Aggregate metadata only; no arguments or backend error bodies.
+    pub fn profile(&self) -> serde_json::Value {
+        let _gate = self.reset_gate.lock().unwrap_or_else(|e| e.into_inner());
+        let mut names: Vec<String> = self
+            .backend_counts
+            .iter()
+            .map(|e| e.key().clone())
+            .collect();
+        names.sort();
+        let backends: Vec<_> = names
+            .iter()
+            .map(|name| {
+                let counts = self
+                    .backend_counts
+                    .get(name)
+                    .expect("snapshot under reset gate");
+                serde_json::json!({"backend": name, "calls": counts.0, "errors": counts.1,
+                "error_rate": if counts.0 == 0 { 0.0 } else { counts.1 as f64 / counts.0 as f64 },
+                "latency": self.latency_stats(name)})
+            })
+            .collect();
+        serde_json::json!({"scope": "process_since_reset", "backends": backends})
+    }
+
+    #[cfg(test)]
+    fn assert_profile_contract() {
+        let tracker = Self::with_capacity(1);
+        tracker.record(
+            "private_tool_name",
+            "backend",
+            Duration::from_millis(10),
+            true,
+        );
+        tracker.record(
+            "private_tool_name",
+            "backend",
+            Duration::from_millis(20),
+            false,
+        );
+        let snapshot = tracker.profile();
+        assert_eq!(snapshot["backends"][0]["calls"], 2);
+        assert_eq!(snapshot["backends"][0]["errors"], 1);
+        assert_eq!(snapshot["backends"][0]["error_rate"], 0.5);
+        assert!(!snapshot.to_string().contains("private_tool_name"));
+        tracker.reset();
+        assert_eq!(tracker.profile()["backends"], serde_json::json!([]));
     }
 
     /// Get the total invocation count for a tool.
@@ -313,6 +374,11 @@ pub struct ToolByteStat {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn profile_counts_survive_ring_eviction_and_reset() {
+        CallTracker::assert_profile_contract();
+    }
 
     #[test]
     fn reset_clears_history_usage_bytes_and_latency() {
