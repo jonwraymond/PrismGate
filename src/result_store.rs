@@ -123,6 +123,24 @@ impl ResultStore {
             .find(|e| e.handle == handle)
             .map(|e| e.raw.clone())
     }
+
+    /// Background TTL sweep so idle sessions still drop expired handles.
+    ///
+    /// Direct and daemon modes both spawn this; it never exits until the
+    /// owning `Arc<ResultStore>` is dropped (the task holds a clone).
+    pub fn spawn_janitor(store: std::sync::Arc<Self>) -> tokio::task::JoinHandle<()> {
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(Duration::from_secs(30));
+            interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+            loop {
+                interval.tick().await;
+                let expired = store.expire();
+                if expired > 0 {
+                    tracing::debug!(expired, "result store janitor purge");
+                }
+            }
+        })
+    }
 }
 
 #[cfg(test)]
@@ -161,5 +179,22 @@ mod tests {
         assert_eq!(store.read(&handle, 0, 5).unwrap().text, "hello");
         assert_eq!(store.read(&handle, 6, 5).unwrap().text, "world");
         assert!(ResultStore::default().read(&handle, 0, 5).is_none());
+    }
+
+    #[test]
+    fn janitor_expire_without_access() {
+        let store = ResultStore::new(100, 4, Duration::from_secs(60));
+        let a = store.insert("alpha".into()).unwrap();
+        let b = store.insert("bravo".into()).unwrap();
+        store
+            .entries
+            .lock()
+            .unwrap()
+            .iter_mut()
+            .for_each(|e| e.created = Instant::now() - Duration::from_secs(61));
+        assert_eq!(store.expire(), 2);
+        assert!(store.read(&a, 0, 10).is_none());
+        assert!(store.read(&b, 0, 10).is_none());
+        assert_eq!(store.expire(), 0);
     }
 }
