@@ -161,6 +161,79 @@ fn prune_schema_descriptions(schema: &mut Value) {
     }
 }
 
+/// Drop keys that never affect tool selection and collapse trivial unions.
+///
+/// Removes `additionalProperties` and `default`. Collapses `anyOf`/`oneOf`
+/// of the form `T | null` (or a single remaining member) down to `T`.
+/// Recurses into `properties`, `items`, `anyOf`, and `oneOf`.
+fn minify_schema(schema: &mut Value) {
+    match schema {
+        Value::Array(arr) => {
+            for item in arr.iter_mut() {
+                minify_schema(item);
+            }
+        }
+        Value::Object(obj) => {
+            obj.remove("additionalProperties");
+            obj.remove("default");
+
+            if let Some(properties) = obj.get_mut("properties").and_then(|p| p.as_object_mut()) {
+                for value in properties.values_mut() {
+                    minify_schema(value);
+                }
+            }
+            if let Some(items) = obj.get_mut("items") {
+                minify_schema(items);
+            }
+            for key in ["anyOf", "oneOf", "allOf"] {
+                if let Some(Value::Array(variants)) = obj.get_mut(key) {
+                    for variant in variants.iter_mut() {
+                        minify_schema(variant);
+                    }
+                }
+            }
+
+            collapse_trivial_union(obj);
+        }
+        _ => {}
+    }
+}
+
+/// Collapse `anyOf`/`oneOf` when it is `T | null` or a single remaining member.
+fn collapse_trivial_union(obj: &mut serde_json::Map<String, Value>) {
+    for key in ["anyOf", "oneOf"] {
+        let Some(Value::Array(variants)) = obj.get(key) else {
+            continue;
+        };
+        let non_null: Vec<Value> = variants
+            .iter()
+            .filter(|v| v.get("type").and_then(|t| t.as_str()) != Some("null"))
+            .cloned()
+            .collect();
+        if non_null.len() == 1 {
+            obj.remove(key);
+            if let Value::Object(inner) = &non_null[0] {
+                for (k, v) in inner {
+                    obj.entry(k.clone()).or_insert(v.clone());
+                }
+            } else {
+                obj.insert("type".into(), non_null[0].clone());
+            }
+            break;
+        }
+        if variants.len() == 1 {
+            let only = variants[0].clone();
+            obj.remove(key);
+            if let Value::Object(inner) = only {
+                for (k, v) in inner {
+                    obj.entry(k.clone()).or_insert(v);
+                }
+            }
+            break;
+        }
+    }
+}
+
 /// Extract parameter names from a JSON schema's `properties` object.
 fn extract_param_names(schema: &Value) -> Vec<String> {
     schema
@@ -274,6 +347,7 @@ pub fn handle_tool_info(registry: &ToolRegistry, tool_name: &str) -> Option<Tool
     registry.get_by_name(tool_name).map(|e| {
         let mut input_schema = e.input_schema;
         prune_schema_descriptions(&mut input_schema);
+        minify_schema(&mut input_schema);
         ToolInfoResult {
             name: e.name,
             description: e.description,
@@ -445,5 +519,50 @@ mod tests {
             .unwrap();
         assert_eq!(query_desc, "The search query.");
         assert_eq!(limit_desc, "Maximum number of results to return.");
+    }
+
+    #[test]
+    fn test_minify_schema_drops_noise_and_collapses_null_union() {
+        let mut schema = serde_json::json!({
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "query": {
+                    "anyOf": [
+                        {"type": "string", "default": ""},
+                        {"type": "null"}
+                    ],
+                    "description": "q"
+                },
+                "limit": {
+                    "type": "integer",
+                    "default": 10,
+                    "additionalProperties": false
+                }
+            }
+        });
+        minify_schema(&mut schema);
+        assert!(schema.get("additionalProperties").is_none());
+        let query = &schema["properties"]["query"];
+        assert_eq!(query["type"], "string");
+        assert!(query.get("anyOf").is_none());
+        assert!(query.get("default").is_none());
+        let limit = &schema["properties"]["limit"];
+        assert_eq!(limit["type"], "integer");
+        assert!(limit.get("default").is_none());
+        assert!(limit.get("additionalProperties").is_none());
+    }
+
+    #[test]
+    fn test_minify_schema_keeps_real_unions() {
+        let mut schema = serde_json::json!({
+            "anyOf": [
+                {"type": "string"},
+                {"type": "integer"}
+            ]
+        });
+        minify_schema(&mut schema);
+        assert!(schema.get("anyOf").is_some());
+        assert_eq!(schema["anyOf"].as_array().unwrap().len(), 2);
     }
 }
