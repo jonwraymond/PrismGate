@@ -11,7 +11,7 @@ Rust MCP gateway that exposes a small discovery surface over many backend MCP se
 
 - default mode is a proxy that bridges stdio to a Unix socket daemon
 - the daemon binds early, then completes shared initialization
-- backend tools are discovered through 7 gateway meta-tools
+- backend tools are discovered through 13 gateway meta-tools
 - proxy reconnect can replay the cached MCP initialize handshake
 - public backend states are `Starting`, `Healthy`, `Unhealthy`, and `Stopped`
 
@@ -35,6 +35,12 @@ Tools:
 - `call_tool_chain`
 - `register_manual`
 - `deregister_manual`
+- `read_result`
+- `purge_session`
+- `session_search`
+- `session_note`
+- `execute_file`
+- `fetch_and_index`
 
 Resources:
 
@@ -47,6 +53,7 @@ Resources:
 - `prismgate://llms`
 - `prismgate://llms-full`
 - `prismgate://call_tool_chain`
+- `prismgate://resume`
 - `prismgate://tool/{tool_name}`
 - `prismgate://backend/{backend_name}`
 - `prismgate://backend/{backend_name}/tools`
