@@ -254,6 +254,72 @@ impl GateminiServer {
     }
 
     #[tool(
+        description = "Read a file server-side and return a bounded page plus metadata. Raw file text is indexed for session_search instead of dumped into context. Use instead of host Read for analysis."
+    )]
+    async fn execute_file(
+        &self,
+        Parameters(params): Parameters<crate::tools::execute_file::ExecuteFileParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let (session_store, session_key);
+        #[cfg(feature = "session-store")]
+        {
+            session_store = Some(&self.session_store);
+            let key = self.session_key();
+            session_key = Some(key);
+        }
+        #[cfg(not(feature = "session-store"))]
+        {
+            session_store = None;
+            session_key = None::<String>;
+        }
+        match crate::tools::execute_file::handle_execute_file(
+            &params,
+            &self.registry,
+            &self.result_store,
+            session_store,
+            session_key.as_deref(),
+        )
+        .await
+        {
+            Ok(output) => Ok(CallToolResult::success(vec![Content::text(output)])),
+            Err(e) => Ok(CallToolResult::error(vec![Content::text(format!("{e:#}"))])),
+        }
+    }
+
+    #[tool(
+        description = "Fetch a URL server-side with SSRF protection, extract readable text, retain it behind a result handle, and index it for session_search. Never returns raw HTML."
+    )]
+    async fn fetch_and_index(
+        &self,
+        Parameters(params): Parameters<crate::tools::fetch::FetchAndIndexParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let (session_store, session_key);
+        #[cfg(feature = "session-store")]
+        {
+            session_store = Some(&self.session_store);
+            let key = self.session_key();
+            session_key = Some(key);
+        }
+        #[cfg(not(feature = "session-store"))]
+        {
+            session_store = None;
+            session_key = None::<String>;
+        }
+        match crate::tools::fetch::handle_fetch_and_index(
+            &params,
+            &self.registry,
+            &self.result_store,
+            session_store,
+            session_key.as_deref(),
+        )
+        .await
+        {
+            Ok(output) => Ok(CallToolResult::success(vec![Content::text(output)])),
+            Err(e) => Ok(CallToolResult::error(vec![Content::text(format!("{e:#}"))])),
+        }
+    }
+
+    #[tool(
         description = "Explicit clean slate: clears shared gateway call history, usage, latency and context statistics for ALL clients. Requires confirm=true. Preserves backend processes, health, tools and configuration. Does not erase client conversations or backend-owned memory. Calls completing afterwards count as new activity."
     )]
     async fn purge_session(
