@@ -38,7 +38,7 @@ impl PkceChallenge {
     /// Generate a random code verifier.
     fn generate_verifier() -> Result<String> {
         let mut rng = rand::thread_rng();
-        let random_bytes: Vec<u8> = (0..32).map(|_| rng.r#gen()).collect();
+        let random_bytes: Vec<u8> = (0..32).map(|_| rng.r#gen::<u8>()).collect();
         Ok(URL_SAFE_NO_PAD.encode(random_bytes))
     }
 
