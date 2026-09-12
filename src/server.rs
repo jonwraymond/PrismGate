@@ -179,7 +179,7 @@ pub struct GateminiServer {
     pub session_id: Option<u64>,
     /// Shared by server clones, never by unrelated connections.
     discovery_guard: Arc<crate::flood_guard::FloodGuard>,
-    result_store: Arc<crate::result_store::ResultStore>,
+    pub(crate) result_store: Arc<crate::result_store::ResultStore>,
     /// Output processing configuration (auto-chunking, smart truncation).
     pub output_config: crate::config::OutputConfig,
     pub session_store: crate::session::SessionEventStore,

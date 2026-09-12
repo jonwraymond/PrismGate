@@ -281,6 +281,8 @@ async fn run_direct(gw: InitializedGateway) -> Result<()> {
     );
 
     info!("starting MCP stdio server (direct mode)");
+    let _janitor = crate::result_store::ResultStore::spawn_janitor(server.result_store.clone());
+
     let service = server.serve(stdio()).await?;
 
     #[cfg(unix)]

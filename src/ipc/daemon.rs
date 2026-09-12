@@ -202,6 +202,9 @@ pub async fn run(gw: InitializedGateway, bound: BoundSocket) -> Result<()> {
                                 Some(session_id),
                                 output_config.clone(),
                             );
+                            let janitor = crate::result_store::ResultStore::spawn_janitor(
+                                server.result_store.clone(),
+                            );
 
                             let notify = Arc::clone(&session_change);
                             let mgr_for_release = Arc::clone(&backend_manager);
@@ -220,6 +223,7 @@ pub async fn run(gw: InitializedGateway, bound: BoundSocket) -> Result<()> {
                                 }
                                 // Release dedicated pool instances for this session
                                 mgr_for_release.release_session(session_id).await;
+                                janitor.abort();
                                 let count = sessions.fetch_sub(1, Ordering::SeqCst) - 1;
                                 info!(active = count, session = session_id, "client disconnected");
                                 notify.notify_one();
