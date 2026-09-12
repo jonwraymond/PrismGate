@@ -1,5 +1,32 @@
 # Changelog
 
+## [1.20.0](https://github.com/jonwraymond/PrismGate/compare/v1.19.0...v1.20.0) (2026-09-12)
+
+
+### Features
+
+* **discovery:** minify full tool_info schemas ([dc1a980](https://github.com/jonwraymond/PrismGate/commit/dc1a9803a8e39fc25b22e67dcb7966ef1f89574b))
+* **discovery:** minify full tool_info schemas ([177ed53](https://github.com/jonwraymond/PrismGate/commit/177ed53d668a76725a5c6ea2a101028d6bff7f0b))
+* **discovery:** minimize brief tool descriptions per arxiv 2602.14878 ([9862015](https://github.com/jonwraymond/PrismGate/commit/98620159cc4d530fc05791ab7d4768d24e47cf8e))
+* **discovery:** minimize brief tool descriptions per arxiv 2602.14878 ([43ee9af](https://github.com/jonwraymond/PrismGate/commit/43ee9af0d0ea14620a5c61a04298c6f604d383ea))
+* **result-store:** background TTL janitor for idle sessions ([b1c1ca9](https://github.com/jonwraymond/PrismGate/commit/b1c1ca9e8121ae87576c4fb06e61227e8eaa2433))
+* **result-store:** background TTL janitor for idle sessions ([dca4386](https://github.com/jonwraymond/PrismGate/commit/dca4386e2a3a4e43a77d24f57bdc2ae7967d6e70))
+* **result-store:** exact-match cache for identical tool calls ([324b9e3](https://github.com/jonwraymond/PrismGate/commit/324b9e3ba2edad079a6025a218ea9db4456b5ec9))
+* **result-store:** exact-match cache for identical tool calls ([60ed7bd](https://github.com/jonwraymond/PrismGate/commit/60ed7bd1a996d319d7f2ae3a60eb0526f68e492f))
+* **runtime:** wave 2 session actor, HTTP pool, and cost stats ([a978da8](https://github.com/jonwraymond/PrismGate/commit/a978da8f1ac044a4ada2eca15a6df409fa8b3e1c))
+* **runtime:** wave 2 session actor, HTTP pool, and cost stats ([794eae5](https://github.com/jonwraymond/PrismGate/commit/794eae5d652c17f0d4763cb340bd85b50b399027))
+* **session:** redact secrets before FTS5 indexing ([b6e22ce](https://github.com/jonwraymond/PrismGate/commit/b6e22ce8957ab6736ec926b9d254502a166e93b1))
+* **session:** redact secrets before FTS5 indexing ([6c879bb](https://github.com/jonwraymond/PrismGate/commit/6c879bb80ea1fef61ae8cdfe0c707fa73a76cc9a))
+* **tools:** expose execute_file and fetch_and_index as MCP tools ([dd7d6ea](https://github.com/jonwraymond/PrismGate/commit/dd7d6ea8b287373020258e29550bcf92e0ce3e5d))
+* **tools:** expose execute_file and fetch_and_index as MCP tools ([da09c68](https://github.com/jonwraymond/PrismGate/commit/da09c6812643b8d5855b4f2b01cb51c1cf39c36c))
+* **tracing:** instrument hot MCP and session paths ([07e2f90](https://github.com/jonwraymond/PrismGate/commit/07e2f906e3336a10aa227e8e8f84281fca6c2998))
+* **tracing:** instrument hot MCP and session paths ([5cf399f](https://github.com/jonwraymond/PrismGate/commit/5cf399f2b76a9f5f50531ce14bed4ebb8588da04))
+
+
+### Bug Fixes
+
+* **discovery:** prune full tool_info schemas so clippy stays clean ([810a272](https://github.com/jonwraymond/PrismGate/commit/810a2725683d0637a26d934ffcf3068dcc526e5b))
+
 ## [1.19.0](https://github.com/jonwraymond/PrismGate/compare/v1.18.0...v1.19.0) (2026-09-11)
 
 
