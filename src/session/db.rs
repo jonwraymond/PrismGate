@@ -98,7 +98,7 @@ impl SessionEventStore {
 
     pub async fn record(&self, event: SessionEvent) -> Result<()> {
         self.tx
-            .send(Command::Record(event))
+            .send(Command::Record(event.redact_secrets()))
             .context("session store channel closed")?;
         Ok(())
     }

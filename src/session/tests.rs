@@ -97,3 +97,40 @@ async fn overflow_index_creates_searchable_sections() {
             .any(|h| h.handle.as_deref() == Some("r-overflow"))
     );
 }
+
+#[tokio::test]
+async fn overflow_redacts_secrets_from_searchable_fields() {
+    let tmp = NamedTempFile::new().unwrap();
+    let store = SessionEventStore::open(tmp.path().to_path_buf()).unwrap();
+    let aws = format!("AKIA{}{}", "A".repeat(8), "B".repeat(8));
+    let raw = format!("token dump {aws} sk-cccccccccccccccccccccccc more text");
+    let indexed = crate::session::overflow::index_overflow(
+        &store.clone(),
+        "s5",
+        "r-secret",
+        &raw,
+        "call_tool_chain",
+        None,
+    )
+    .await;
+    assert!(indexed.preview.iter().all(|p| !p.contains(&aws)));
+    assert!(indexed.preview.iter().all(|p| !p.contains("sk-cccccccc")));
+    tokio::time::sleep(std::time::Duration::from_millis(80)).await;
+    let hits = store.search("token", 10).await.unwrap();
+    for hit in hits {
+        let blob = format!(
+            "{} {} {}",
+            hit.name,
+            hit.payload.clone().unwrap_or_default(),
+            hit.outcome.clone().unwrap_or_default()
+        );
+        assert!(
+            !blob.contains(&aws),
+            "secret leaked into search hit: {blob}"
+        );
+        assert!(
+            !blob.contains("sk-cccccccc"),
+            "api key leaked into search hit: {blob}"
+        );
+    }
+}

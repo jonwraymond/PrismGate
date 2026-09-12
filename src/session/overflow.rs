@@ -5,6 +5,7 @@ use serde::Serialize;
 
 use crate::session::db::SessionEventStore;
 use crate::session::extract::{handle_event, timestamp_now};
+use crate::session::redact::redact;
 use crate::tools::retrieval::RetrievalOptions;
 
 const TITLE_CHARS: usize = 80;
@@ -38,7 +39,7 @@ pub async fn index_overflow(
     let mut titles: Vec<String> = Vec::new();
     for (i, chunk) in chunks.iter().enumerate() {
         let title: String = chunk.chars().take(TITLE_CHARS).collect();
-        let title = title.replace('\n', " ");
+        let title = redact(&title.replace('\n', " "));
         titles.push(title.clone());
         let event = crate::session::event::SessionEvent {
             session_key: session_key.to_string(),
@@ -66,12 +67,12 @@ pub async fn index_overflow(
             },
             2_000,
         );
-        vec![evidence]
+        vec![redact(&evidence)]
     } else {
         titles.iter().take(5).cloned().collect()
     };
 
-    let try_also = distinctive_terms(raw, 6);
+    let try_also = distinctive_terms(&redact(raw), 6);
 
     OverflowIndex {
         handle: handle.to_string(),
