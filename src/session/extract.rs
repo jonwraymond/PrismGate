@@ -4,6 +4,7 @@
 //! be called from hot paths without allocating large structures.
 
 use crate::session::event::SessionEvent;
+use crate::session::redact::redact;
 
 pub fn timestamp_now() -> String {
     let now = chrono::Utc::now();
@@ -23,8 +24,8 @@ fn event(
         category: category.into(),
         event_type: event_type.into(),
         name: name.to_string(),
-        payload,
-        outcome,
+        payload: payload.map(|p| redact(&p)),
+        outcome: outcome.map(|o| redact(&o)),
         timestamp: timestamp_now(),
         handle: None,
         bytes_avoided: None,

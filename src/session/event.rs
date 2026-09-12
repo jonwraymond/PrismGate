@@ -37,4 +37,15 @@ impl SessionEvent {
         self.bytes_avoided = Some(processed.saturating_sub(returned));
         self
     }
+
+    /// Redact credential-like material in searchable fields.
+    pub fn redact_secrets(mut self) -> Self {
+        if let Some(p) = self.payload {
+            self.payload = Some(crate::session::redact::redact(&p));
+        }
+        if let Some(o) = self.outcome {
+            self.outcome = Some(crate::session::redact::redact(&o));
+        }
+        self
+    }
 }
