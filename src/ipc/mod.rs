@@ -1,3 +1,4 @@
+pub mod compact;
 pub mod daemon;
 #[cfg(test)]
 mod daemon_tests;
