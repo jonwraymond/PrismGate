@@ -46,7 +46,11 @@ fn mcp_headers_from_message(message: &ClientJsonRpcMessage) -> Vec<(HeaderName, 
         if !method_str.is_empty()
             && let Ok(val) = HeaderValue::from_str(method_str)
         {
-            headers.push((HeaderName::from_static(HEADER_MCP_METHOD), val));
+            headers.push((
+                HeaderName::from_bytes(HEADER_MCP_METHOD.as_bytes())
+                    .expect("valid MCP method header"),
+                val,
+            ));
         }
 
         // Mcp-Name: tool/resource name for targeted methods
@@ -60,7 +64,10 @@ fn mcp_headers_from_message(message: &ClientJsonRpcMessage) -> Vec<(HeaderName, 
         if let Some(name) = name_str
             && let Ok(val) = HeaderValue::from_str(name)
         {
-            headers.push((HeaderName::from_static(HEADER_MCP_NAME), val));
+            headers.push((
+                HeaderName::from_bytes(HEADER_MCP_NAME.as_bytes()).expect("valid MCP name header"),
+                val,
+            ));
         }
     }
 
@@ -210,5 +217,30 @@ impl StreamableHttpClient for LenientClient {
                 Ok(StreamableHttpPostResponse::Accepted)
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod header_regression_tests {
+    use super::*;
+
+    #[test]
+    fn mirrors_method_and_name_without_panicking() {
+        let message: ClientJsonRpcMessage = serde_json::from_value(serde_json::json!({
+            "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+            "params": {"name": "example", "arguments": {}}
+        }))
+        .unwrap();
+        let headers = mcp_headers_from_message(&message);
+        assert!(
+            headers
+                .iter()
+                .any(|(name, value)| name == "mcp-method" && value == "tools/call")
+        );
+        assert!(
+            headers
+                .iter()
+                .any(|(name, value)| name == "mcp-name" && value == "example")
+        );
     }
 }

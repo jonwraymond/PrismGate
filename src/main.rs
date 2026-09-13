@@ -394,6 +394,11 @@ async fn main() -> Result<()> {
         // Local diagnostics without daemon/backend initialization
         (Some(cli::Command::Doctor), _) => ipc::doctor::run(),
 
+        // Read-only backend profile from the running daemon
+        (Some(cli::Command::Profile { format, backend }), _) => {
+            ipc::profile::run(backend.as_deref(), *format).await
+        }
+
         // OAuth authentication
         (
             Some(cli::Command::Auth {

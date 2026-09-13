@@ -402,6 +402,28 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_profile_resource_contract() {
+        let (peer, _, _) = setup_mcp_client().await;
+        let listed = peer.list_resources(None).await.unwrap();
+        assert!(
+            listed
+                .resources
+                .iter()
+                .any(|r| r.raw.uri == "prismgate://profile")
+        );
+        let response = peer
+            .read_resource(ReadResourceRequestParams::new("prismgate://profile"))
+            .await
+            .unwrap();
+        let ResourceContents::TextResourceContents { text, .. } = &response.contents[0] else {
+            panic!("expected JSON text resource");
+        };
+        let value: serde_json::Value = serde_json::from_str(text).unwrap();
+        assert_eq!(value["scope"], "process_since_reset");
+        assert_eq!(value["backends"], serde_json::json!([]));
+    }
+
+    #[tokio::test]
     async fn test_resources_read_overview() {
         let (peer, _, _) = setup_mcp_client().await;
 

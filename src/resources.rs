@@ -12,6 +12,7 @@ use crate::tracker::CallTracker;
 /// Return the static resources available for @-mention discovery.
 pub fn list_static_resources() -> Vec<Resource> {
     vec![
+        Annotated::new(RawResource::new("prismgate://profile", "profile").with_mime_type("application/json"), None),
         Annotated::new(
             RawResource::new("prismgate://overview", "overview")
                 .with_title("PrismGate Overview")
@@ -268,6 +269,7 @@ pub async fn read_resource(
                 .map_err(|e| McpError::internal_error(e.to_string(), None))?;
             Ok(text_resource(uri, &json))
         }
+        "profile" => Ok(text_resource(uri, &tracker.profile().to_string())),
         "stats" => {
             let stats = tracker.session_stats();
             let json = serde_json::to_string_pretty(&stats)

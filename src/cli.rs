@@ -1,6 +1,6 @@
 //! Command-line interface and standard platform path helpers.
 
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -100,6 +100,15 @@ pub enum Command {
         #[arg(long)]
         resource: Option<String>,
     },
+    /// Show read-only backend invocation profile from the running daemon.
+    Profile {
+        /// Output format: `table` (default) or `json`.
+        #[arg(long, value_enum, default_value = "table")]
+        format: ProfileFormat,
+        /// Exact backend name to filter to.
+        #[arg(long)]
+        backend: Option<String>,
+    },
 }
 
 fn parse_duration(value: &str) -> Result<Duration, String> {
@@ -125,6 +134,13 @@ fn parse_duration(value: &str) -> Result<Duration, String> {
             .map(Duration::from_secs)
             .map_err(|_| format!("invalid duration '{value}': expected 30s, 5m, or 1h"))
     }
+}
+
+/// Output format for `prismgate profile`.
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum, Debug)]
+pub enum ProfileFormat {
+    Table,
+    Json,
 }
 
 #[cfg(test)]
