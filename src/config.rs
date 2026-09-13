@@ -143,6 +143,10 @@ pub struct Config {
     #[serde(default)]
     pub composite_tools: HashMap<String, CompositeToolConfig>,
 
+    /// Audit logging configuration for immutable tool invocation records.
+    #[serde(default)]
+    pub audit: AuditConfig,
+
     /// Access control configuration for tool-level RBAC.
     /// When set, restricts which backend tools can be called through the gateway.
     #[serde(default)]
@@ -192,6 +196,37 @@ pub struct BwsProviderConfig {
 
     /// Organization UUID. Falls back to BWS_ORG_ID env var.
     pub organization_id: Option<String>,
+}
+
+/// Audit logging configuration for immutable tool invocation records.
+/// Supports MAAR (MCP Audit and Accountability Requirements) alignment.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AuditConfig {
+    /// Enable immutable audit logging. Default: false.
+    #[serde(default)]
+    pub enabled: bool,
+
+    /// Path to the SQLite audit database. Default: platform cache directory / audit.db.
+    #[serde(default)]
+    pub db_path: Option<PathBuf>,
+
+    /// Maximum age of audit records before compaction. Default: 90 days.
+    #[serde(default = "default_audit_retention_days")]
+    pub retention_days: u32,
+}
+
+fn default_audit_retention_days() -> u32 {
+    90
+}
+
+impl Default for AuditConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            db_path: None,
+            retention_days: default_audit_retention_days(),
+        }
+    }
 }
 
 /// Per-backend configuration.
