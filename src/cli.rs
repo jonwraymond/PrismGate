@@ -109,6 +109,12 @@ pub enum Command {
         #[arg(long)]
         backend: Option<String>,
     },
+    /// Print the compaction card for this session (open handles, decisions, constraints).
+    Compact {
+        /// Output format: `table` (default) or `json`.
+        #[arg(long, value_enum, default_value = "table")]
+        format: CompactFormat,
+    },
 }
 
 fn parse_duration(value: &str) -> Result<Duration, String> {
@@ -143,6 +149,13 @@ pub enum ProfileFormat {
     Json,
 }
 
+/// Output format for `prismgate compact`.
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum, Debug)]
+pub enum CompactFormat {
+    Table,
+    Json,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -151,6 +164,13 @@ mod tests {
     fn cli_purge_requires_explicit_confirmation() {
         assert!(Cli::try_parse_from(["prismgate", "purge"]).is_err());
         assert!(Cli::try_parse_from(["prismgate", "purge", "--yes"]).is_ok());
+    }
+
+    #[test]
+    fn cli_compact_accepts_table_and_json_formats() {
+        assert!(Cli::try_parse_from(["prismgate", "compact"]).is_ok());
+        assert!(Cli::try_parse_from(["prismgate", "compact", "--format", "json"]).is_ok());
+        assert!(Cli::try_parse_from(["prismgate", "compact", "--format", "invalid"]).is_err());
     }
 
     #[test]

@@ -397,6 +397,7 @@ async fn main() -> Result<()> {
         (Some(cli::Command::Doctor), _) => ipc::doctor::run(),
 
         // Read-only backend profile from the running daemon
+        (Some(cli::Command::Compact { format }), _) => ipc::compact::run(*format).await,
         (Some(cli::Command::Profile { format, backend }), _) => {
             ipc::profile::run(backend.as_deref(), *format).await
         }
