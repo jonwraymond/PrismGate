@@ -171,6 +171,52 @@ pub fn render_template(template: &str, args: &Value) -> String {
     result
 }
 
+/// Shell-quote a value for safe interpolation into a POSIX `sh -c` command.
+///
+/// Wraps the value in single quotes, escaping any embedded single quote via the
+/// standard `'\''` idiom. The result is always exactly one shell token, so no
+/// metacharacter in `value` (`;`, `|`, `&`, `$()`, backticks, whitespace, …)
+/// can influence command parsing.
+fn shell_single_quote(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "'\\''"))
+}
+
+/// Render a command template for execution via `sh -c`, shell-escaping every
+/// substituted argument so user-supplied values cannot inject shell syntax.
+///
+/// Each placeholder is replaced by a single safely-quoted shell token:
+/// - `'{{key}}'` — a placeholder the template already single-quotes: the
+///   surrounding quotes are consumed and replaced by the escaped token, so
+///   legacy configs that manually quote keep working without double-quoting.
+/// - `{{key}}` — a bare placeholder: replaced by the escaped, quoted token.
+///
+/// Missing keys are left as-is. This is the ONLY renderer that may feed a
+/// `sh -c` command line. Use [`render_template`] (raw, no escaping) for stdin
+/// payloads, which are written to the child process verbatim and never parsed
+/// by a shell.
+pub fn render_command_template(template: &str, args: &Value) -> String {
+    let Some(obj) = args.as_object() else {
+        return template.to_string();
+    };
+
+    let mut result = template.to_string();
+    for (key, value) in obj {
+        let raw = match value {
+            Value::String(s) => s.clone(),
+            Value::Null => String::new(),
+            other => other.to_string(),
+        };
+        let escaped = shell_single_quote(&raw);
+        // Consume an existing single-quote wrapper FIRST so a manually-quoted
+        // placeholder (`'{{key}}'`) is not double-quoted, then handle bare ones.
+        let quoted_placeholder = format!("'{{{{{}}}}}'", key);
+        let bare_placeholder = format!("{{{{{}}}}}", key);
+        result = result.replace(&quoted_placeholder, &escaped);
+        result = result.replace(&bare_placeholder, &escaped);
+    }
+    result
+}
+
 /// Parse command output according to the configured format.
 pub fn parse_output(stdout: &str, format: &CliOutputFormat) -> Value {
     match format {
@@ -239,7 +285,7 @@ impl Backend for CliAdapterBackend {
         let args = arguments.unwrap_or(Value::Object(Default::default()));
 
         // Render command template
-        let rendered_cmd = render_template(&tool_config.command, &args);
+        let rendered_cmd = render_command_template(&tool_config.command, &args);
         debug!(backend = %self.name, tool = %tool_name, command = %rendered_cmd, "executing cli tool");
 
         // Build and configure command
@@ -402,6 +448,71 @@ mod tests {
     fn test_render_template_no_args() {
         let args = Value::Null;
         assert_eq!(render_template("echo hello", &args), "echo hello");
+    }
+
+    #[test]
+    fn test_render_command_template_quoted_placeholder_backcompat() {
+        // A manually single-quoted placeholder must NOT end up double-quoted;
+        // spaces in the value are preserved as a single token.
+        let args = serde_json::json!({"cwd": "/a b/c"});
+        assert_eq!(
+            render_command_template("cd '{{cwd}}' && ls", &args),
+            "cd '/a b/c' && ls"
+        );
+    }
+
+    #[test]
+    fn test_render_command_template_bare_placeholder_is_quoted() {
+        let args = serde_json::json!({"f": "CLAUDE.md"});
+        assert_eq!(
+            render_command_template("review --config {{f}}", &args),
+            "review --config 'CLAUDE.md'"
+        );
+    }
+
+    #[test]
+    fn test_render_command_template_blocks_metacharacter_injection() {
+        // The original CVE: a bare placeholder with shell metacharacters.
+        let args = serde_json::json!({"f": "x; rm -rf ~"});
+        assert_eq!(
+            render_command_template("review --config {{f}}", &args),
+            "review --config 'x; rm -rf ~'"
+        );
+    }
+
+    #[test]
+    fn test_render_command_template_blocks_command_substitution() {
+        let args = serde_json::json!({"f": "$(whoami)`id`"});
+        assert_eq!(
+            render_command_template("review --config {{f}}", &args),
+            "review --config '$(whoami)`id`'"
+        );
+    }
+
+    #[test]
+    fn test_render_command_template_blocks_single_quote_breakout() {
+        // Even inside a manually-quoted placeholder, an embedded single quote
+        // cannot break out of the quoting.
+        let args = serde_json::json!({"cwd": "a'; rm -rf ~ #"});
+        assert_eq!(
+            render_command_template("cd '{{cwd}}' && ls", &args),
+            "cd 'a'\\''; rm -rf ~ #' && ls"
+        );
+    }
+
+    #[test]
+    fn test_render_command_template_missing_key_left_asis() {
+        let args = serde_json::json!({"a": "x"});
+        assert_eq!(
+            render_command_template("run '{{a}}' {{missing}}", &args),
+            "run 'x' {{missing}}"
+        );
+    }
+
+    #[test]
+    fn test_render_command_template_null_and_number() {
+        let args = serde_json::json!({"n": null, "c": 5});
+        assert_eq!(render_command_template("x {{n}} {{c}}", &args), "x '' '5'");
     }
 
     #[test]
