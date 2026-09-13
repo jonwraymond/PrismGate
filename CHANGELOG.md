@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.21.0](https://github.com/jonwraymond/PrismGate/compare/v1.20.2...v1.21.0) (2026-09-13)
+
+
+### Features
+
+* **profile:** add backend profile CLI and MCP resource ([6d27699](https://github.com/jonwraymond/PrismGate/commit/6d276990917a9150e4955cf9c8a2ded822b84675))
+
+
+### Bug Fixes
+
+* **http:** accept mixed-case MCP header constants ([342f6b6](https://github.com/jonwraymond/PrismGate/commit/342f6b60d8d5c9a815361c1d38e25f910ef8c8a6))
+* **profile:** count MCP application errors across transports ([a0ee9d2](https://github.com/jonwraymond/PrismGate/commit/a0ee9d22bf21db2c6a7c4cba8f74780257a427cf))
+
 ## [1.20.2](https://github.com/jonwraymond/PrismGate/compare/v1.20.1...v1.20.2) (2026-09-12)
 
 
