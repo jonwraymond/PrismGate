@@ -542,6 +542,42 @@ impl BackendManager {
     /// Fails immediately for `Unhealthy`/`Stopped`.
     ///
     /// Checks rate limiter before acquiring concurrency semaphore.
+    /// Estimate token counts for a tool call from arguments and result.
+    /// Uses ~4 bytes/token heuristic. Returns (input_tokens, output_tokens).
+    fn estimate_tokens(arguments: Option<&Value>, result: &Result<Value>) -> (u64, u64) {
+        fn est(v: &Value) -> u64 {
+            (v.to_string().len() as u64).saturating_add(3) / 4
+        }
+        let input = arguments.as_ref().map(|a| est(a)).unwrap_or(0);
+        let output = match result.as_ref() {
+            Ok(v) => est(v),
+            Err(_) => 0,
+        };
+        (input, output)
+    }
+
+    /// Record a completed call including estimated token counts.
+    fn record_tracked(
+        &self,
+        tool_name: &str,
+        backend_name: &str,
+        elapsed: std::time::Duration,
+        result: &Result<Value>,
+        arguments: Option<&Value>,
+    ) {
+        if let Some(ref tracker) = self.tracker {
+            let (in_tok, out_tok) = Self::estimate_tokens(arguments, result);
+            tracker.record_with_tokens(
+                tool_name,
+                backend_name,
+                elapsed,
+                result.is_ok(),
+                in_tok,
+                out_tok,
+            );
+        }
+    }
+
     /// Acquires a per-backend semaphore permit before dispatching. If the semaphore
     /// is full, the call queues with a configurable timeout (default 60s).
     #[tracing::instrument(skip(self, arguments), fields(backend = %backend_name, tool = %tool_name, session = session_id))]
@@ -567,11 +603,17 @@ impl BackendManager {
                 )
             })?;
             let instance = pool.acquire(sid).await?;
+            let args_for_accounting = arguments.clone();
             let start = std::time::Instant::now();
             let result = instance.call_tool(tool_name, arguments).await;
-            if let Some(ref tracker) = self.tracker {
-                tracker.record(tool_name, backend_name, start.elapsed(), result.is_ok());
-            }
+            let elapsed = start.elapsed();
+            self.record_tracked(
+                tool_name,
+                backend_name,
+                elapsed,
+                &result,
+                args_for_accounting.as_ref(),
+            );
             return result;
         }
 
@@ -644,12 +686,17 @@ impl BackendManager {
                     let state = b.state();
                     match state {
                         BackendState::Healthy => {
+                            let args_for_accounting = arguments.clone();
                             let start = std::time::Instant::now();
                             let result = b.call_tool(tool_name, arguments).await;
                             let elapsed = start.elapsed();
-                            if let Some(ref tracker) = self.tracker {
-                                tracker.record(tool_name, backend_name, elapsed, result.is_ok());
-                            }
+                            self.record_tracked(
+                                tool_name,
+                                backend_name,
+                                elapsed,
+                                &result,
+                                args_for_accounting.as_ref(),
+                            );
                             return result;
                         }
                         BackendState::Starting => {
