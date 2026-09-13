@@ -1,0 +1,31 @@
+# Gatemini Docker quick-start config
+# Copy to config/config.yaml and customize
+
+log_level: info
+
+daemon:
+  idle_timeout: 30m
+
+# Example backends — uncomment and configure
+backends: {}
+  # filesystem:
+  #   command: npx
+  #   args: ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"]
+  #
+  # github:
+  #   transport: streamable-http
+  #   url: "https://api.githubcopilot.com/mcp/"
+  #   headers:
+  #     Authorization: "Bearer ${GITHUB_PAT_TOKEN}"
+  #
+  # brave-search:
+  #   command: npx
+  #   args: ["-y", "@modelcontextprotocol/server-brave-search"]
+  #   env:
+  #     BRAVE_API_KEY: "${BRAVE_API_KEY}"
+
+# Secrets via Bitwarden (optional)
+# secrets:
+#   providers:
+#     bws:
+#       enabled: true

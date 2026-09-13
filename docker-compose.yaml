@@ -1,0 +1,29 @@
+version: "3.8"
+
+services:
+  gatemini:
+    image: ghcr.io/jonwraymond/prismgate:latest
+    container_name: gatemini
+    restart: unless-stopped
+    volumes:
+      # Mount your config directory with config.yaml inside
+      - ./config:/etc/gatemini:ro
+      # Socket directory for daemon communication
+      - gatemini-socket:/tmp/gatemini
+    environment:
+      # Pass through any secrets your backends need
+      # - EXA_API_KEY=${EXA_API_KEY}
+      # - GITHUB_PAT_TOKEN=${GITHUB_PAT_TOKEN}
+      - DOCKER_ALLOW_IPV6_ON_IPV4_INTERFACE=1
+    # The daemon binds a Unix socket; no port exposure needed for stdio proxy mode.
+    # For streamable-http backends behind gatemini, expose ports as needed.
+    # ports:
+    #   - "3000:3000"
+    command:
+      - serve
+      - --config
+      - /etc/gatemini/config.yaml
+
+volumes:
+  gatemini-socket:
+    driver: local
