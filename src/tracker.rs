@@ -56,6 +56,8 @@ pub struct CallTracker {
     usage_counts: DashMap<String, u64>,
     /// Completed backend calls and failures since startup/reset.
     backend_counts: DashMap<String, (u64, u64)>,
+    /// Per-backend input/output token estimates. (input, output).
+    backend_tokens: DashMap<String, (u64, u64)>,
     /// Per-backend latency histograms. Inner Mutex because Histogram::record is &mut self.
     latency: DashMap<String, Mutex<Histogram<u64>>>,
     /// Maximum entries in the recent ring buffer.
@@ -84,6 +86,7 @@ impl CallTracker {
             recent: Mutex::new(VecDeque::with_capacity(max_recent)),
             usage_counts: DashMap::new(),
             backend_counts: DashMap::new(),
+            backend_tokens: DashMap::new(),
             latency: DashMap::new(),
             max_recent,
             bytes_returned: DashMap::new(),
@@ -104,6 +107,7 @@ impl CallTracker {
             .clear();
         self.usage_counts.clear();
         self.backend_counts.clear();
+        self.backend_tokens.clear();
         self.latency.clear();
         self.bytes_returned.clear();
         self.bytes_processed.store(0, Ordering::Relaxed);
@@ -164,6 +168,28 @@ impl CallTracker {
             .ok(); // ignore out-of-range (>10min)
     }
 
+    /// Record a completed call with estimated input/output token counts.
+    /// Estimates use the ~4 bytes/token heuristic and are labeled as estimates.
+    pub fn record_with_tokens(
+        &self,
+        tool_name: &str,
+        backend_name: &str,
+        duration: Duration,
+        success: bool,
+        input_tokens: u64,
+        output_tokens: u64,
+    ) {
+        self.record(tool_name, backend_name, duration, success);
+        let _gate = self.reset_gate.lock().unwrap_or_else(|e| e.into_inner());
+        self.backend_tokens
+            .entry(backend_name.to_string())
+            .and_modify(|t| {
+                t.0 += input_tokens;
+                t.1 += output_tokens;
+            })
+            .or_insert((input_tokens, output_tokens));
+    }
+
     /// Aggregate metadata only; no arguments or backend error bodies.
     pub fn profile(&self) -> serde_json::Value {
         let _gate = self.reset_gate.lock().unwrap_or_else(|e| e.into_inner());
@@ -180,9 +206,16 @@ impl CallTracker {
                     .backend_counts
                     .get(name)
                     .expect("snapshot under reset gate");
+                let (in_tok, out_tok) = self
+                    .backend_tokens
+                    .get(name)
+                    .map(|r| *r.value())
+                    .unwrap_or((0, 0));
                 serde_json::json!({"backend": name, "calls": counts.0, "errors": counts.1,
                 "error_rate": if counts.0 == 0 { 0.0 } else { counts.1 as f64 / counts.0 as f64 },
-                "latency": self.latency_stats(name)})
+                "latency": self.latency_stats(name),
+                "input_tokens_est": in_tok, "output_tokens_est": out_tok,
+                "input_bytes_est": in_tok * 4, "output_bytes_est": out_tok * 4})
             })
             .collect();
         serde_json::json!({"scope": "process_since_reset", "backends": backends})
@@ -378,6 +411,21 @@ mod tests {
     #[test]
     fn profile_counts_survive_ring_eviction_and_reset() {
         CallTracker::assert_profile_contract();
+    }
+
+    #[test]
+    fn token_accounting_tracks_input_output_per_backend() {
+        let tracker = CallTracker::with_capacity(1);
+        // Simulate calls with estimated token counts (4 bytes/token heuristic)
+        tracker.record_with_tokens("a.b", "backend", Duration::from_millis(5), true, 120, 480);
+        tracker.record_with_tokens("a.b", "backend", Duration::from_millis(6), true, 80, 320);
+        let snapshot = tracker.profile();
+        let be = &snapshot["backends"][0];
+        assert_eq!(be["calls"], 2);
+        assert_eq!(be["input_tokens_est"], 200); // 120 + 80
+        assert_eq!(be["output_tokens_est"], 800); // 480 + 320
+        assert_eq!(be["input_bytes_est"], 800); // 200 * 4
+        assert_eq!(be["output_bytes_est"], 3200); // 800 * 4
     }
 
     #[test]
