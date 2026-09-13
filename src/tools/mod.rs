@@ -6,3 +6,4 @@ pub mod json_chunker;
 pub mod register;
 pub mod retrieval;
 pub mod sandbox;
+pub mod sanitize;
