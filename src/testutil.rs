@@ -572,6 +572,7 @@ mod tests {
             None,
             None,
             &Default::default(),
+            &Default::default(),
         )
         .await;
         assert!(
@@ -598,6 +599,7 @@ mod tests {
             &semaphore,
             None,
             None,
+            &Default::default(),
             &Default::default(),
         )
         .await;

@@ -4,6 +4,7 @@ use std::sync::Arc;
 use tokio::sync::Semaphore;
 use tracing::debug;
 
+use crate::access::AccessControlConfig;
 use crate::backend::BackendManager;
 use crate::registry::ToolRegistry;
 
@@ -25,6 +26,7 @@ pub async fn handle_call_tool_chain(
     session_id: Option<u64>,
     intent: Option<&str>,
     output_config: &crate::config::OutputConfig,
+    access_control: &AccessControlConfig,
 ) -> Result<String> {
     handle_call_tool_chain_with_tracker(
         registry,
@@ -37,6 +39,7 @@ pub async fn handle_call_tool_chain(
         intent,
         output_config,
         None,
+        access_control,
     )
     .await
 }
@@ -54,6 +57,7 @@ pub async fn handle_call_tool_chain_with_tracker(
     intent: Option<&str>,
     output_config: &crate::config::OutputConfig,
     tracker: Option<&crate::tracker::CallTracker>,
+    access_control: &AccessControlConfig,
 ) -> Result<String> {
     handle_call_tool_chain_with_retrieval(
         registry,
@@ -67,6 +71,7 @@ pub async fn handle_call_tool_chain_with_tracker(
         output_config,
         tracker,
         None,
+        access_control,
     )
     .await
 }
@@ -84,6 +89,7 @@ pub async fn handle_call_tool_chain_with_retrieval(
     output_config: &crate::config::OutputConfig,
     tracker: Option<&crate::tracker::CallTracker>,
     retrieval: Option<&super::retrieval::RetrievalOptions>,
+    access_control: &AccessControlConfig,
 ) -> Result<String> {
     handle_call_tool_chain_with_store(
         registry,
@@ -98,6 +104,7 @@ pub async fn handle_call_tool_chain_with_retrieval(
         tracker,
         retrieval,
         None,
+        access_control,
     )
     .await
 }
@@ -116,6 +123,7 @@ pub async fn handle_call_tool_chain_with_store(
     tracker: Option<&crate::tracker::CallTracker>,
     retrieval: Option<&super::retrieval::RetrievalOptions>,
     store: Option<&crate::result_store::ResultStore>,
+    access_control: &AccessControlConfig,
 ) -> Result<String> {
     let max_output = max_output_size.unwrap_or(200_000);
     if (retrieval.is_some() || intent.is_some()) && max_output < 2 {
@@ -146,7 +154,9 @@ pub async fn handle_call_tool_chain_with_store(
 
     // Try to parse as a direct tool call (fast path — no V8, no semaphore needed).
     // Pattern: `await manual_name.tool_name({...})` or JSON with tool_name + arguments
-    if let Some(result) = try_direct_tool_call(registry, manager, code, session_id, store).await {
+    if let Some(result) =
+        try_direct_tool_call(registry, manager, code, session_id, store, access_control).await
+    {
         return result.map(process);
     }
 
@@ -173,6 +183,7 @@ pub async fn handle_call_tool_chain_with_store(
             timeout_dur,
             None, // use default V8 heap size (50MB)
             session_id,
+            access_control.clone(),
         )
         .await?;
         return Ok(process(result));
@@ -197,6 +208,7 @@ async fn try_direct_tool_call(
     code: &str,
     session_id: Option<u64>,
     store: Option<&crate::result_store::ResultStore>,
+    access_control: &AccessControlConfig,
 ) -> Option<Result<String>> {
     let code = code.trim();
 
@@ -206,7 +218,16 @@ async fn try_direct_tool_call(
     {
         let arguments = parsed.get("arguments").cloned();
         return Some(
-            call_tool_by_dotted_name(registry, manager, tool, arguments, session_id, store).await,
+            call_tool_by_dotted_name(
+                registry,
+                manager,
+                tool,
+                arguments,
+                session_id,
+                store,
+                access_control,
+            )
+            .await,
         );
     }
 
@@ -243,8 +264,16 @@ async fn try_direct_tool_call(
             let dotted = format!("{}.{}", backend_name, tool_name);
             debug!(pattern = %dotted, "parsed direct tool call from code");
             return Some(
-                call_tool_by_dotted_name(registry, manager, &dotted, arguments, session_id, store)
-                    .await,
+                call_tool_by_dotted_name(
+                    registry,
+                    manager,
+                    &dotted,
+                    arguments,
+                    session_id,
+                    store,
+                    access_control,
+                )
+                .await,
             );
         }
     }
@@ -372,6 +401,7 @@ async fn call_tool_by_dotted_name(
     arguments: Option<Value>,
     session_id: Option<u64>,
     _store: Option<&crate::result_store::ResultStore>,
+    access_control: &AccessControlConfig,
 ) -> Result<String> {
     // Resolve: try looking up the full dotted name first (handles both namespaced and bare)
     let entry = if let Some(e) = registry.get_by_name(dotted_name) {
@@ -391,6 +421,24 @@ async fn call_tool_by_dotted_name(
     } else {
         return Err(anyhow::anyhow!("tool '{}' not found", dotted_name));
     };
+
+    // Check access control: deny if this backend+tool pair is blocked
+    let tool_for_check = if entry.original_name.is_empty() {
+        // Fall back to entry.name but strip backend prefix if present
+        entry
+            .name
+            .strip_prefix(&format!("{}.", entry.backend_name))
+            .unwrap_or(&entry.name)
+    } else {
+        &entry.original_name
+    };
+    if !access_control.check(&entry.backend_name, tool_for_check) {
+        return Err(anyhow::anyhow!(
+            "access denied: tool '{}.{}' is blocked by access control policy",
+            entry.backend_name,
+            tool_for_check,
+        ));
+    }
 
     // CRITICAL: pass original_name to backend, not the namespaced registry key
     let call_name = if entry.original_name.is_empty() {
@@ -977,6 +1025,7 @@ mod cache_safety_tests {
             None,
             None,
             Some(store.as_ref()),
+            &Default::default(),
         )
         .await
         .unwrap();
@@ -994,6 +1043,7 @@ mod cache_safety_tests {
             None,
             None,
             Some(store.as_ref()),
+            &Default::default(),
         )
         .await
         .unwrap();

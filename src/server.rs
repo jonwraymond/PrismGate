@@ -14,6 +14,7 @@ use rmcp::{
 use serde::Deserialize;
 use serde_json::Value;
 
+use crate::access::AccessControlConfig;
 use crate::backend::BackendManager;
 use crate::registry::ToolRegistry;
 
@@ -184,6 +185,8 @@ pub struct PrismGateServer {
     /// Output processing configuration (auto-chunking, smart truncation).
     pub output_config: crate::config::OutputConfig,
     pub session_store: crate::session::SessionEventStore,
+    /// Access control configuration for tool-level RBAC.
+    pub access_control: AccessControlConfig,
     #[allow(dead_code)]
     tool_router: ToolRouter<Self>,
 }
@@ -200,6 +203,7 @@ impl PrismGateServer {
         sandbox_semaphore: Arc<Semaphore>,
         session_id: Option<u64>,
         output_config: crate::config::OutputConfig,
+        access_control: AccessControlConfig,
     ) -> Self {
         Self {
             registry,
@@ -214,6 +218,7 @@ impl PrismGateServer {
             result_store: Arc::new(crate::result_store::ResultStore::default()),
             output_config,
             session_store: crate::session::SessionEventStore::default(),
+            access_control,
             tool_router: Self::tool_router(),
         }
     }
@@ -657,6 +662,7 @@ impl PrismGateServer {
             Some(self.tracker.as_ref()),
             params.retrieval.as_ref(),
             Some(self.result_store.as_ref()),
+            &self.access_control,
         )
         .await;
 
@@ -754,6 +760,7 @@ mod flood_tests {
             Arc::new(Semaphore::new(1)),
             Some(7),
             Default::default(),
+            Default::default(),
         );
         server.discovery_guard = Arc::new(crate::flood_guard::FloodGuard::new(
             1,
@@ -846,6 +853,7 @@ mod telemetry_tests {
             None,
             &Default::default(),
             Some(&tracker),
+            &Default::default(),
         )
         .await
         .unwrap();
@@ -885,6 +893,7 @@ mod telemetry_tests {
                 &Default::default(),
                 Some(&tracker),
                 Some(&options),
+                &Default::default(),
             )
             .await
             .unwrap();
@@ -920,6 +929,7 @@ mod telemetry_tests {
                 result_handle_threshold: 100,
                 ..Default::default()
             },
+            Default::default(),
         );
         let arguments = serde_json::json!({"text": "needle".repeat(1000)});
         let raw = serde_json::to_string_pretty(&arguments).unwrap();
@@ -992,6 +1002,7 @@ mod telemetry_tests {
                 smart_truncation: false,
                 ..Default::default()
             },
+            Default::default(),
         );
         let arguments = serde_json::json!({"text": "é".repeat(2_000)});
         let raw = serde_json::to_string_pretty(&arguments).unwrap();

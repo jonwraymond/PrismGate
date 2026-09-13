@@ -25,6 +25,7 @@ async fn cli_purge_resets_live_tracker_without_replacing_runtime() {
         Arc::new(tokio::sync::Semaphore::new(1)),
         Some(99),
         Default::default(),
+        Default::default(),
     );
     let task = tokio::spawn(async move {
         let (stream, _) = listener.accept().await.unwrap();
