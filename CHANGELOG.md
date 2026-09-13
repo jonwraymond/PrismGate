@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.23.0](https://github.com/jonwraymond/PrismGate/compare/v1.22.0...v1.23.0) (2026-09-13)
+
+
+### Features
+
+* **c4:** prismgate compact CLI + MCP tool ([3135c83](https://github.com/jonwraymond/PrismGate/commit/3135c8332f324474a19f2d26730e12ba5b893905))
+* **c4:** prismgate compact CLI + MCP tool ([ef72a80](https://github.com/jonwraymond/PrismGate/commit/ef72a80ac6b5b291415b934e233eca1bc98bfc03))
+* **o2:** per-backend token accounting with labeled estimates ([df2580e](https://github.com/jonwraymond/PrismGate/commit/df2580e31c09b6415613c3793ee494eddcdb27aa))
+* **o2:** per-backend token accounting with labeled estimates ([00a22bd](https://github.com/jonwraymond/PrismGate/commit/00a22bd98092916ddeafbefc9c32730e78bb45ab))
+* **wave3-4:** K3 C1 C5 R3 R7 S4 O5 — schema cache, summarization, budget, lazy init, progress, audit log, export/import ([00520f2](https://github.com/jonwraymond/PrismGate/commit/00520f2ad8433a37943b458b0debb81f645eb2d6))
+* **wave3-4:** schema cache, audit log, budget, lazy init, progress, summarization, export/import ([65db1cb](https://github.com/jonwraymond/PrismGate/commit/65db1cbe6c58eea96dae52a295a4bed53b1f2284))
+
 ## [1.22.0](https://github.com/jonwraymond/PrismGate/compare/v1.21.0...v1.22.0) (2026-09-13)
 
 
