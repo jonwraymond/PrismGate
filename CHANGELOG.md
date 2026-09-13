@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.22.0](https://github.com/jonwraymond/PrismGate/compare/v1.21.0...v1.22.0) (2026-09-13)
+
+
+### Features
+
+* add config-based tool-level access control / RBAC primitives ([89795ec](https://github.com/jonwraymond/PrismGate/commit/89795ec8055b9471bca3bf55ea82cee6eefe3ba6))
+* config-based tool-level access control / RBAC primitives ([3c8a7c8](https://github.com/jonwraymond/PrismGate/commit/3c8a7c8c901f20f050a4c3d3c2a96d443e4ef0f8))
+
+
+### Bug Fixes
+
+* **cli-adapter:** shell-escape command template args to prevent injection ([b2bbd62](https://github.com/jonwraymond/PrismGate/commit/b2bbd62e244216ebb7ca122fa6641beb66d940b1))
+* sync sanitize_description callers and fix 3 failing sanitize tests ([6ea95a6](https://github.com/jonwraymond/PrismGate/commit/6ea95a6f126066444067cb493f62591e968707a5))
+
 ## [1.21.0](https://github.com/jonwraymond/PrismGate/compare/v1.20.2...v1.21.0) (2026-09-13)
 
 
