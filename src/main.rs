@@ -5,6 +5,7 @@
 
 mod access;
 mod admin;
+mod audit;
 mod backend;
 mod cache;
 mod cli;
@@ -146,6 +147,24 @@ pub async fn initialize(config_path: &Path) -> Result<InitializedGateway> {
     let tracker = Arc::new(tracker::CallTracker::new());
     let backend_manager =
         backend::BackendManager::new_with_config(&config.health, Some(Arc::clone(&tracker)));
+
+    // Initialize immutable audit log if enabled (MAAR alignment)
+    if config.audit.enabled {
+        let audit_db_path = config
+            .audit
+            .db_path
+            .clone()
+            .unwrap_or_else(|| cli::prismgate_cache_home().join("audit.db"));
+        match crate::audit::AuditLog::new(&audit_db_path, config.audit.retention_days) {
+            Ok(audit_log) => {
+                backend_manager.set_audit(Arc::new(audit_log));
+                info!(path = %audit_db_path.display(), "audit logging enabled");
+            }
+            Err(e) => {
+                warn!(error = %e, "failed to initialize audit log; continuing without audit");
+            }
+        }
+    }
 
     // Load tool cache for instant availability before backends connect
     let cache_path = config

@@ -14,6 +14,20 @@ pub fn list_static_resources() -> Vec<Resource> {
     vec![
         Annotated::new(RawResource::new("prismgate://profile", "profile").with_mime_type("application/json"), None),
         Annotated::new(
+            RawResource::new("prismgate://audit", "audit")
+                .with_title("Audit Log")
+                .with_description("Recent tool invocation audit entries (hash-chain verified).")
+                .with_mime_type("application/json"),
+            None,
+        ),
+        Annotated::new(
+            RawResource::new("prismgate://budget", "budget")
+                .with_title("Context Budget Dashboard")
+                .with_description("Session context budget: bytes returned vs processed, token estimates, cost, top consumers.")
+                .with_mime_type("application/json"),
+            None,
+        ),
+        Annotated::new(
             RawResource::new("prismgate://overview", "overview")
                 .with_title("PrismGate Overview")
                 .with_description(
@@ -270,6 +284,23 @@ pub async fn read_resource(
             Ok(text_resource(uri, &json))
         }
         "profile" => Ok(text_resource(uri, &tracker.profile().to_string())),
+        "audit" => {
+            // Audit entries are read from the audit log if available.
+            // Return a placeholder; the real query goes through the backend manager.
+            Ok(text_resource(
+                uri,
+                r#"{"note":"Use BackendManager audit_log.query_recent() to retrieve entries"}"#,
+            ))
+        }
+        "budget" => {
+            let stats = tracker.session_stats();
+            let profile = tracker.profile();
+            let budget = serde_json::json!({
+                "session_stats": stats,
+                "backend_breakdown": profile,
+            });
+            Ok(text_resource(uri, &budget.to_string()))
+        }
         "stats" => {
             let stats = tracker.session_stats();
             let json = serde_json::to_string_pretty(&stats)

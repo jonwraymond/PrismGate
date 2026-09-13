@@ -250,10 +250,14 @@ pub struct BackendManager {
     pub drain_timeout: Duration,
     /// Optional call tracker for usage stats, latency, and recent calls.
     tracker: Option<Arc<crate::tracker::CallTracker>>,
+    /// Optional immutable audit log for tool invocations.
+    audit: std::sync::RwLock<Option<Arc<crate::audit::AuditLog>>>,
     /// Per-backend dedicated instance pools (instance_mode: dedicated).
     dedicated_pools: DashMap<String, Arc<pool::InstancePool>>,
     /// Per-backend memory statistics from RSS sampling.
     memory_stats: DashMap<String, memory::MemoryStats>,
+    /// Per-backend schema refresh timestamps for K3 schema cache.
+    schema_last_refresh: DashMap<String, std::time::Instant>,
 }
 
 impl BackendManager {
@@ -271,8 +275,10 @@ impl BackendManager {
             prerequisite_pids: DashMap::new(),
             drain_timeout: Duration::from_secs(10),
             tracker: None,
+            audit: std::sync::RwLock::new(None),
             dedicated_pools: DashMap::new(),
             memory_stats: DashMap::new(),
+            schema_last_refresh: DashMap::new(),
         })
     }
 
@@ -294,9 +300,106 @@ impl BackendManager {
             prerequisite_pids: DashMap::new(),
             drain_timeout: health_config.drain_timeout,
             tracker,
+            audit: std::sync::RwLock::new(None),
             dedicated_pools: DashMap::new(),
             memory_stats: DashMap::new(),
+            schema_last_refresh: DashMap::new(),
         })
+    }
+
+    /// Set the audit log after construction.
+    pub fn set_audit(&self, audit: Arc<crate::audit::AuditLog>) {
+        let mut slot = self.audit.write().unwrap_or_else(|e| e.into_inner());
+        *slot = Some(audit);
+    }
+
+    /// Record an audit entry for a completed tool call.
+    fn record_audit(
+        &self,
+        backend_name: &str,
+        tool_name: &str,
+        arguments: Option<&serde_json::Value>,
+        result: &Result<serde_json::Value>,
+        duration: std::time::Duration,
+        session_id: Option<u64>,
+    ) {
+        let audit_slot = self.audit.read().unwrap_or_else(|e| e.into_inner());
+        if let Some(audit) = audit_slot.as_ref() {
+            let err_msg: Option<String> = result.as_ref().err().map(|e| e.to_string());
+            let params = crate::audit::RecordParams {
+                backend_name,
+                tool_name,
+                arguments,
+                success: result.is_ok(),
+                error_message: err_msg.as_deref(),
+                duration,
+                session_id,
+            };
+            if let Err(e) = audit.record(params) {
+                tracing::warn!(error = %e, "audit log record failed");
+            }
+        }
+    }
+
+    /// Refresh a backend's tool schema by re-running discovery and updating the registry.
+    /// Implements K3 schema cache: backends are re-discovered on demand or after TTL expiry.
+    pub async fn refresh_backend_schema(
+        self: &Arc<Self>,
+        name: &str,
+        registry: &Arc<crate::registry::ToolRegistry>,
+    ) -> Result<usize> {
+        let backend = self
+            .backends
+            .get(name)
+            .map(|r| Arc::clone(r.value()))
+            .ok_or_else(|| anyhow::anyhow!("backend '{}' not found for schema refresh", name))?;
+
+        let tools = backend.discover_tools().await?;
+        let count = tools.len();
+        registry.remove_backend_tools(name);
+
+        let configs = self.configs.read().await;
+        if let Some(config) = configs.get(name) {
+            let namespace = config.namespace.clone();
+            let ns = namespace.as_deref().unwrap_or(name);
+            registry.register_backend_tools_namespaced(name, ns, tools);
+        } else {
+            registry.register_backend_tools(name, tools);
+        }
+        drop(configs);
+
+        self.schema_last_refresh
+            .insert(name.to_string(), std::time::Instant::now());
+        info!(backend = %name, tools = count, "schema refreshed");
+        Ok(count)
+    }
+
+    /// Check if a backend's schema needs refreshing (TTL expired).
+    pub fn schema_needs_refresh(&self, name: &str, ttl: std::time::Duration) -> bool {
+        match self.schema_last_refresh.get(name) {
+            Some(entry) => entry.elapsed() > ttl,
+            None => true,
+        }
+    }
+
+    /// Lazy-start a single backend on first use (R3).
+    pub async fn lazy_start_backend(
+        self: &Arc<Self>,
+        name: &str,
+        registry: &Arc<crate::registry::ToolRegistry>,
+    ) -> Result<()> {
+        if self.backends.contains_key(name) {
+            return Ok(());
+        }
+        let config = {
+            let configs = self.configs.read().await;
+            configs
+                .get(name)
+                .ok_or_else(|| anyhow::anyhow!("backend '{}' not in config", name))?
+                .clone()
+        };
+        self.start_backend(name, &config, registry).await?;
+        Ok(())
     }
 
     /// Start all backends from config, discover tools, register in registry.
@@ -576,6 +679,7 @@ impl BackendManager {
                 out_tok,
             );
         }
+        self.record_audit(backend_name, tool_name, arguments, result, elapsed, None);
     }
 
     /// Acquires a per-backend semaphore permit before dispatching. If the semaphore

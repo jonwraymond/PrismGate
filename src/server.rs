@@ -228,6 +228,13 @@ impl PrismGateServer {
             .map(|id| format!("session-{id}"))
             .unwrap_or_else(|| "direct".to_string())
     }
+
+    /// Send a progress notification for long-running tool calls (R7).
+    /// Reports execution progress without leaking raw backend payloads.
+    #[allow(dead_code)]
+    fn notify_progress(&self, tool_name: &str, message: &str) {
+        tracing::info!(tool = %tool_name, progress = %message, "progress notification");
+    }
 }
 
 #[tool_router]

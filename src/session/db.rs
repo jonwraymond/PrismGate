@@ -46,6 +46,7 @@ pub struct ResumeCard {
     pub lookup: &'static str,
 }
 
+#[allow(dead_code)]
 enum Command {
     Record(SessionEvent),
     Search {
@@ -65,6 +66,14 @@ enum Command {
     },
     Purge {
         session_key: String,
+    },
+    Export {
+        session_key: String,
+        reply: oneshot::Sender<Result<Vec<SessionEvent>>>,
+    },
+    Import {
+        events: Vec<SessionEvent>,
+        reply: oneshot::Sender<Result<usize>>,
     },
     Shutdown,
 }
@@ -148,6 +157,58 @@ impl SessionEventStore {
     }
 
     #[tracing::instrument(skip(self), fields(session = %session_key))]
+    /// Export all events for a session key as a JSON-serializable vector.
+    #[allow(dead_code)]
+    pub async fn export_session(&self, session_key: &str) -> Result<Vec<SessionEvent>> {
+        let (reply_tx, reply_rx) = oneshot::channel();
+        self.tx
+            .send(Command::Export {
+                session_key: session_key.to_string(),
+                reply: reply_tx,
+            })
+            .map_err(|_| anyhow::anyhow!("session store actor died"))?;
+        reply_rx
+            .await
+            .map_err(|_| anyhow::anyhow!("actor dropped reply"))?
+    }
+
+    /// Import a vector of session events (e.g., from a JSON export).
+    #[allow(dead_code)]
+    pub async fn import_session(&self, events: Vec<SessionEvent>) -> Result<usize> {
+        let count = events.len();
+        let (reply_tx, reply_rx) = oneshot::channel();
+        self.tx
+            .send(Command::Import {
+                events,
+                reply: reply_tx,
+            })
+            .map_err(|_| anyhow::anyhow!("session store actor died"))?;
+        reply_rx
+            .await
+            .map_err(|_| anyhow::anyhow!("actor dropped reply"))??;
+        Ok(count)
+    }
+
+    /// Generate a lightweight session summary (C1).
+    #[allow(dead_code)]
+    pub async fn summarize_session(&self, session_key: &str) -> Result<serde_json::Value> {
+        let card = self.resume_card(session_key).await?;
+        let recent = self.resume_summary(session_key, None, 10).await?;
+        Ok(serde_json::json!({
+            "session_key": session_key,
+            "card": card,
+            "recent_events": recent,
+            "summary": format!(
+                "Session {} had {} events, {} decisions, {} constraints, {} open handles",
+                session_key,
+                card.event_count,
+                card.decisions.len(),
+                card.constraints.len(),
+                card.open_handles.len()
+            )
+        }))
+    }
+
     pub async fn purge_session(&self, session_key: &str) -> Result<()> {
         self.tx
             .send(Command::Purge {
@@ -227,6 +288,19 @@ fn run_actor(db_path: PathBuf, rx: Receiver<Command>) -> Result<()> {
                 ) {
                     tracing::warn!(error = %e, "failed to purge session events");
                 }
+            }
+            Command::Export { session_key, reply } => {
+                let result = export_events(&conn, &session_key);
+                let _ = reply.send(result);
+            }
+            Command::Import { events, reply } => {
+                let mut count = 0usize;
+                for event in &events {
+                    if import_event(&conn, event).is_ok() {
+                        count += 1;
+                    }
+                }
+                let _ = reply.send(Ok(count));
             }
             Command::Shutdown => break,
         }
@@ -440,4 +514,48 @@ fn resume_card(conn: &Connection, session_key: &str) -> Result<ResumeCard> {
         notes,
         lookup: "session_search(resume=true) then read_result(handle)",
     })
+}
+
+fn export_events(conn: &Connection, session_key: &str) -> Result<Vec<SessionEvent>> {
+    let mut stmt = conn.prepare(
+        "SELECT session_key, timestamp, category, event_type, name, payload, outcome, handle, bytes_avoided, bytes_returned
+         FROM session_events WHERE session_key = ?1 ORDER BY id",
+    )?;
+    let events = stmt
+        .query_map(params![session_key], |row| {
+            Ok(SessionEvent {
+                session_key: row.get(0)?,
+                timestamp: row.get(1)?,
+                category: row.get(2)?,
+                event_type: row.get(3)?,
+                name: row.get(4)?,
+                payload: row.get::<_, Option<String>>(5)?,
+                outcome: row.get::<_, Option<String>>(6)?,
+                handle: row.get::<_, Option<String>>(7)?,
+                bytes_avoided: row.get::<_, Option<i64>>(8)?.map(|v| v as u64),
+                bytes_returned: row.get::<_, Option<i64>>(9)?.map(|v| v as u64),
+            })
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(events)
+}
+
+fn import_event(conn: &Connection, event: &SessionEvent) -> Result<()> {
+    conn.execute(
+        "INSERT INTO session_events (session_key, timestamp, category, event_type, name, payload, outcome, handle, bytes_avoided, bytes_returned)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+        params![
+            event.session_key,
+            event.timestamp,
+            event.category,
+            event.event_type,
+            event.name,
+            event.payload,
+            event.outcome,
+            event.handle,
+            event.bytes_avoided.map(|v| v as i64),
+            event.bytes_returned.map(|v| v as i64),
+        ],
+    )?;
+    Ok(())
 }
