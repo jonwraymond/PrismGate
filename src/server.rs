@@ -187,6 +187,8 @@ pub struct PrismGateServer {
     pub session_store: crate::session::SessionEventStore,
     /// Access control configuration for tool-level RBAC.
     pub access_control: AccessControlConfig,
+    /// TTL-based cache for generated catalog text (K2).
+    pub catalog_cache: crate::resources::CatalogCache,
     #[allow(dead_code)]
     tool_router: ToolRouter<Self>,
 }
@@ -219,6 +221,7 @@ impl PrismGateServer {
             output_config,
             session_store: crate::session::SessionEventStore::default(),
             access_control,
+            catalog_cache: crate::resources::CatalogCache::default(),
             tool_router: Self::tool_router(),
         }
     }
@@ -1141,8 +1144,14 @@ impl ServerHandler for PrismGateServer {
         let backend_manager = Arc::clone(&self.backend_manager);
         let tracker = Arc::clone(&self.tracker);
         async move {
-            crate::resources::read_resource(&request.uri, &registry, &backend_manager, &tracker)
-                .await
+            crate::resources::read_resource(
+                &request.uri,
+                &registry,
+                &backend_manager,
+                &tracker,
+                &self.catalog_cache,
+            )
+            .await
         }
     }
 
