@@ -171,6 +171,74 @@ pub fn list_resource_templates() -> Vec<ResourceTemplate> {
     ]
 }
 
+/// TTL-based cache for generated catalog text (K2).
+/// Caches `llms`, `llms-full`, and `tools` resource output to avoid
+/// regenerating on every read. Invalidated when the registry changes
+/// (tool count differs) or after TTL expiry.
+#[derive(Clone)]
+#[allow(dead_code)]
+pub struct CatalogCache {
+    llms: std::sync::Arc<std::sync::Mutex<Option<(std::time::Instant, String, usize)>>>,
+    llms_full: std::sync::Arc<std::sync::Mutex<Option<(std::time::Instant, String, usize)>>>,
+    tools: std::sync::Arc<std::sync::Mutex<Option<(std::time::Instant, String, usize)>>>,
+    ttl: std::time::Duration,
+}
+
+impl CatalogCache {
+    pub fn new(ttl: std::time::Duration) -> Self {
+        Self {
+            llms: std::sync::Arc::new(std::sync::Mutex::new(None)),
+            llms_full: std::sync::Arc::new(std::sync::Mutex::new(None)),
+            tools: std::sync::Arc::new(std::sync::Mutex::new(None)),
+            ttl,
+        }
+    }
+
+    fn get_or_generate(
+        &self,
+        cache: &std::sync::Mutex<Option<(std::time::Instant, String, usize)>>,
+        tool_count: usize,
+        generate: impl FnOnce() -> String,
+    ) -> String {
+        let mut slot = cache.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some((timestamp, text, cached_count)) = slot.as_ref()
+            && timestamp.elapsed() < self.ttl
+            && *cached_count == tool_count
+        {
+            return text.clone();
+        }
+        let text = generate();
+        *slot = Some((std::time::Instant::now(), text.clone(), tool_count));
+        text
+    }
+
+    /// Get cached `llms.txt` or regenerate.
+    pub fn llms_txt(&self, registry: &crate::registry::ToolRegistry) -> String {
+        self.get_or_generate(&self.llms, registry.tool_count(), || llms_txt(registry))
+    }
+
+    /// Get cached `llms-full.txt` or regenerate.
+    pub fn llms_full_txt(&self, registry: &crate::registry::ToolRegistry) -> String {
+        self.get_or_generate(&self.llms_full, registry.tool_count(), || {
+            llms_full_txt(registry)
+        })
+    }
+
+    /// Invalidate all cached entries (called on backend restart/refresh).
+    #[allow(dead_code)]
+    pub fn invalidate(&self) {
+        *self.llms.lock().unwrap_or_else(|e| e.into_inner()) = None;
+        *self.llms_full.lock().unwrap_or_else(|e| e.into_inner()) = None;
+        *self.tools.lock().unwrap_or_else(|e| e.into_inner()) = None;
+    }
+}
+
+impl Default for CatalogCache {
+    fn default() -> Self {
+        Self::new(std::time::Duration::from_secs(300))
+    }
+}
+
 /// Compact tool entry for the prismgate://tools resource.
 #[derive(Debug, Serialize)]
 struct CompactToolEntry {
@@ -221,6 +289,7 @@ pub async fn read_resource(
     registry: &Arc<ToolRegistry>,
     backend_manager: &Arc<BackendManager>,
     tracker: &Arc<CallTracker>,
+    catalog_cache: &CatalogCache,
 ) -> Result<ReadResourceResult, McpError> {
     // Parse the URI
     let path = uri
@@ -252,8 +321,8 @@ pub async fn read_resource(
                 .map_err(|e| McpError::internal_error(e.to_string(), None))?;
             Ok(text_resource(uri, &json))
         }
-        "llms" => Ok(text_resource(uri, &llms_txt(registry))),
-        "llms-full" => Ok(text_resource(uri, &llms_full_txt(registry))),
+        "llms" => Ok(text_resource(uri, &catalog_cache.llms_txt(registry))),
+        "llms-full" => Ok(text_resource(uri, &catalog_cache.llms_full_txt(registry))),
         "health" => {
             let statuses = backend_manager.get_all_status();
             let health: Vec<serde_json::Value> = statuses
